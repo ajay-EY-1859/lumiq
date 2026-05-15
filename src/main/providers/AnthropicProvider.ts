@@ -19,17 +19,21 @@ export class AnthropicProvider implements AIProvider {
   async sendMessage(messages: Message[], options: SendOptions): Promise<SendResult> {
     const anthropicMessages = messages
       .filter((m) => m.role !== 'system')
-      .map((m) => ({
-        role: m.role as 'user' | 'assistant',
-        content: m.content
-      }))
+      .map((m) => this.toAnthropicMessage(m))
+
+    const tools = options.tools?.map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      input_schema: tool.inputSchema
+    }))
 
     const stream = this.client.messages.stream({
       model: options.model,
       max_tokens: options.maxTokens ?? 8096,
       system: options.systemPrompt,
-      messages: anthropicMessages
-    })
+      messages: anthropicMessages,
+      tools: tools && tools.length > 0 ? tools : undefined
+    } as Anthropic.MessageCreateParamsNonStreaming)
 
     let content = ''
     for await (const event of stream) {
@@ -41,10 +45,54 @@ export class AnthropicProvider implements AIProvider {
     }
 
     const finalMessage = await stream.finalMessage()
+    const toolCalls = finalMessage.content
+      .filter((block) => block.type === 'tool_use')
+      .map((block) => ({
+        id: block.id,
+        toolName: block.name,
+        input: block.input as Record<string, unknown>
+      }))
+
     return {
       content,
       tokensUsed: finalMessage.usage?.output_tokens ?? 0,
-      stopReason: finalMessage.stop_reason ?? 'end_turn'
+      stopReason: finalMessage.stop_reason ?? 'end_turn',
+      toolCalls: toolCalls.length > 0 ? toolCalls : undefined
+    }
+  }
+
+  private toAnthropicMessage(message: Message): Anthropic.MessageParam {
+    if (message.role === 'tool') {
+      return {
+        role: 'user',
+        content: [
+          {
+            type: 'tool_result',
+            tool_use_id: message.toolCallId || message.toolName || 'tool-call',
+            content: message.content
+          }
+        ]
+      }
+    }
+
+    if (message.role === 'assistant' && message.toolCalls && message.toolCalls.length > 0) {
+      return {
+        role: 'assistant',
+        content: [
+          ...(message.content ? [{ type: 'text' as const, text: message.content }] : []),
+          ...message.toolCalls.map((toolCall) => ({
+            type: 'tool_use' as const,
+            id: toolCall.id,
+            name: toolCall.toolName,
+            input: toolCall.input
+          }))
+        ]
+      }
+    }
+
+    return {
+      role: message.role as 'user' | 'assistant',
+      content: message.content
     }
   }
 

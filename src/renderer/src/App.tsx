@@ -3,9 +3,12 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { TitleBar } from './components/layout/TitleBar'
 import { Sidebar } from './components/sidebar/Sidebar'
 import { ChatPage } from './components/chat/ChatPage'
+import { EditorPane } from './components/editor/EditorPane'
+import { TaskPanel } from './components/tasks/TaskPanel'
 import { SettingsPage } from './components/settings/SettingsPage'
 import { AgentBuilderPage } from './components/agents/AgentBuilderPage'
 import { ToastContainer } from './components/ui/Toast'
+import { ErrorBoundary } from './components/ui/ErrorBoundary'
 import { useSettingsStore } from './store/settingsStore'
 import { useSessionStore } from './store/sessionStore'
 import { useProviderStore } from './store/providerStore'
@@ -49,17 +52,27 @@ export default function App(): React.JSX.Element {
   const handleNavigate = useCallback((page: Page) => setCurrentPage(page), [])
 
   return (
-    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      <TitleBar />
-      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-        <Sidebar isVisible={sidebarVisible} onNavigate={handleNavigate} currentPage={currentPage} />
-        <main style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
-          {currentPage === 'chat' && <ChatPage />}
-          {currentPage === 'settings' && <SettingsPage onNavigate={handleNavigate} />}
-          {currentPage === 'agents' && <AgentBuilderPage onNavigate={handleNavigate} />}
-        </main>
+    <ErrorBoundary>
+      <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <TitleBar />
+        <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+          <Sidebar isVisible={sidebarVisible} onNavigate={handleNavigate} currentPage={currentPage} />
+          <main style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
+            {currentPage === 'chat' && (
+              <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: '300px', borderRight: '1px solid var(--border)' }}>
+                  <EditorPane />
+                  <TaskPanel />
+                </div>
+                <ChatPage />
+              </div>
+            )}
+            {currentPage === 'settings' && <SettingsPage onNavigate={handleNavigate} />}
+            {currentPage === 'agents' && <AgentBuilderPage onNavigate={handleNavigate} />}
+          </main>
+        </div>
+        <ToastContainer />
       </div>
-      <ToastContainer />
-    </div>
+    </ErrorBoundary>
   )
 }

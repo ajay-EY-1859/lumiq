@@ -26,21 +26,29 @@ export class OpenAIProvider implements AIProvider {
     openaiMessages.push(
       ...messages
         .filter((m) => m.role !== 'system')
-        .map((m) => ({
-          role: m.role as 'user' | 'assistant',
-          content: m.content
-        }))
+        .map((m) => this.toOpenAIMessage(m))
     )
+
+    const tools = options.tools?.map((tool) => ({
+      type: 'function' as const,
+      function: {
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.inputSchema
+      }
+    }))
 
     const stream = await this.client.chat.completions.create({
       model: options.model,
       messages: openaiMessages,
       stream: true,
-      max_tokens: options.maxTokens
+      max_tokens: options.maxTokens,
+      tools: tools && tools.length > 0 ? tools : undefined
     })
 
     let content = ''
     let tokensUsed = 0
+    const toolCallChunks = new Map<number, { id: string; name: string; arguments: string }>()
 
     for await (const chunk of stream) {
       const delta = chunk.choices[0]?.delta?.content ?? ''
@@ -48,11 +56,72 @@ export class OpenAIProvider implements AIProvider {
         content += delta
         options.onChunk?.(delta)
       }
+      for (const toolCall of chunk.choices[0]?.delta?.tool_calls || []) {
+        const index = toolCall.index
+        const existing = toolCallChunks.get(index) || { id: '', name: '', arguments: '' }
+        toolCallChunks.set(index, {
+          id: toolCall.id || existing.id,
+          name: toolCall.function?.name || existing.name,
+          arguments: existing.arguments + (toolCall.function?.arguments || '')
+        })
+      }
       if (chunk.usage) tokensUsed = chunk.usage.completion_tokens
       if (options.signal?.aborted) break
     }
 
-    return { content, tokensUsed, stopReason: 'stop' }
+    const toolCalls = Array.from(toolCallChunks.values())
+      .filter((toolCall) => toolCall.id && toolCall.name)
+      .map((toolCall) => ({
+        id: toolCall.id,
+        toolName: toolCall.name,
+        input: this.parseToolArguments(toolCall.arguments)
+      }))
+
+    return {
+      content,
+      tokensUsed,
+      stopReason: toolCalls.length > 0 ? 'tool_calls' : 'stop',
+      toolCalls: toolCalls.length > 0 ? toolCalls : undefined
+    }
+  }
+
+  private toOpenAIMessage(message: Message): OpenAI.ChatCompletionMessageParam {
+    if (message.role === 'tool') {
+      return {
+        role: 'tool',
+        tool_call_id: message.toolCallId || message.toolName || 'tool-call',
+        content: message.content
+      }
+    }
+
+    if (message.role === 'assistant' && message.toolCalls && message.toolCalls.length > 0) {
+      return {
+        role: 'assistant',
+        content: message.content || null,
+        tool_calls: message.toolCalls.map((toolCall) => ({
+          id: toolCall.id,
+          type: 'function',
+          function: {
+            name: toolCall.toolName,
+            arguments: JSON.stringify(toolCall.input)
+          }
+        }))
+      }
+    }
+
+    return {
+      role: message.role as 'user' | 'assistant',
+      content: message.content
+    }
+  }
+
+  private parseToolArguments(args: string): Record<string, unknown> {
+    if (!args.trim()) return {}
+    try {
+      return JSON.parse(args) as Record<string, unknown>
+    } catch {
+      return { input: args }
+    }
   }
 
   async listModels(): Promise<string[]> {

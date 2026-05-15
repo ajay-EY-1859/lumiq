@@ -3,7 +3,7 @@
 // Main chat interface with message list, streaming, and input
 // ═══════════════════════════════════════════════════════════════════
 
-import React, { useEffect, useRef, useCallback } from 'react'
+import React, { useEffect, useRef, useCallback, useState } from 'react'
 import { useChatStore } from '@renderer/store/chatStore'
 import { useSessionStore } from '@renderer/store/sessionStore'
 import { useProviderStore } from '@renderer/store/providerStore'
@@ -32,8 +32,22 @@ export function ChatPage(): React.JSX.Element {
     setPendingApproval,
     addMessage
   } = useChatStore()
-  const { activeSessionId, createSession } = useSessionStore()
+  const { activeSessionId, createSession, sessions, setWorkspace } = useSessionStore()
   const { activeProvider, activeModel } = useProviderStore()
+  const [taskMode, setTaskMode] = useState<string | null>(null)
+
+  const activeSession = sessions.find((s) => s.id === activeSessionId)
+
+  const handleSelectWorkspace = async (): Promise<void> => {
+    if (!activeSessionId) return
+    const result = await window.electronAPI.dialog.showOpenDialog({
+      properties: ['openDirectory']
+    })
+    if (!result.canceled && result.filePaths.length > 0) {
+      await setWorkspace(activeSessionId, result.filePaths[0])
+      await loadSession(activeSessionId)
+    }
+  }
 
   // Load session messages when active session changes
   useEffect(() => {
@@ -91,8 +105,13 @@ export function ChatPage(): React.JSX.Element {
 
       // Create a new session if none is active
       if (!sessionId) {
-        const session = await createSession(activeProvider, activeModel)
-        sessionId = session.id
+        try {
+          const session = await createSession(activeProvider, activeModel || 'default')
+          sessionId = session.id
+        } catch (err) {
+          setError(`Failed to create session: ${(err as Error).message}`)
+          return
+        }
       }
 
       // Add user message to local state immediately
@@ -105,9 +124,9 @@ export function ChatPage(): React.JSX.Element {
       })
 
       // Send via IPC
-      await sendMessage(message, sessionId, activeProvider, activeModel)
+      await sendMessage(message, sessionId, activeProvider, activeModel, undefined, taskMode || undefined)
     },
-    [activeSessionId, activeProvider, activeModel, sendMessage, createSession, addMessage]
+    [activeSessionId, activeProvider, activeModel, sendMessage, createSession, addMessage, taskMode]
   )
 
   // ── Empty State ──
@@ -132,12 +151,39 @@ export function ChatPage(): React.JSX.Element {
           Select a session from the sidebar or type a message to begin
         </div>
 
+        {error && (
+          <div
+            style={{
+              position: 'absolute',
+              bottom: '80px',
+              left: '16px',
+              right: '16px',
+              padding: '12px 16px',
+              background: 'rgba(220, 38, 38, 0.1)',
+              border: '1px solid var(--accent-red)',
+              borderRadius: '8px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}
+          >
+            <span style={{ color: 'var(--accent-red)' }}>⚠️</span>
+            <span style={{ flex: 1, fontSize: '13px', color: 'var(--accent-red)' }}>
+              {error}
+            </span>
+            <Button variant="outline" size="sm" onClick={() => setError(null)}>
+              Dismiss
+            </Button>
+          </div>
+        )}
+
         {/* Message input at the bottom */}
         <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0 }}>
           <MessageInput
             onSend={handleSend}
             onCancel={cancelStream}
             isStreaming={isStreaming}
+            onTaskModeChange={setTaskMode}
           />
         </div>
       </div>
@@ -154,6 +200,35 @@ export function ChatPage(): React.JSX.Element {
         position: 'relative'
       }}
     >
+      {/* Workspace Bar */}
+      {activeSessionId && (
+        <div style={{
+          padding: '8px 16px',
+          background: 'var(--bg-secondary)',
+          borderBottom: '1px solid var(--border)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          fontSize: '13px',
+          flexShrink: 0
+        }}>
+          <span style={{ color: 'var(--text-muted)' }}>📁 Workspace:</span>
+          {activeSession?.workspacePath ? (
+            <>
+              <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>{activeSession.workspacePath}</span>
+              <button 
+                onClick={handleSelectWorkspace}
+                style={{ background: 'none', border: 'none', color: 'var(--accent-blue)', cursor: 'pointer', fontSize: '13px', textDecoration: 'underline' }}
+              >
+                Change
+              </button>
+            </>
+          ) : (
+            <Button variant="outline" size="sm" onClick={handleSelectWorkspace}>Bind Workspace...</Button>
+          )}
+        </div>
+      )}
+
       {/* Message List */}
       <div
         style={{
@@ -214,6 +289,7 @@ export function ChatPage(): React.JSX.Element {
         onSend={handleSend}
         onCancel={cancelStream}
         isStreaming={isStreaming}
+        onTaskModeChange={setTaskMode}
       />
 
       {/* Tool Approval Dialog */}

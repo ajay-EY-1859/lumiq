@@ -11,6 +11,9 @@ import { GeminiProvider } from './GeminiProvider'
 import { OllamaProvider } from './OllamaProvider'
 import { DeepSeekProvider } from './DeepSeekProvider'
 import { BedrockProvider } from './BedrockProvider'
+import { GitHubProvider } from './GitHubProvider'
+import { OpenRouterProvider } from './OpenRouterProvider'
+import { GroqProvider } from './GroqProvider'
 import { CustomProvider } from './CustomProvider'
 
 export class ProviderFactory {
@@ -34,6 +37,12 @@ export class ProviderFactory {
         return new DeepSeekProvider(config)
       case 'bedrock':
         return new BedrockProvider(config)
+      case 'github':
+        return new GitHubProvider(config)
+      case 'openrouter':
+        return new OpenRouterProvider(config)
+      case 'groq':
+        return new GroqProvider(config)
       case 'custom':
         return new CustomProvider(config)
       default:

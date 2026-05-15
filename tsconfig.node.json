@@ -9,7 +9,7 @@
   "compilerOptions": {
     "composite": true,
     "outDir": "./out",
-    "baseUrl": ".",
+  "baseUrl": ".",
     "moduleResolution": "bundler",
     "paths": {
       "@shared/*": [

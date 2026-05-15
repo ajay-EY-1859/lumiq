@@ -19,7 +19,6 @@ asarUnpack:
 
 win:
   target: nsis
-  icon: build/icon.png
   executableName: Lumiq
 
 nsis:
@@ -32,13 +31,11 @@ nsis:
 
 mac:
   target: dmg
-  icon: build/icon.png
   category: public.app-category.developer-tools
 
 linux:
   target:
     - AppImage
     - deb
-  icon: build/icon.png
   category: Development
   maintainer: lumiq@example.com

@@ -11,6 +11,8 @@ export interface Message {
   role: 'user' | 'assistant' | 'system' | 'tool'
   content: string
   toolName?: string
+  toolCallId?: string
+  toolCalls?: ToolCall[]
   toolInput?: Record<string, unknown>
   toolResult?: string
   tokensUsed?: number
@@ -24,6 +26,7 @@ export interface Session {
   provider: string
   model: string
   agentId?: string
+  workspacePath?: string | null
   createdAt: string
   updatedAt: string
 }
@@ -36,6 +39,9 @@ export type ProviderType =
   | 'ollama'
   | 'deepseek'
   | 'bedrock'
+  | 'github'
+  | 'openrouter'
+  | 'groq'
   | 'custom'
 
 export type AuthMethod = 'apikey' | 'oauth'
@@ -75,6 +81,11 @@ export interface GoogleOAuthConfig {
   clientSecret: string
 }
 
+export interface GitHubOAuthConfig {
+  clientId: string
+  clientSecret: string
+}
+
 // ─── Agent ──────────────────────────────────────────────────────────
 export interface Agent {
   id: string
@@ -110,6 +121,7 @@ export interface SendOptions {
   maxTokens?: number
   onChunk?: (chunk: string) => void
   signal?: AbortSignal
+  tools?: AIToolDefinition[]
 }
 
 export interface SendResult {
@@ -125,6 +137,12 @@ export interface ToolCall {
   input: Record<string, unknown>
 }
 
+export interface AIToolDefinition {
+  name: string
+  description: string
+  inputSchema: Record<string, unknown>
+}
+
 export interface TestResult {
   success: boolean
   error?: string
@@ -134,6 +152,7 @@ export interface TestResult {
 export type ThemeMode = 'light' | 'dark' | 'system'
 export type FontSize = '12' | '14' | '16'
 export type ToolPermission = 'always-ask' | 'always-allow' | 'always-deny'
+export type PermissionMode = 'MANUAL' | 'LIMITED' | 'EXTENDED' | 'AUTO'
 
 export interface AppSettings {
   theme: ThemeMode
@@ -143,12 +162,70 @@ export interface AppSettings {
   sidebarVisible: boolean
   autoSave: boolean
   contextLimit: number
+  firecrawlApiKey?: string
 }
 
 export interface ToolSettings {
   name: string
   enabled: boolean
   permission: ToolPermission
+}
+
+// ─── MCP Servers ───────────────────────────────────────────────────
+export type McpServerStatus = 'stopped' | 'starting' | 'running' | 'error'
+
+export interface McpServer {
+  id: string
+  name: string
+  command: string
+  args: string[]
+  env: Record<string, string>
+  active: boolean
+  approved: boolean
+  status: McpServerStatus
+  lastError?: string
+  toolsCount: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface McpToolDefinition {
+  name: string
+  description: string
+  inputSchema: Record<string, unknown>
+}
+
+export interface McpStatusChange {
+  serverId: string
+  status: McpServerStatus
+  lastError?: string
+  toolsCount?: number
+}
+
+// ─── Agent Routing & Skills ────────────────────────────────────────
+export interface AgentRoute {
+  id: string
+  taskName: string
+  provider: ProviderType
+  model: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CustomSkill {
+  id: string
+  name: string
+  description: string
+  promptTemplate: string
+  allowedTools: string[]
+  createdAt: string
+  updatedAt: string
+}
+
+export interface GrpcStatus {
+  running: boolean
+  host: '127.0.0.1'
+  port: number
 }
 
 // ─── IPC Channels ───────────────────────────────────────────────────
@@ -175,6 +252,7 @@ export const IPC = {
   SESSION_DELETE: 'session:delete',
   SESSION_RENAME: 'session:rename',
   SESSION_EXPORT: 'session:export',
+  SESSION_SET_WORKSPACE: 'session:set-workspace',
 
   // Provider management
   PROVIDER_LIST: 'provider:list',
@@ -200,10 +278,89 @@ export const IPC = {
   AUTH_GOOGLE_STATUS: 'auth:google-status',
   AUTH_GOOGLE_SETUP: 'auth:google-setup',
   AUTH_GOOGLE_GET_SETUP: 'auth:google-get-setup',
+  AUTH_GITHUB_LOGIN: 'auth:github-login',
+  AUTH_GITHUB_LOGOUT: 'auth:github-logout',
+  AUTH_GITHUB_STATUS: 'auth:github-status',
+  AUTH_GITHUB_SETUP: 'auth:github-setup',
+  AUTH_GITHUB_GET_SETUP: 'auth:github-get-setup',
 
   // Shell
-  SHELL_OPEN_EXTERNAL: 'shell:open-external'
+  SHELL_OPEN_EXTERNAL: 'shell:open-external',
+
+  // Permission mode
+  PERMISSION_MODE_GET: 'permission:mode-get',
+  PERMISSION_MODE_SET: 'permission:mode-set',
+
+  // MCP servers
+  MCP_LIST: 'mcp:list',
+  MCP_SAVE: 'mcp:save',
+  MCP_DELETE: 'mcp:delete',
+  MCP_START: 'mcp:start',
+  MCP_STOP: 'mcp:stop',
+  MCP_TEST: 'mcp:test',
+  MCP_STATUS_CHANGE: 'mcp:status-change',
+  MCP_IMPORT: 'mcp:import',
+
+  // Agent routing
+  ROUTING_LIST: 'routing:list',
+  ROUTING_SAVE: 'routing:save',
+  ROUTING_DELETE: 'routing:delete',
+
+  // Custom skills
+  SKILL_LIST: 'skill:list',
+  SKILL_SAVE: 'skill:save',
+  SKILL_DELETE: 'skill:delete',
+  SKILL_IMPORT: 'skill:import',
+
+  // Local developer server
+  GRPC_START: 'grpc:start',
+  GRPC_STOP: 'grpc:stop',
+  GRPC_STATUS: 'grpc:status',
+  GRPC_CLIENT_CONNECTED: 'grpc:client-connected',
+  GRPC_ACTION_REQUIRED: 'grpc:action-required',
+
+  // Dialog
+  DIALOG_SHOW_OPEN: 'dialog:show-open',
+
+  // File System
+  FS_LIST_DIR: 'fs:list-dir',
+  FS_READ_FILE: 'fs:read-file',
+  FS_WRITE_FILE: 'fs:write-file',
+  FS_FILE_MODIFIED: 'fs:file-modified',
+
+  // Tasks
+  TASK_RUN: 'task:run',
+  TASK_STOP: 'task:stop',
+  TASK_OUTPUT: 'task:output',
+  TASK_EXIT: 'task:exit'
 } as const
+
+// ─── Task Types ──────────────────────────────────────────────────────
+export interface TaskProblem {
+  file: string
+  line: number
+  column: number
+  message: string
+  severity: 'error' | 'warning'
+}
+
+export interface TaskLog {
+  id: string
+  timestamp: number
+  data: string
+  type: 'stdout' | 'stderr' | 'system'
+}
+
+export interface TaskState {
+  id: string
+  name: string
+  command: string
+  args: string[]
+  cwd: string
+  status: 'running' | 'success' | 'error' | 'stopped'
+  logs: TaskLog[]
+  problems: TaskProblem[]
+}
 
 // Type for IPC channel values
 export type IPCChannel = (typeof IPC)[keyof typeof IPC]
@@ -241,6 +398,25 @@ export const PROVIDER_MODELS: Record<ProviderType, { id: string; label: string }
     { id: 'anthropic.claude-haiku-4-20250506-v1:0', label: 'Claude Haiku 4 (Bedrock)' },
     { id: 'amazon.titan-text-express-v1', label: 'Titan Text Express' }
   ],
+  github: [
+    { id: 'openai/gpt-4.1', label: 'GPT-4.1 (GitHub Models)' },
+    { id: 'openai/gpt-4.1-mini', label: 'GPT-4.1 Mini (GitHub Models)' },
+    { id: 'openai/gpt-4o-mini', label: 'GPT-4o Mini (GitHub Models)' }
+  ],
+  openrouter: [
+    { id: 'anthropic/claude-sonnet-4-20250514', label: 'Claude Sonnet 4 (OpenRouter)' },
+    { id: 'openai/gpt-4o', label: 'GPT-4o (OpenRouter)' },
+    { id: 'google/gemini-2.5-pro-preview', label: 'Gemini 2.5 Pro (OpenRouter)' },
+    { id: 'meta-llama/llama-3.3-70b-instruct', label: 'Llama 3.3 70B (OpenRouter)' },
+    { id: 'deepseek/deepseek-chat-v3', label: 'DeepSeek V3 (OpenRouter)' },
+    { id: 'qwen/qwen-2.5-coder-32b-instruct', label: 'Qwen 2.5 Coder 32B (OpenRouter)' }
+  ],
+  groq: [
+    { id: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B (Groq)' },
+    { id: 'llama-3.1-8b-instant', label: 'Llama 3.1 8B Instant (Groq)' },
+    { id: 'mixtral-8x7b-32768', label: 'Mixtral 8x7B (Groq)' },
+    { id: 'gemma2-9b-it', label: 'Gemma 2 9B (Groq)' }
+  ],
   custom: []
 }
 
@@ -252,5 +428,8 @@ export const PROVIDER_CONSOLE_URLS: Record<ProviderType, { label: string; url: s
   ollama: null, // Local — no URL needed
   deepseek: { label: 'DeepSeek Platform', url: 'https://platform.deepseek.com/api_keys' },
   bedrock: { label: 'AWS Console', url: 'https://console.aws.amazon.com/bedrock/' },
+  github: { label: 'GitHub Tokens', url: 'https://github.com/settings/tokens' },
+  openrouter: { label: 'OpenRouter Keys', url: 'https://openrouter.ai/keys' },
+  groq: { label: 'Groq Console', url: 'https://console.groq.com/keys' },
   custom: null
 }

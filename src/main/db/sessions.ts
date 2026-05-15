@@ -31,7 +31,7 @@ export function createSession(provider: string, model: string, agentId?: string)
 export function listSessions(): Session[] {
   const db = getDatabase()
   const stmt = db.prepare(`
-    SELECT id, title, provider, model, agent_id as agentId,
+    SELECT id, title, provider, model, agent_id as agentId, workspace_path as workspacePath,
            created_at as createdAt, updated_at as updatedAt
     FROM sessions
     ORDER BY updated_at DESC
@@ -45,7 +45,7 @@ export function listSessions(): Session[] {
 export function getSession(sessionId: string): Session | null {
   const db = getDatabase()
   const stmt = db.prepare(`
-    SELECT id, title, provider, model, agent_id as agentId,
+    SELECT id, title, provider, model, agent_id as agentId, workspace_path as workspacePath,
            created_at as createdAt, updated_at as updatedAt
     FROM sessions
     WHERE id = ?
@@ -78,6 +78,17 @@ export function touchSession(sessionId: string): void {
 }
 
 /**
+ * Updates the session's workspace path.
+ */
+export function updateSessionWorkspace(sessionId: string, workspacePath: string | null): void {
+  const db = getDatabase()
+  const stmt = db.prepare(`
+    UPDATE sessions SET workspace_path = ?, updated_at = ? WHERE id = ?
+  `)
+  stmt.run(workspacePath, new Date().toISOString(), sessionId)
+}
+
+/**
  * Deletes a session and all its messages (CASCADE).
  */
 export function deleteSession(sessionId: string): boolean {
@@ -96,7 +107,7 @@ export function searchSessions(query: string): Session[] {
   // Escape LIKE wildcards in user input
   const escapedQuery = query.replace(/[%_\\]/g, '\\$&')
   const stmt = db.prepare(`
-    SELECT id, title, provider, model, agent_id as agentId,
+    SELECT id, title, provider, model, agent_id as agentId, workspace_path as workspacePath,
            created_at as createdAt, updated_at as updatedAt
     FROM sessions
     WHERE title LIKE ? ESCAPE '\\'

@@ -1,299 +1,87 @@
-# 📋 PRODUCT REQUIREMENTS DOCUMENT (PRD)
-## Lumiq — openclaude GUI
+# Product Requirements: Lumiq Hybrid AI IDE
 
-**Version:** 1.0
-**Date:** April 27, 2026
-**Status:** Ready for Development
+Last updated: 2026-05-12
 
----
+## Product Direction
 
-## 1. EXECUTIVE SUMMARY
+Lumiq will become a hybrid AI IDE:
 
-### 1.1 Purpose
-Build a **native desktop GUI application** that wraps the `openclaude` agentic engine. Users get all the power of openclaude (multi-provider AI, tool execution, session history, custom agents) without needing a terminal — through a clean, modern windowed interface.
+- A standalone desktop IDE experience for agentic coding workflows.
+- A VS Code companion client for users who want Lumiq's engine inside their existing editor.
 
-### 1.2 The Problem
-`openclaude` is powerful but terminal-only. Non-developers, business users, and anyone who prefers a GUI cannot use it comfortably. A proper desktop app removes this barrier.
+Current readiness as a full AI IDE is about 35-40%. The AI agent foundation exists, but the IDE shell and code-editing workflow are still incomplete.
 
-### 1.3 Target Audience
-- **Developers** who want a GUI alternative to CLI tools
-- **Business users** who need AI assistance without terminal knowledge
-- **Data scientists** who switch between multiple AI providers
-- **Power users** who want agentic automation with visual control
+## Current Users
 
-### 1.4 Key Value Propositions
-1. **No Terminal Required** — Full agentic power in a windowed app
-2. **Multi-Provider** — Switch between Anthropic, OpenAI, Gemini, Ollama in one click
-3. **Visual Tool Control** — See and approve every tool call before it runs
-4. **Session History** — All conversations saved, searchable, resumable
-5. **Custom Agents** — Build and save specialized AI agents via GUI
+- Developers who want a desktop agent app with explicit tool approvals.
+- Power users who need multiple model providers and routing.
+- Teams experimenting with MCP and local developer-server workflows.
+- VS Code users who want a companion bridge to Lumiq.
 
----
+## Implemented Product Capabilities
 
-## 2. USER STORIES
+- Multi-provider AI chat with persisted sessions.
+- Agent tool calls with GUI approvals and permission modes.
+- Provider settings, model selection, custom agents, routing, and skills.
+- MCP server management MVP.
+- Local gRPC developer server.
+- VS Code extension scaffold.
 
-### 2.1 As a Developer
-| # | Story | Acceptance Criteria |
-|---|-------|---------------------|
-| US1 | I want to chat with different AI models | Provider dropdown in header, switch without losing context |
-| US2 | I want to run agentic tasks with tool use | Tool approval dialog appears before each tool execution |
-| US3 | I want to see file edits as diffs | FileEditTool shows before/after diff in approval dialog |
-| US4 | I want to resume past sessions | Sidebar shows all sessions, click to load |
-| US5 | I want keyboard shortcuts | Ctrl+N new session, Ctrl+Enter send, Ctrl+B sidebar |
+## AI IDE Requirements
 
-### 2.2 As a Business User
-| # | Story | Acceptance Criteria |
-|---|-------|---------------------|
-| US6 | I want to add my API key without editing files | Settings > API Providers > Add Key form |
-| US7 | I want dark/light theme | Theme toggle in settings, persists across restarts |
-| US8 | I want to export a conversation | Right-click session > Export as Markdown/JSON |
-| US9 | I want clear error messages | Toast notification with error + suggested fix |
+### Milestone 1: Stabilize Existing App
 
-### 2.3 As a Power User
-| # | Story | Acceptance Criteria |
-|---|-------|---------------------|
-| US10 | I want to create custom agents | Agent Builder page with name, system prompt, tools |
-| US11 | I want to control which tools are allowed | Per-tool toggle in Settings > Tools |
-| US12 | I want to use local Ollama models | Ollama provider auto-detects localhost:11434 |
-| US13 | I want streaming responses | Tokens appear in real-time as AI generates |
-| US14 | I want to cancel a running response | Cancel button appears during streaming |
+Acceptance:
 
----
+- `npm run typecheck`, `npm run lint`, and `npm run build` pass.
+- Tool approval works from chat and gRPC-triggered flows when the app window is open.
+- Default tool settings include all built-in tools.
+- README and docs describe current behavior accurately.
 
-## 3. FUNCTIONAL REQUIREMENTS
+### Milestone 2: Workspace Shell
 
-### F1: Chat Interface
-- **F1.1** Multi-line message input with Shift+Enter for newlines
-- **F1.2** Send on Enter or Send button click
-- **F1.3** Streaming response — tokens appear in real-time
-- **F1.4** Cancel button during streaming
-- **F1.5** Markdown rendering in responses (headers, bold, code blocks, tables)
-- **F1.6** Syntax-highlighted code blocks with copy button
-- **F1.7** Typing indicator (animated dots) while waiting for first token
-- **F1.8** Auto-scroll to latest message
-- **F1.9** Message timestamps on hover
+Acceptance:
 
-### F2: Provider & Model Selection
-- **F2.1** Provider dropdown in header (Anthropic, OpenAI, Gemini, Ollama, DeepSeek, Custom)
-- **F2.2** Model dropdown filtered by selected provider
-- **F2.3** Provider connection status indicator (green dot = connected)
-- **F2.4** Fallback to static model list if provider API unavailable
+- User can bind a session to a workspace folder.
+- User can browse files in a project explorer.
+- User can open files in editor tabs.
+- Session state remembers workspace, open files, model, route, and todos.
 
-### F3: Tool Execution
-- **F3.1** Before any tool runs, show approval dialog with:
-  - Tool name and description
-  - Tool arguments (formatted JSON)
-  - Approve / Deny / Always Allow buttons
-- **F3.2** Tool result shown inline in chat after execution
-- **F3.3** FileEditTool shows diff view (before/after) in approval dialog
-- **F3.4** BashTool shows command in monospace font
-- **F3.5** Tool execution can be cancelled mid-run
-- **F3.6** "Always Allow" saves permission for session duration
+### Milestone 3: Diff-First Editing
 
-### F4: Session Management
-- **F4.1** All sessions saved to SQLite automatically
-- **F4.2** Sidebar shows session list (title, date, model badge)
-- **F4.3** Session title auto-generated from first user message
-- **F4.4** Click session to load full history
-- **F4.5** New session button (Ctrl+N)
-- **F4.6** Delete session with confirmation dialog
-- **F4.7** Search sessions by title/content
+Acceptance:
 
-### F5: API Key Management
-- **F5.1** Settings > API Providers tab
-- **F5.2** Per-provider form: API Key (masked), Base URL, Default Model
-- **F5.3** "Test Connection" button — shows success/failure toast
-- **F5.4** Keys encrypted at rest (AES-256-GCM)
-- **F5.5** Keys stored in OS keychain (Windows Credential Manager / macOS Keychain)
-- **F5.6** Keys never logged or transmitted except to the provider
+- Agent edits are shown as diffs before applying.
+- User can accept or reject per file and per hunk.
+- Applied edits are persisted and visible in chat history.
 
-### F6: Custom Agents
-- **F6.1** Agent Builder page: Name, Description, System Prompt, Model, Tools
-- **F6.2** Save agent to database
-- **F6.3** Select agent from dropdown in chat header
-- **F6.4** Agent's system prompt prepended to every conversation
-- **F6.5** Per-agent tool permissions
+### Milestone 4: Terminal, Tasks, and Problems
 
-### F7: Settings
-- **F7.1** Theme: Light / Dark / System
-- **F7.2** Default provider and model
-- **F7.3** Tool permissions (global defaults)
-- **F7.4** Font size (12px / 14px / 16px)
-- **F7.5** Message history limit (context window management)
-- **F7.6** Auto-save conversations toggle
-- **F7.7** Keyboard shortcuts reference
+Acceptance:
 
-### F8: Data Management
-- **F8.1** Export session as Markdown
-- **F8.2** Export session as JSON
-- **F8.3** Import session from JSON file
-- **F8.4** Clear all history (with confirmation)
-- **F8.5** Auto-backup to user data folder daily
+- App includes an embedded terminal or controlled task runner.
+- Build, lint, typecheck, and test output can feed a problems panel.
+- Problems are clickable and can be sent to Lumiq for repair.
 
----
+### Milestone 5: Code Intelligence
 
-## 4. NON-FUNCTIONAL REQUIREMENTS
+Acceptance:
 
-### Performance
-- App startup: < 3 seconds
-- First token from API: < 2 seconds (network dependent)
-- UI frame rate: 60fps during streaming
-- Memory: < 300MB during normal use
-- SQLite queries: < 50ms
+- Symbols, outline, and go-to-definition are backed by LSP or equivalent language services.
+- Chat context can include selected symbols, files, diagnostics, and workspace metadata.
 
-### Reliability
-- App never crashes on API errors — shows error toast instead
-- Sessions auto-saved after every message
-- Graceful handling of network disconnection
-- Tool execution errors shown in chat, don't crash app
+### Milestone 6: VS Code Companion
 
-### Security
-- API keys encrypted at rest (AES-256-GCM)
-- No API keys in logs or error messages
-- All external calls over HTTPS
-- Tool execution requires explicit user approval
-- BashTool disabled by default, must be explicitly enabled
+Acceptance:
 
-### Usability
-- New user can send first message within 2 minutes of install
-- All actions accessible via keyboard
-- Error messages include suggested fix
-- Loading states for all async operations
+- Extension has connection status and sidebar/webview.
+- Extension can preview and apply inline diffs.
+- Extension can send selected code, files, diagnostics, and workspace context to Lumiq.
 
-### Compatibility
-- Windows 10+ (64-bit)
-- macOS 10.15+ (Intel + Apple Silicon)
-- Linux: Ubuntu 20.04+, Fedora 35+
-- Installer size: < 150MB
+## Out of Scope For The Next Stabilization Pass
 
----
-
-## 5. UI LAYOUT
-
-### Main Window
-```
-┌──────────────────────────────────────────────────────────────┐
-│ TitleBar: [Logo] Agentic Desktop    [Provider▼] [Model▼] [─□×]│
-├──────────────────────────────────────────────────────────────┤
-│ Sidebar (240px)    │  Chat Area                              │
-│                    │                                         │
-│ [+ New Session]    │  ┌─────────────────────────────────┐   │
-│                    │  │ MessageList (scrollable)         │   │
-│ Sessions:          │  │                                  │   │
-│ • Today            │  │  [User] Hello, help me with...   │   │
-│   ○ Fix bug #123   │  │                                  │   │
-│   ○ Write tests    │  │  [AI] Sure! Here's how...        │   │
-│ • Yesterday        │  │  ```python                       │   │
-│   ○ API design     │  │  def example():                  │   │
-│                    │  │  ```                             │   │
-│ ─────────────────  │  │                                  │   │
-│ [Agents]           │  │  [Tool: BashTool] ← approval     │   │
-│ [Settings]         │  │                                  │   │
-│                    │  └─────────────────────────────────┘   │
-│                    │                                         │
-│                    │  ┌─────────────────────────────────┐   │
-│                    │  │ MessageInput                     │   │
-│                    │  │ Type a message...          [Send]│   │
-│                    │  └─────────────────────────────────┘   │
-├──────────────────────────────────────────────────────────────┤
-│ StatusBar: Ready | claude-sonnet-4 | 1,234 tokens           │
-└──────────────────────────────────────────────────────────────┘
-```
-
-### Tool Approval Dialog
-```
-┌─────────────────────────────────────────┐
-│ 🔧 Tool Execution Request               │
-├─────────────────────────────────────────┤
-│ Tool: BashTool                          │
-│                                         │
-│ Command:                                │
-│ ┌─────────────────────────────────────┐ │
-│ │ npm test --coverage                 │ │
-│ └─────────────────────────────────────┘ │
-│                                         │
-│ Working Directory: /home/user/project   │
-│                                         │
-│ [Deny]  [Always Allow]  [Approve]       │
-└─────────────────────────────────────────┘
-```
-
----
-
-## 6. ACCEPTANCE CRITERIA
-
-### Functional
-| Feature | Criteria |
-|---------|----------|
-| Chat | Send message → receive streaming response |
-| Providers | All 5 providers connect and respond |
-| Tools | Tool approval dialog appears, tool runs after approval |
-| Sessions | Sessions persist after app restart |
-| API Keys | Keys save encrypted, load on restart |
-| Agents | Custom agent system prompt applied to conversation |
-| Theme | Dark/light toggle works, persists |
-
-### Technical
-| Requirement | Criteria |
-|-------------|----------|
-| Startup | App opens in < 3 seconds |
-| Streaming | Tokens appear in real-time, no batching |
-| Memory | < 300MB after 30 minutes of use |
-| Packaging | Installer works on Win/Mac/Linux |
-
----
-
-## 7. OUT OF SCOPE (v1)
-
-- Mobile app
-- Cloud sync of sessions
-- Real-time collaboration
-- Voice input/output
-- Plugin marketplace
-- Fine-tuning integration
-- Multi-window support
-
----
-
-## 8. FUTURE ENHANCEMENTS
-
-1. Plugin system (install community tools)
-2. Voice input (Whisper integration)
-3. Image input (vision models)
-4. Cloud backup of sessions
-5. Team sharing of agents
-6. Workflow automation builder
-7. MCP (Model Context Protocol) server support
-
----
-
-## 🤖 AGENT INSTRUCTIONS
-
-### On Error
-Jab bhi koi error aaye task execute karte waqt, turant ek file banao:
-**Filename:** `ERROR_LOG.md`
-
-File mein yeh sab likho:
-- Kaunsa task chal raha tha jab error aaya
-- Error ka poora message (exact text)
-- Kaunsi file ya line mein error tha
-- Sambhavit karan (possible cause)
-- Kya try kiya tha solve karne ke liye
-- Agle steps kya hone chahiye
-
-### On Interruption or Risk
-Jab bhi task execution achanak band ho ya khatre mein ho, turant ek file banao:
-**Filename:** `REMAINING_PLAN.md`
-
-File mein yeh sab likho:
-- Kya kaam poora ho chuka hai (completed tasks)
-- Kaunsa kaam chal raha tha jab ruka (in-progress task)
-- Kya kaam abhi bacha hai (pending tasks)
-- Koi important context jo agli baar kaam aaye
-
----
-
-**Document Version:** 1.0
-**Author:** Project Team
-**Last Updated:** April 27, 2026
-**Status:** Ready for Development
+- Cloud sync.
+- Remote gRPC hosting.
+- Multi-agent swarms.
+- Plugin marketplace.
+- Voice and notebook workflows.

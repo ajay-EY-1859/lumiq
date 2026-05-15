@@ -1,4 +1,4 @@
-// ═══════════════════════════════════════════════════════════════════
+﻿// ═══════════════════════════════════════════════════════════════════
 // Lumiq — Chat IPC Handlers
 // Handles chat:send, chat:cancel
 // ═══════════════════════════════════════════════════════════════════
@@ -9,6 +9,35 @@ import { agentLoop } from '../agent/AgentLoop'
 import { getSessionMessages } from '../db/messages'
 import { getApiConfig } from '../db/apiConfigs'
 import { getSession } from '../db/sessions'
+import { getAgentRoute } from '../db/agentRoutes'
+import { getAgent } from '../db/agents'
+
+const DEFAULT_SYSTEM_PROMPT = `You are Lumiq, an advanced agentic AI coding assistant embedded in a desktop IDE.
+You operate directly on the user's local file system within a designated workspace directory.
+Your primary mode of operation is ACTION — use your tools to accomplish tasks rather than just describing what to do.
+
+═══ CORE PRINCIPLES ═══
+
+1. ACT, DON'T JUST TALK
+   - When the user asks you to write code, create files, fix bugs, or build anything — DO IT using your tools.
+   - Never paste large code blocks in chat when you should be writing them to files.
+   - After completing an action, give a concise summary of what you did.
+
+2. UNDERSTAND BEFORE ACTING
+   - Before modifying or creating anything, scout the workspace to understand existing project structure.
+   - Use GlobTool to discover project layout (e.g., "**/*.ts", "**/*.java", "*.json").
+   - Use FileReadTool to read key config files (package.json, pom.xml, build.gradle, etc.) to understand tech stack, dependencies, and conventions.
+   - Use GrepTool to find specific patterns, function definitions, or usages across the codebase.
+   - This scouting phase prevents you from creating duplicate files, breaking conventions, or overwriting important content.
+
+3. RESPECT THE WORKSPACE
+   - All file operations must stay within the workspace directory unless the user explicitly asks otherwise.
+   - Use RELATIVE paths rooted at the workspace directory for all tool calls.
+   - Never create files in system directories, temp folders, or outside the workspace.
+
+4. SAFETY
+   - Do not expose API keys, secrets, or sensitive data in chat or file contents.
+`
 
 export function registerChatHandlers(): void {
   // ── Send message ──
@@ -22,13 +51,23 @@ export function registerChatHandlers(): void {
         provider: string
         model: string
         systemPrompt?: string
+        taskMode?: string
       }
     ) => {
-      const { message, sessionId, provider, model, systemPrompt } = data
+      const { message, sessionId, systemPrompt, taskMode } = data
+      let { provider, model } = data
 
       // Validate input
       if (!message || !sessionId || !provider || !model) {
         throw new Error('Missing required fields: message, sessionId, provider, model')
+      }
+
+      if (taskMode) {
+        const route = getAgentRoute(taskMode)
+        if (route) {
+          provider = route.provider
+          model = route.model
+        }
       }
 
       // Get provider config (with decrypted keys)
@@ -45,10 +84,33 @@ export function registerChatHandlers(): void {
 
       const messages = getSessionMessages(sessionId)
 
+      let finalSystemPrompt = systemPrompt
+      if (!finalSystemPrompt) {
+        if (session.agentId) {
+          const agent = getAgent(session.agentId)
+          if (agent) {
+            finalSystemPrompt = agent.systemPrompt
+          }
+        }
+      }
+      
+      if (!finalSystemPrompt) {
+        finalSystemPrompt = DEFAULT_SYSTEM_PROMPT
+      }
+
+      if (session.workspacePath) {
+        finalSystemPrompt += `\n\n═══ ENVIRONMENT ═══\nWORKSPACE: ${session.workspacePath}\nPLATFORM: ${process.platform} (${process.arch})\nSHELL: ${process.platform === 'win32' ? 'PowerShell (prefer PowerShellTool for native ops)' : 'Bash'}
+All file paths should be relative to the workspace directory above. Use it as the base/cwd for all tool calls.`
+      }
+
+      // Set workspace path on tool executor so tools default to workspace
+      // instead of process.cwd() (which is Electron's install directory)
+      agentLoop.getToolExecutor().setWorkspacePath(session.workspacePath || null)
+
       // Process through agent loop (handles streaming internally)
       await agentLoop.processMessage(message, sessionId, messages, config, {
         model,
-        systemPrompt
+        systemPrompt: finalSystemPrompt
       })
     }
   )
@@ -58,3 +120,4 @@ export function registerChatHandlers(): void {
     agentLoop.cancel()
   })
 }
+

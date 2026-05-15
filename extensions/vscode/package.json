@@ -1,0 +1,48 @@
+{
+  "name": "lumiq-vscode",
+  "displayName": "Lumiq",
+  "description": "Send selected text to the local Lumiq developer server.",
+  "version": "0.1.0",
+  "publisher": "lumiq",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": ["onCommand:lumiq.sendSelection"],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "lumiq.sendSelection",
+        "title": "Lumiq: Send Selection"
+      }
+    ],
+    "configuration": {
+      "title": "Lumiq",
+      "properties": {
+        "lumiq.grpcPort": {
+          "type": "number",
+          "default": 43187,
+          "description": "Local Lumiq gRPC server port."
+        },
+        "lumiq.grpcAuthToken": {
+          "type": "string",
+          "default": "",
+          "description": "Bearer token used to authenticate with the local Lumiq gRPC server."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./"
+  },
+  "dependencies": {
+    "@grpc/grpc-js": "^1.14.3",
+    "@grpc/proto-loader": "^0.8.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/vscode": "^1.90.0",
+    "typescript": "^5.7.2"
+  }
+}

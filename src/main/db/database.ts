@@ -8,6 +8,7 @@ import Database from 'better-sqlite3'
 import { app } from 'electron'
 import { join } from 'path'
 import { existsSync, mkdirSync } from 'fs'
+import { DEFAULT_TOOL_SETTINGS } from '../tools/defaultToolSettings'
 
 let db: Database.Database | null = null
 
@@ -90,6 +91,7 @@ function runMigrations(database: Database.Database): void {
         provider TEXT NOT NULL,
         model TEXT NOT NULL,
         agent_id TEXT,
+        workspace_path TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
@@ -150,6 +152,16 @@ function runMigrations(database: Database.Database): void {
         ON sessions(title);
     `)
 
+    // ── Migration 3: session_todos table ─────────────────────────
+    database.exec(`
+      CREATE TABLE IF NOT EXISTS session_todos (
+        session_id TEXT PRIMARY KEY,
+        todos TEXT NOT NULL DEFAULT '[]',
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+      );
+    `)
+
     // ── Migration 4: Add auth_method to api_configs ───────────────
     // Needed for OAuth-based provider authentication
     try {
@@ -158,7 +170,88 @@ function runMigrations(database: Database.Database): void {
       // Column already exists — ignore
     }
 
-    // ── Migration 3: Default settings ─────────────────────────────
+    // ── Migration 5: v2 MVP tables ────────────────────────────────
+    database.exec(`
+      CREATE TABLE IF NOT EXISTS mcp_servers (
+        id TEXT PRIMARY KEY,
+        name TEXT UNIQUE NOT NULL,
+        command TEXT NOT NULL,
+        args TEXT NOT NULL DEFAULT '[]',
+        env TEXT NOT NULL DEFAULT '{}',
+        active INTEGER DEFAULT 1,
+        approved INTEGER DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'stopped',
+        last_error TEXT,
+        tools_count INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS agent_routes (
+        id TEXT PRIMARY KEY,
+        task_name TEXT UNIQUE NOT NULL,
+        provider TEXT NOT NULL,
+        model TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS skills (
+        id TEXT PRIMARY KEY,
+        name TEXT UNIQUE NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        prompt_template TEXT NOT NULL,
+        allowed_tools TEXT NOT NULL DEFAULT '[]',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS oauth_tokens (
+        provider TEXT PRIMARY KEY,
+        access_token_encrypted TEXT NOT NULL,
+        refresh_token_encrypted TEXT,
+        expires_at INTEGER NOT NULL,
+        token_type TEXT DEFAULT 'Bearer',
+        scope TEXT,
+        email TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS oauth_config (
+        provider TEXT PRIMARY KEY,
+        client_id_encrypted TEXT NOT NULL,
+        client_secret_encrypted TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_mcp_servers_name ON mcp_servers(name);
+      CREATE INDEX IF NOT EXISTS idx_agent_routes_task ON agent_routes(task_name);
+      CREATE INDEX IF NOT EXISTS idx_skills_name ON skills(name);
+    `)
+
+    // ── Migration 6: Add workspace_path to sessions ───────────────
+    try {
+      database.exec(`ALTER TABLE sessions ADD COLUMN workspace_path TEXT`)
+    } catch {
+      // Column already exists — ignore
+    }
+
+    // ── Migration 8: Add tool_call_id to messages ──────────────────
+    // Required for Bedrock provider to map tool results back to tool calls
+    try {
+      database.exec(`ALTER TABLE messages ADD COLUMN tool_call_id TEXT`)
+    } catch {
+      // Column already exists — ignore
+    }
+
+    // ── Migration 9: Add tool_calls JSON to messages ──────────────────
+    // Persists assistant toolCalls array so history can be replayed correctly
+    try {
+      database.exec(`ALTER TABLE messages ADD COLUMN tool_calls TEXT`)
+    } catch {
+      // Column already exists — ignore
+    }
+
+    // ── Migration 7: Default settings ─────────────────────────────
     const insertSetting = database.prepare(`
       INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)
     `)
@@ -169,21 +262,13 @@ function runMigrations(database: Database.Database): void {
     insertSetting.run('defaultModel', 'claude-sonnet-4-20250514')
     insertSetting.run('sidebarVisible', 'true')
     insertSetting.run('autoSave', 'true')
-    insertSetting.run('contextLimit', '50')
+    insertSetting.run('contextLimit', '150')
+
+    insertSetting.run('permissionMode', 'MANUAL')
+    insertSetting.run('firecrawlApiKey', '')
 
     // Default tool settings
-    const defaultTools = [
-      { name: 'BashTool', enabled: false, permission: 'always-ask' }, // Disabled by default!
-      { name: 'FileReadTool', enabled: true, permission: 'always-allow' },
-      { name: 'FileWriteTool', enabled: true, permission: 'always-ask' },
-      { name: 'FileEditTool', enabled: true, permission: 'always-ask' },
-      { name: 'GlobTool', enabled: true, permission: 'always-allow' },
-      { name: 'GrepTool', enabled: true, permission: 'always-allow' },
-      { name: 'WebFetchTool', enabled: true, permission: 'always-ask' },
-      { name: 'WebSearchTool', enabled: true, permission: 'always-allow' }
-    ]
-
-    insertSetting.run('toolSettings', JSON.stringify(defaultTools))
+    insertSetting.run('toolSettings', JSON.stringify(DEFAULT_TOOL_SETTINGS))
   })
 
   migrate()

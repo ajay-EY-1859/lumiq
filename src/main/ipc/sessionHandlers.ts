@@ -10,9 +10,11 @@ import {
   listSessions,
   deleteSession,
   updateSessionTitle,
-  getSession
+  getSession,
+  updateSessionWorkspace
 } from '../db/sessions'
 import { getSessionMessages } from '../db/messages'
+import { setWorkspaceRoot } from '../security/pathValidation'
 
 export function registerSessionHandlers(): void {
   // ── List all sessions ──
@@ -24,6 +26,10 @@ export function registerSessionHandlers(): void {
   ipcMain.handle(IPC.SESSION_LOAD, (_event, sessionId: string) => {
     const session = getSession(sessionId)
     if (!session) throw new Error(`Session "${sessionId}" not found`)
+    
+    // Authorize this session's workspace for file operations
+    setWorkspaceRoot(session.workspacePath || null)
+
     const messages = getSessionMessages(sessionId)
     return { session, messages }
   })
@@ -46,6 +52,16 @@ export function registerSessionHandlers(): void {
     IPC.SESSION_RENAME,
     (_event, data: { sessionId: string; title: string }) => {
       updateSessionTitle(data.sessionId, data.title)
+    }
+  )
+
+  // ── Set Workspace ──
+  ipcMain.handle(
+    IPC.SESSION_SET_WORKSPACE,
+    (_event, data: { sessionId: string; workspacePath: string | null }) => {
+      updateSessionWorkspace(data.sessionId, data.workspacePath)
+      // Immediately authorize the new workspace
+      setWorkspaceRoot(data.workspacePath)
     }
   )
 

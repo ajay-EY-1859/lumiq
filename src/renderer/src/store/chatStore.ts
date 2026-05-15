@@ -23,7 +23,7 @@ interface ChatState {
   clearMessages: () => void
 
   loadSession: (sessionId: string) => Promise<void>
-  sendMessage: (message: string, sessionId: string, provider: string, model: string, systemPrompt?: string) => Promise<void>
+  sendMessage: (message: string, sessionId: string, provider: string, model: string, systemPrompt?: string, taskMode?: string) => Promise<void>
   cancelStream: () => Promise<void>
   respondToApproval: (requestId: string, approved: boolean, alwaysAllow: boolean) => Promise<void>
 }
@@ -56,10 +56,10 @@ export const useChatStore = create<ChatState>((set) => ({
     }
   },
 
-  sendMessage: async (message, sessionId, provider, model, systemPrompt) => {
+  sendMessage: async (message, sessionId, provider, model, systemPrompt, taskMode) => {
     set({ isStreaming: true, streamingContent: '', error: null })
     try {
-      await window.electronAPI.chat.send(message, sessionId, provider, model, systemPrompt)
+      await window.electronAPI.chat.send(message, sessionId, provider, model, systemPrompt, taskMode)
     } catch (error) {
       set({ isStreaming: false, error: (error as Error).message })
     }

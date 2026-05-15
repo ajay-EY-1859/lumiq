@@ -2,9 +2,11 @@
 // Lumiq — FileEditTool
 // ═══════════════════════════════════════════════════════════════════
 
-import { readFileSync, writeFileSync, existsSync } from 'fs'
-import { resolve } from 'path'
+import { existsSync, readFileSync, statSync, writeFileSync } from 'fs'
 import type { Tool } from './Tool'
+import { validatePathWithinWorkspace } from '../security/pathValidation'
+
+const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB limit
 
 export class FileEditTool implements Tool {
   name = 'FileEditTool'
@@ -21,19 +23,30 @@ export class FileEditTool implements Tool {
   }
 
   async execute(input: Record<string, unknown>): Promise<string> {
-    const filePath = resolve(input.path as string)
+    let filePath: string
     const oldString = input.old_string as string
     const newString = input.new_string as string
 
-    if (filePath.includes('\0')) {
-      return '[ERROR] Invalid file path'
+    try {
+      filePath = validatePathWithinWorkspace(input.path as string)
+    } catch (error) {
+      return `[ERROR] ${(error as Error).message}`
     }
 
     if (!existsSync(filePath)) {
       return `[ERROR] File not found: ${filePath}`
     }
 
+    if (!oldString) {
+      return '[ERROR] old_string cannot be empty.'
+    }
+
     try {
+      const stats = statSync(filePath)
+      if (stats.size > MAX_FILE_SIZE) {
+        return `[ERROR] File too large (${(stats.size / 1024 / 1024).toFixed(1)}MB). Max: 10MB`
+      }
+
       const content = readFileSync(filePath, 'utf8')
 
       if (!content.includes(oldString)) {

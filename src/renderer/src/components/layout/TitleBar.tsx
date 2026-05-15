@@ -1,16 +1,12 @@
 // ═══════════════════════════════════════════════════════════════════
 // Lumiq — Custom TitleBar Component
-// Frameless window titlebar with window controls and provider/model
+// Frameless window titlebar with window controls
 // ═══════════════════════════════════════════════════════════════════
 
 import React, { useState, useEffect } from 'react'
-import { useProviderStore } from '@renderer/store/providerStore'
-import { PROVIDER_MODELS } from '@shared/types'
-import type { ProviderType } from '@shared/types'
 
 export function TitleBar(): React.JSX.Element {
   const [isMaximized, setIsMaximized] = useState(false)
-  const { activeProvider, activeModel, setActiveProvider, setActiveModel } = useProviderStore()
 
   useEffect(() => {
     const checkMaximized = async (): Promise<void> => {
@@ -19,18 +15,6 @@ export function TitleBar(): React.JSX.Element {
     }
     checkMaximized()
   }, [])
-
-  const providers: { id: ProviderType; label: string; emoji: string }[] = [
-    { id: 'anthropic', label: 'Anthropic', emoji: '🟣' },
-    { id: 'openai', label: 'OpenAI', emoji: '🟢' },
-    { id: 'gemini', label: 'Google', emoji: '🔵' },
-    { id: 'ollama', label: 'Ollama', emoji: '🦙' },
-    { id: 'deepseek', label: 'DeepSeek', emoji: '🔮' },
-    { id: 'bedrock', label: 'Bedrock', emoji: '🟠' },
-    { id: 'custom', label: 'Custom', emoji: '⚡' }
-  ]
-
-  const models = PROVIDER_MODELS[activeProvider] || []
 
   return (
     <div
@@ -64,56 +48,8 @@ export function TitleBar(): React.JSX.Element {
         </span>
       </div>
 
-      {/* Center: Provider and Model selectors */}
-      <div
-        className="titlebar-no-drag"
-        style={{ display: 'flex', gap: '6px', alignItems: 'center' }}
-      >
-        <select
-          value={activeProvider}
-          onChange={(e) => setActiveProvider(e.target.value as ProviderType)}
-          style={{
-            background: 'var(--bg-tertiary)',
-            color: 'var(--text-primary)',
-            border: '1px solid var(--border)',
-            borderRadius: '6px',
-            padding: '3px 8px',
-            fontSize: '12px',
-            fontFamily: 'var(--font-sans)',
-            cursor: 'pointer',
-            outline: 'none'
-          }}
-        >
-          {providers.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.emoji} {p.label}
-            </option>
-          ))}
-        </select>
-
-        <select
-          value={activeModel}
-          onChange={(e) => setActiveModel(e.target.value)}
-          style={{
-            background: 'var(--bg-tertiary)',
-            color: 'var(--text-primary)',
-            border: '1px solid var(--border)',
-            borderRadius: '6px',
-            padding: '3px 8px',
-            fontSize: '12px',
-            fontFamily: 'var(--font-sans)',
-            cursor: 'pointer',
-            outline: 'none',
-            maxWidth: '160px'
-          }}
-        >
-          {models.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.label}
-            </option>
-          ))}
-        </select>
-      </div>
+      {/* Center: Empty for future use */}
+      <div className="titlebar-no-drag" style={{ flex: 1 }}></div>
 
       {/* Right: Window controls */}
       <div

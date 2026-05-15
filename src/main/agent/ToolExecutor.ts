@@ -18,6 +18,32 @@ import { FileEditTool } from '../tools/FileEditTool'
 import { GlobTool } from '../tools/GlobTool'
 import { GrepTool } from '../tools/GrepTool'
 import { WebFetchTool } from '../tools/WebFetchTool'
+import { WebSearchTool } from '../tools/WebSearchTool'
+import { TodoWriteTool } from '../tools/TodoWriteTool'
+import { evaluatePermission, type PermissionMode } from '../security/permissions'
+import { mcpServerManager } from '../services/mcp/McpServerManager'
+import { McpDynamicTool } from '../tools/McpDynamicTool'
+import { PowerShellTool } from '../tools/PowerShellTool'
+import { SleepTool } from '../tools/SleepTool'
+import { ListDirTool } from '../tools/ListDirTool'
+import { FileDeleteTool } from '../tools/FileDeleteTool'
+import { FileMoveTool } from '../tools/FileMoveTool'
+import { MultiFileEditTool } from '../tools/MultiFileEditTool'
+import { GitTool } from '../tools/GitTool'
+import { TerminalTool } from '../tools/TerminalTool'
+import { NotebookTool } from '../tools/NotebookTool'
+import { DiffTool } from '../tools/DiffTool'
+import { ImageReadTool } from '../tools/ImageReadTool'
+import { FileSearchTool } from '../tools/FileSearchTool'
+import { ClipboardTool } from '../tools/ClipboardTool'
+import { ArchiveTool } from '../tools/ArchiveTool'
+import { HttpTool } from '../tools/HttpTool'
+import { EnvTool } from '../tools/EnvTool'
+import { setWorkspaceRoot } from '../security/pathValidation'
+
+// Read-only tools that can run concurrently
+const READ_ONLY_TOOLS = new Set(['FileReadTool', 'GrepTool', 'GlobTool', 'SleepTool', 'ListDirTool', 'GitTool', 'DiffTool', 'ImageReadTool', 'FileSearchTool', 'EnvTool'])
+const MAX_CONCURRENCY = 10
 
 // Pending approval requests
 const pendingApprovals = new Map<
@@ -25,10 +51,39 @@ const pendingApprovals = new Map<
   { resolve: (response: ToolApprovalResponse) => void }
 >()
 
+// Tools that accept a working directory parameter
+const CWD_TOOLS = new Set(['BashTool', 'PowerShellTool', 'GlobTool'])
+const PATH_TOOLS = new Set(['GrepTool'])
+
 export class ToolExecutor {
   private tools: Map<string, Tool>
   private toolSettings: Map<string, ToolSettings>
   private alwaysAllowed: Set<string> = new Set()
+  private permissionMode: PermissionMode = 'MANUAL'
+  private workspacePath: string | null = null
+
+  setPermissionMode(mode: PermissionMode): void {
+    this.permissionMode = mode
+  }
+
+  getPermissionMode(): PermissionMode {
+    return this.permissionMode
+  }
+
+  /**
+   * Sets the active workspace path. Tools that accept cwd/path will
+   * default to this instead of process.cwd() (which is the Electron
+   * install directory — not useful and potentially dangerous).
+   */
+  setWorkspacePath(path: string | null): void {
+    this.workspacePath = path
+    // Synchronize with the security validation module
+    setWorkspaceRoot(path)
+  }
+
+  getWorkspacePath(): string | null {
+    return this.workspacePath
+  }
 
   constructor() {
     this.tools = new Map()
@@ -44,11 +99,45 @@ export class ToolExecutor {
       new FileEditTool(),
       new GlobTool(),
       new GrepTool(),
-      new WebFetchTool()
+      new WebFetchTool(),
+      new WebSearchTool(),
+      new TodoWriteTool(),
+      new PowerShellTool(),
+      new SleepTool(),
+      new ListDirTool(),
+      new FileDeleteTool(),
+      new FileMoveTool(),
+      new MultiFileEditTool(),
+      new GitTool(),
+      new TerminalTool(),
+      new NotebookTool(),
+      new DiffTool(),
+      new ImageReadTool(),
+      new FileSearchTool(),
+      new ClipboardTool(),
+      new ArchiveTool(),
+      new HttpTool(),
+      new EnvTool()
     ]
 
     for (const tool of toolInstances) {
       this.tools.set(tool.name, tool)
+    }
+  }
+
+  refreshMcpTools(): void {
+    for (const name of Array.from(this.tools.keys())) {
+      if (name.startsWith('MCP_')) this.tools.delete(name)
+    }
+    for (const tool of mcpServerManager.getTools()) {
+      const dynamicTool = new McpDynamicTool(
+        tool.serverId,
+        tool.serverName,
+        tool.name,
+        tool.description,
+        tool.inputSchema
+      )
+      this.tools.set(dynamicTool.name, dynamicTool)
     }
   }
 
@@ -66,11 +155,67 @@ export class ToolExecutor {
    * Gets the list of available tools for the AI provider.
    */
   getAvailableTools(): Tool[] {
+    this.refreshMcpTools()
     return Array.from(this.tools.values()).filter((tool) => {
       const settings = this.toolSettings.get(tool.name)
       // If no settings found, default to enabled
       return settings ? settings.enabled : true
     })
+  }
+
+  /**
+   * Executes multiple tool calls, running read-only tools concurrently
+   * and write tools serially. Up to MAX_CONCURRENCY parallel executions.
+   */
+  async executeTools(
+    toolCalls: Array<{ id: string; toolName: string; input: Record<string, unknown> }>,
+    signal?: AbortSignal
+  ): Promise<Array<{ id: string; toolName: string; input: Record<string, unknown>; result: string }>> {
+    // Partition into batches: consecutive read-only tools run in parallel
+    const batches: Array<{ concurrent: boolean; calls: typeof toolCalls }> = []
+    for (const call of toolCalls) {
+      const isReadOnly = READ_ONLY_TOOLS.has(call.toolName) ||
+        (this.tools.get(call.toolName)?.isReadOnly === true)
+      const last = batches[batches.length - 1]
+      if (isReadOnly && last?.concurrent) {
+        last.calls.push(call)
+      } else {
+        batches.push({ concurrent: isReadOnly, calls: [call] })
+      }
+    }
+
+    const results: Array<{ id: string; toolName: string; input: Record<string, unknown>; result: string }> = []
+    for (const batch of batches) {
+      if (batch.concurrent && batch.calls.length > 1) {
+        // Run read-only tools in parallel (capped at MAX_CONCURRENCY)
+        const chunks: typeof toolCalls[] = []
+        for (let i = 0; i < batch.calls.length; i += MAX_CONCURRENCY) {
+          chunks.push(batch.calls.slice(i, i + MAX_CONCURRENCY))
+        }
+        for (const chunk of chunks) {
+          const chunkResults = await Promise.all(
+            chunk.map(async (call) => ({
+              id: call.id,
+              toolName: call.toolName,
+              input: call.input,
+              result: await this.executeTool(call.toolName, call.input, signal)
+            }))
+          )
+          results.push(...chunkResults)
+        }
+      } else {
+        // Run serially
+        for (const call of batch.calls) {
+          results.push({
+            id: call.id,
+            toolName: call.toolName,
+            input: call.input,
+            result: await this.executeTool(call.toolName, call.input, signal)
+          })
+        }
+      }
+    }
+    return results
   }
 
   /**
@@ -82,7 +227,11 @@ export class ToolExecutor {
     signal?: AbortSignal
   ): Promise<string> {
     const tool = this.tools.get(toolName)
-    if (!tool) {
+    if (!tool && toolName.startsWith('MCP_')) {
+      this.refreshMcpTools()
+    }
+    const refreshedTool = this.tools.get(toolName)
+    if (!refreshedTool) {
       return `Error: Unknown tool "${toolName}"`
     }
 
@@ -92,24 +241,37 @@ export class ToolExecutor {
       return `Error: Tool "${toolName}" is disabled`
     }
 
-    // Check permission
-    const permission = settings?.permission || (tool.requiresApproval ? 'always-ask' : 'always-allow')
+    const toolPermission = settings?.permission || (refreshedTool.requiresApproval ? 'always-ask' : 'always-allow')
 
-    if (permission === 'always-deny') {
+    if (toolPermission === 'always-deny') {
       return `Error: Tool "${toolName}" execution is denied by settings`
     }
 
-    // If requires approval and not always-allowed
-    if (permission === 'always-ask' && !this.alwaysAllowed.has(toolName)) {
-      const approved = await this.requestApproval(tool, toolInput)
+    // Evaluate using permission mode + per-tool override
+    const decision = evaluatePermission(toolName, this.permissionMode, toolPermission)
+    if (!decision.autoApprove && !this.alwaysAllowed.has(toolName)) {
+      const approved = await this.requestApproval(refreshedTool, toolInput)
       if (!approved) {
         return `Tool execution denied by user: ${toolName}`
       }
     }
 
+    // Inject workspace path as default cwd/path if the tool accepts it
+    // and the AI didn't explicitly provide one. This prevents tools from
+    // falling back to process.cwd() (Electron's install directory).
+    const enrichedInput = { ...toolInput }
+    if (this.workspacePath) {
+      if (CWD_TOOLS.has(toolName) && !enrichedInput.cwd) {
+        enrichedInput.cwd = this.workspacePath
+      }
+      if (PATH_TOOLS.has(toolName) && !enrichedInput.path) {
+        enrichedInput.path = this.workspacePath
+      }
+    }
+
     // Execute the tool
     try {
-      return await tool.execute(toolInput, signal)
+      return await refreshedTool.execute(enrichedInput, signal)
     } catch (error) {
       return `Error executing tool "${toolName}": ${(error as Error).message}`
     }
@@ -122,7 +284,9 @@ export class ToolExecutor {
     tool: Tool,
     toolInput: Record<string, unknown>
   ): Promise<boolean> {
-    const window = BrowserWindow.getFocusedWindow()
+    const window =
+      BrowserWindow.getFocusedWindow() ||
+      BrowserWindow.getAllWindows().find((candidate) => !candidate.isDestroyed())
     if (!window) return false
 
     const requestId = uuidv4()
@@ -136,6 +300,7 @@ export class ToolExecutor {
 
     // Send approval request to renderer
     window.webContents.send(IPC.TOOL_APPROVAL_REQUEST, request)
+    window.webContents.send(IPC.GRPC_ACTION_REQUIRED, request)
 
     // Wait for response
     return new Promise<boolean>((resolve) => {

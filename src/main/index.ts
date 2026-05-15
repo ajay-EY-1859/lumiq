@@ -8,6 +8,12 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { initDatabase, closeDatabase } from './db/database'
 import { registerAllHandlers } from './ipc'
+import { mcpServerManager } from './services/mcp/McpServerManager'
+import { developerGrpcServer } from './services/grpc/DeveloperGrpcServer'
+import { agentLoop } from './agent/AgentLoop'
+import type { ToolSettings } from '@shared/types'
+import type { PermissionMode } from './security/permissions'
+import { mergeToolSettings } from './tools/defaultToolSettings'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -137,7 +143,22 @@ app.whenReady().then(() => {
   })
 
   // Initialize database
-  initDatabase()
+  const db = initDatabase()
+  const toolSettings = db.prepare("SELECT value FROM settings WHERE key = 'toolSettings'").get() as { value: string } | undefined
+  if (toolSettings?.value) {
+    try {
+      const mergedToolSettings = mergeToolSettings(JSON.parse(toolSettings.value) as ToolSettings[])
+      agentLoop.getToolExecutor().updateToolSettings(mergedToolSettings)
+    } catch {
+      // Ignore malformed settings and keep the executor defaults.
+    }
+  }
+  const permissionMode = db.prepare("SELECT value FROM settings WHERE key = 'permissionMode'").get() as { value: string } | undefined
+  agentLoop.getToolExecutor().setPermissionMode((permissionMode?.value as PermissionMode) || 'MANUAL')
+
+  const contextLimitRow = db.prepare("SELECT value FROM settings WHERE key = 'contextLimit'").get() as { value: string } | undefined
+  const startupContextLimit = Math.max(10, Math.min(500, parseInt(contextLimitRow?.value || '150', 10)))
+  agentLoop.setContextLimit(startupContextLimit)
 
   // Register all IPC handlers
   registerAllHandlers()
@@ -154,6 +175,8 @@ app.whenReady().then(() => {
 
 // Graceful shutdown
 app.on('window-all-closed', () => {
+  mcpServerManager.stopAll()
+  developerGrpcServer.stop()
   closeDatabase()
   if (process.platform !== 'darwin') {
     app.quit()

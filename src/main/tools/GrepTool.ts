@@ -2,9 +2,10 @@
 // Lumiq — GrepTool (Search file contents)
 // ═══════════════════════════════════════════════════════════════════
 
-import { readdirSync, readFileSync, statSync } from 'fs'
-import { join, relative, resolve } from 'path'
+import { readdirSync, readFileSync, realpathSync, statSync } from 'fs'
+import { join, relative } from 'path'
 import type { Tool } from './Tool'
+import { validatePathWithinWorkspace } from '../security/pathValidation'
 
 const MAX_RESULTS = 200
 const MAX_FILE_SIZE = 5 * 1024 * 1024 // 5MB
@@ -29,6 +30,7 @@ export class GrepTool implements Tool {
   name = 'GrepTool'
   description = 'Search file contents for a pattern (like grep/ripgrep)'
   requiresApproval = false
+  isReadOnly = true
   inputSchema = {
     type: 'object',
     properties: {
@@ -41,19 +43,20 @@ export class GrepTool implements Tool {
 
   async execute(input: Record<string, unknown>): Promise<string> {
     const pattern = input.pattern as string
-    const searchPath = resolve((input.path as string) || process.cwd())
+    const searchPath = validatePathWithinWorkspace((input.path as string) || process.cwd())
     const includeFilter = input.include as string | undefined
     const matches: GrepMatch[] = []
+    const visited = new Set<string>()
 
     let regex: RegExp
     try {
-      regex = new RegExp(pattern, 'gi')
+      regex = new RegExp(pattern, 'i')
     } catch {
-      regex = new RegExp(pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi')
+      regex = new RegExp(pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')
     }
 
     try {
-      searchFiles(searchPath, searchPath, regex, matches, includeFilter)
+      searchFiles(searchPath, searchPath, regex, matches, includeFilter, visited)
 
       if (matches.length === 0) {
         return `No matches found for "${pattern}"`
@@ -79,24 +82,55 @@ function searchFiles(
   dir: string,
   pattern: RegExp,
   matches: GrepMatch[],
-  includeFilter?: string
+  includeFilter: string | undefined,
+  visited: Set<string>
 ): void {
   if (matches.length >= MAX_RESULTS * 2) return
 
-  const stat = statSync(dir)
+  let stat
+  try {
+    stat = statSync(dir)
+  } catch {
+    return
+  }
+
   if (stat.isFile()) {
     searchFile(base, dir, pattern, matches)
     return
   }
 
-  const entries = readdirSync(dir, { withFileTypes: true })
+  let realDir
+  try {
+    realDir = realpathSync(dir)
+  } catch {
+    return
+  }
+  if (visited.has(realDir)) return
+  visited.add(realDir)
+
+  let entries
+  try {
+    entries = readdirSync(dir, { withFileTypes: true })
+  } catch {
+    return
+  }
+
   for (const entry of entries) {
     if (IGNORED_DIRS.has(entry.name)) continue
 
     const fullPath = join(dir, entry.name)
 
     if (entry.isDirectory()) {
-      searchFiles(base, fullPath, pattern, matches, includeFilter)
+      if (entry.isSymbolicLink()) {
+        let target
+        try {
+          target = realpathSync(fullPath)
+        } catch {
+          continue
+        }
+        if (visited.has(target)) continue
+      }
+      searchFiles(base, fullPath, pattern, matches, includeFilter, visited)
     } else if (entry.isFile()) {
       const ext = entry.name.substring(entry.name.lastIndexOf('.'))
       if (BINARY_EXTENSIONS.has(ext.toLowerCase())) continue
@@ -128,6 +162,9 @@ function searchFile(base: string, filePath: string, pattern: RegExp, matches: Gr
 }
 
 function matchesFilter(filename: string, filter: string): boolean {
-  const ext = filter.replace('*', '')
-  return filename.endsWith(ext)
+  const regex = new RegExp(
+    '^' + filter.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\\\*/g, '.*').replace(/\\\?/g, '[^\\/]').replace(/\\\|/g, '|') + '$',
+    'i'
+  )
+  return regex.test(filename)
 }

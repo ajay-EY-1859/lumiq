@@ -2,9 +2,9 @@
 // Lumiq — FileReadTool
 // ═══════════════════════════════════════════════════════════════════
 
-import { readFileSync, existsSync, statSync } from 'fs'
-import { resolve } from 'path'
+import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from 'fs'
 import type { Tool } from './Tool'
+import { validatePathWithinWorkspace } from '../security/pathValidation'
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB limit
 
@@ -12,6 +12,7 @@ export class FileReadTool implements Tool {
   name = 'FileReadTool'
   description = 'Read the contents of a file from disk'
   requiresApproval = false
+  isReadOnly = true
   inputSchema = {
     type: 'object',
     properties: {
@@ -21,11 +22,11 @@ export class FileReadTool implements Tool {
   }
 
   async execute(input: Record<string, unknown>): Promise<string> {
-    const filePath = resolve(input.path as string)
-
-    // SECURITY: Prevent path traversal beyond reasonable bounds
-    if (filePath.includes('\0')) {
-      return '[ERROR] Invalid file path (null bytes detected)'
+    let filePath: string
+    try {
+      filePath = validatePathWithinWorkspace(input.path as string)
+    } catch (error) {
+      return `[ERROR] ${(error as Error).message}`
     }
 
     if (!existsSync(filePath)) {
@@ -41,6 +42,10 @@ export class FileReadTool implements Tool {
       return `[ERROR] File too large (${(stats.size / 1024 / 1024).toFixed(1)}MB). Max: 10MB`
     }
 
+    if (looksLikeBinary(filePath)) {
+      return '[ERROR] File appears to be binary or non-text. Use a different tool.'
+    }
+
     try {
       const content = readFileSync(filePath, 'utf8')
       return content
@@ -48,4 +53,20 @@ export class FileReadTool implements Tool {
       return `[ERROR] Cannot read file: ${(e as Error).message}`
     }
   }
+}
+
+function looksLikeBinary(filePath: string): boolean {
+  const fd = openSync(filePath, 'r')
+  const buffer = Buffer.alloc(512)
+  try {
+    const bytesRead = readSync(fd, buffer, 0, 512, 0)
+    for (let i = 0; i < bytesRead; i++) {
+      const byte = buffer[i]
+      if (byte === 0) return true
+      if (byte < 7 || (byte > 13 && byte < 32)) return true
+    }
+  } finally {
+    closeSync(fd)
+  }
+  return false
 }

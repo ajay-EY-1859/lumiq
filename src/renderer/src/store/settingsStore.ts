@@ -26,7 +26,8 @@ const defaultSettings: AppSettings = {
   defaultModel: 'claude-sonnet-4-20250514',
   sidebarVisible: true,
   autoSave: true,
-  contextLimit: 50
+  contextLimit: 150,
+  firecrawlApiKey: ''
 }
 
 // Apply theme to DOM

@@ -8,9 +8,8 @@ import { shell } from 'electron'
 import { createServer, IncomingMessage, ServerResponse } from 'http'
 import { randomBytes, createHash } from 'crypto'
 import { URL } from 'url'
-import { getDatabase } from '../db/database'
 import { saveApiConfig, deleteApiConfig } from '../db/apiConfigs'
-import { encrypt, decrypt } from '../security/encryption'
+import { deleteOAuthTokens, getOAuthConfig, getOAuthTokens, saveOAuthConfig, saveOAuthTokens } from './oauthStore'
 import type { OAuthTokens, OAuthStatus, GoogleOAuthConfig } from '@shared/types'
 
 // Google OAuth endpoints
@@ -40,127 +39,17 @@ function generateCodeChallenge(verifier: string): string {
 // ─── Database Operations ───────────────────────────────────────────
 
 /**
- * Ensures the oauth_tokens table exists (migration).
- */
-export function ensureOAuthTable(): void {
-  const db = getDatabase()
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS oauth_tokens (
-      provider TEXT PRIMARY KEY,
-      access_token_encrypted TEXT NOT NULL,
-      refresh_token_encrypted TEXT,
-      expires_at INTEGER NOT NULL,
-      token_type TEXT DEFAULT 'Bearer',
-      scope TEXT,
-      email TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE TABLE IF NOT EXISTS oauth_config (
-      provider TEXT PRIMARY KEY,
-      client_id_encrypted TEXT NOT NULL,
-      client_secret_encrypted TEXT NOT NULL
-    );
-  `)
-}
-
-/**
- * Saves OAuth tokens securely (encrypted).
- */
-function saveOAuthTokens(provider: string, tokens: OAuthTokens, email?: string): void {
-  const db = getDatabase()
-  const stmt = db.prepare(`
-    INSERT INTO oauth_tokens (provider, access_token_encrypted, refresh_token_encrypted, expires_at, token_type, scope, email)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(provider) DO UPDATE SET
-      access_token_encrypted = excluded.access_token_encrypted,
-      refresh_token_encrypted = excluded.refresh_token_encrypted,
-      expires_at = excluded.expires_at,
-      token_type = excluded.token_type,
-      scope = excluded.scope,
-      email = excluded.email
-  `)
-  stmt.run(
-    provider,
-    encrypt(tokens.accessToken),
-    tokens.refreshToken ? encrypt(tokens.refreshToken) : null,
-    tokens.expiresAt,
-    tokens.tokenType,
-    tokens.scope || null,
-    email || null
-  )
-}
-
-/**
- * Retrieves OAuth tokens for a provider.
- */
-export function getOAuthTokens(provider: string): (OAuthTokens & { email?: string }) | null {
-  const db = getDatabase()
-  const stmt = db.prepare(`
-    SELECT access_token_encrypted, refresh_token_encrypted, expires_at, token_type, scope, email
-    FROM oauth_tokens WHERE provider = ?
-  `)
-  const row = stmt.get(provider) as Record<string, unknown> | undefined
-  if (!row) return null
-
-  try {
-    return {
-      accessToken: decrypt(row.access_token_encrypted as string),
-      refreshToken: row.refresh_token_encrypted
-        ? decrypt(row.refresh_token_encrypted as string)
-        : undefined,
-      expiresAt: row.expires_at as number,
-      tokenType: (row.token_type as string) || 'Bearer',
-      scope: (row.scope as string) || undefined,
-      email: (row.email as string) || undefined
-    }
-  } catch {
-    return null
-  }
-}
-
-/**
- * Deletes OAuth tokens for a provider.
- */
-function deleteOAuthTokens(provider: string): void {
-  const db = getDatabase()
-  db.prepare('DELETE FROM oauth_tokens WHERE provider = ?').run(provider)
-}
-
-/**
  * Saves Google OAuth client credentials.
  */
 export function saveGoogleOAuthConfig(config: GoogleOAuthConfig): void {
-  const db = getDatabase()
-  const stmt = db.prepare(`
-    INSERT INTO oauth_config (provider, client_id_encrypted, client_secret_encrypted)
-    VALUES ('gemini', ?, ?)
-    ON CONFLICT(provider) DO UPDATE SET
-      client_id_encrypted = excluded.client_id_encrypted,
-      client_secret_encrypted = excluded.client_secret_encrypted
-  `)
-  stmt.run(encrypt(config.clientId), encrypt(config.clientSecret))
+  saveOAuthConfig('gemini', config)
 }
 
 /**
  * Retrieves Google OAuth client credentials.
  */
 export function getGoogleOAuthConfig(): GoogleOAuthConfig | null {
-  const db = getDatabase()
-  const stmt = db.prepare(
-    'SELECT client_id_encrypted, client_secret_encrypted FROM oauth_config WHERE provider = ?'
-  )
-  const row = stmt.get('gemini') as Record<string, unknown> | undefined
-  if (!row) return null
-
-  try {
-    return {
-      clientId: decrypt(row.client_id_encrypted as string),
-      clientSecret: decrypt(row.client_secret_encrypted as string)
-    }
-  } catch {
-    return null
-  }
+  return getOAuthConfig('gemini')
 }
 
 /**
@@ -474,7 +363,7 @@ function getSuccessHtml(email: string): string {
   <div class="container">
     <div class="icon">✅</div>
     <h1>Successfully Signed In!</h1>
-    <p>Logged in as <strong>${email}</strong></p>
+    <p>Logged in as <strong>${escapeHtml(email)}</strong></p>
     <p>This window will close automatically...</p>
   </div>
 </body>
@@ -499,9 +388,18 @@ function getErrorHtml(error: string): string {
   <div class="container">
     <div class="icon">❌</div>
     <h1>Login Failed</h1>
-    <p>${error}</p>
+    <p>${escapeHtml(error)}</p>
     <p>You can close this window and try again.</p>
   </div>
 </body>
 </html>`
+}
+
+function escapeHtml(value: string): string {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
 }

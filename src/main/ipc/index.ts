@@ -11,6 +11,13 @@ import { registerToolHandlers } from './toolHandlers'
 import { registerAgentHandlers } from './agentHandlers'
 import { registerSettingsHandlers } from './settingsHandlers'
 import { registerAuthHandlers } from './authHandlers'
+import { registerMcpHandlers } from './mcpHandlers'
+import { registerRoutingHandlers } from './routingHandlers'
+import { registerSkillHandlers } from './skillHandlers'
+import { registerGrpcHandlers } from './grpcHandlers'
+import { registerDialogHandlers } from './dialogHandlers'
+import { registerFsHandlers } from './fsHandlers'
+import { registerTaskHandlers } from './taskHandlers'
 
 export function registerAllHandlers(): void {
   // Register domain-specific handlers
@@ -21,6 +28,13 @@ export function registerAllHandlers(): void {
   registerAgentHandlers()
   registerSettingsHandlers()
   registerAuthHandlers()
+  registerMcpHandlers()
+  registerRoutingHandlers()
+  registerSkillHandlers()
+  registerGrpcHandlers()
+  registerDialogHandlers()
+  registerFsHandlers()
+  registerTaskHandlers()
 
   // ── Window Control Handlers (for custom titlebar) ──
   ipcMain.on('window:minimize', (event) => {

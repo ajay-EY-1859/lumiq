@@ -18,6 +18,13 @@ import type { AIProvider } from '../providers/AIProvider'
 // Active request tracking for cancellation
 let activeAbortController: AbortController | null = null
 
+type AgentLoopCallbacks = {
+  onChunk?: (chunk: string) => void
+  onToolResult?: (toolName: string, result: string) => void
+  onEnd?: (content: string, tokensUsed: number) => void
+  onError?: (message: string) => void
+}
+
 export class AgentLoop {
   private toolExecutor: ToolExecutor
   private contextManager: ContextManager
@@ -25,6 +32,49 @@ export class AgentLoop {
   constructor() {
     this.toolExecutor = new ToolExecutor()
     this.contextManager = new ContextManager()
+  }
+
+  /**
+   * Reconstructs missing toolCalls on assistant messages from subsequent tool messages.
+   * Old DB records may not have the tool_calls column populated, causing providers
+   * to send tool_result blocks without matching tool_use blocks → validation errors.
+   */
+  private reconstructToolCalls(messages: Message[]): Message[] {
+    const result = messages.map(m => ({ ...m }))
+
+    for (let i = 0; i < result.length; i++) {
+      const msg = result[i]
+
+      // If assistant message has no toolCalls but is followed by tool messages → reconstruct
+      if (msg.role === 'assistant' && (!msg.toolCalls || msg.toolCalls.length === 0)) {
+        const toolCalls: { id: string; toolName: string; input: any }[] = []
+
+        for (let j = i + 1; j < result.length && result[j].role === 'tool'; j++) {
+          const toolMsg = result[j]
+          const callId = toolMsg.toolCallId || `synth_${i}_${j}_${Date.now()}`
+          toolCalls.push({
+            id: callId,
+            toolName: toolMsg.toolName || 'unknown_tool',
+            input: toolMsg.toolInput || {}
+          })
+          // Sync the ID back to the tool message so result mapping stays consistent
+          if (!result[j].toolCallId) {
+            result[j] = { ...result[j], toolCallId: callId }
+          }
+        }
+
+        if (toolCalls.length > 0) {
+          result[i] = { ...msg, toolCalls }
+        }
+      }
+
+      // Ensure every tool message has a non-empty toolCallId
+      if (msg.role === 'tool' && !msg.toolCallId) {
+        result[i] = { ...result[i], toolCallId: `synth_orphan_${i}_${Date.now()}` }
+      }
+    }
+
+    return result
   }
 
   /**
@@ -38,10 +88,10 @@ export class AgentLoop {
     options: {
       model: string
       systemPrompt?: string
+      callbacks?: AgentLoopCallbacks
     }
   ): Promise<void> {
     const window = BrowserWindow.getFocusedWindow()
-    if (!window) return
 
     // Cancel any active request
     this.cancel()
@@ -61,9 +111,12 @@ export class AgentLoop {
       // Trim context
       const trimmedMessages = this.contextManager.trimMessages(messages)
 
+      // Reconstruct missing toolCalls on assistant messages from DB history
+      const rehydratedMessages = this.reconstructToolCalls(trimmedMessages)
+
       // Add the new user message
       const allMessages: Message[] = [
-        ...trimmedMessages,
+        ...rehydratedMessages,
         {
           id: '',
           sessionId,
@@ -74,13 +127,15 @@ export class AgentLoop {
       ]
 
       // Run the agentic loop (may loop multiple times if tool calls happen)
-      await this.runLoop(provider, allMessages, sessionId, options, signal, window)
+      await this.runLoop(provider, allMessages, sessionId, options, signal, window || undefined)
     } catch (error) {
       if ((error as Error).name === 'AbortError') {
         // User cancelled — not an error
         return
       }
-      window.webContents.send(IPC.CHAT_ERROR, (error as Error).message)
+      const message = (error as Error).message
+      options.callbacks?.onError?.(message)
+      window?.webContents.send(IPC.CHAT_ERROR, message)
     } finally {
       activeAbortController = null
     }
@@ -94,9 +149,9 @@ export class AgentLoop {
     provider: AIProvider,
     messages: Message[],
     sessionId: string,
-    options: { model: string; systemPrompt?: string },
+    options: { model: string; systemPrompt?: string; callbacks?: AgentLoopCallbacks },
     signal: AbortSignal,
-    window: BrowserWindow
+    window?: BrowserWindow
   ): Promise<void> {
     const MAX_ITERATIONS = 20 // Safety limit to prevent infinite loops
     let iteration = 0
@@ -112,45 +167,111 @@ export class AgentLoop {
         model: options.model,
         stream: true,
         systemPrompt: options.systemPrompt,
+        tools: this.toolExecutor.getAvailableTools().map((tool) => ({
+          name: tool.name,
+          description: tool.description,
+          inputSchema: tool.inputSchema
+        })),
         onChunk: (chunk: string) => {
           fullContent += chunk
           if (!signal.aborted) {
-            window.webContents.send(IPC.CHAT_STREAM_CHUNK, chunk)
+            options.callbacks?.onChunk?.(chunk)
+            window?.webContents.send(IPC.CHAT_STREAM_CHUNK, chunk)
           }
         },
         signal
       })
 
+      // Fallback parser for raw XML tool calls (e.g. minimax, some local models)
+      if (!result.toolCalls || result.toolCalls.length === 0) {
+        const invokeRegex = /<invoke\s+name="([^"]+)">([\s\S]*?)<\/invoke>/g
+        let match
+        const parsedCalls: any[] = []
+        let hasToolCalls = false
+
+        while ((match = invokeRegex.exec(result.content)) !== null) {
+          hasToolCalls = true
+          let rawName = match[1]
+          let innerXml = match[2]
+          
+          // Map standard external names to internal names
+          if (rawName === 'filesystem_list_directory' || rawName === 'list_dir') rawName = 'ListDirTool'
+          if (rawName === 'shell_run_command' || rawName === 'run_command') rawName = 'BashTool'
+          if (rawName === 'write' || rawName === 'write_file') rawName = 'FileWriteTool'
+          if (rawName === 'read' || rawName === 'read_file') rawName = 'FileReadTool'
+          if (rawName === 'glob') rawName = 'GlobTool'
+          if (rawName === 'grep') rawName = 'GrepTool'
+
+          const inputParams: Record<string, any> = {}
+          const paramRegex = /<parameter\s+name="([^"]+)">([\s\S]*?)<\/parameter>/g
+          let paramMatch
+          let hasParams = false
+          while ((paramMatch = paramRegex.exec(innerXml)) !== null) {
+            hasParams = true
+            inputParams[paramMatch[1]] = paramMatch[2].trim()
+          }
+          
+          // If no <parameter> tags found, maybe it's just raw text inside (e.g. write tool)
+          if (!hasParams && innerXml.trim()) {
+            inputParams['content'] = innerXml.trim()
+          }
+
+          parsedCalls.push({
+            id: `call_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+            toolName: rawName,
+            input: inputParams
+          })
+        }
+
+        if (hasToolCalls) {
+          result.toolCalls = parsedCalls
+        }
+      }
+
       // Check for tool calls
       if (result.toolCalls && result.toolCalls.length > 0) {
-        // Save the assistant's message (with tool call info)
+        // Save the assistant's message (with tool call info, including toolCalls for history replay)
         createMessage(sessionId, 'assistant', result.content, {
-          tokensUsed: result.tokensUsed
+          tokensUsed: result.tokensUsed,
+          toolCalls: result.toolCalls
+        })
+        messages.push({
+          id: '',
+          sessionId,
+          role: 'assistant',
+          content: result.content,
+          toolCalls: result.toolCalls,
+          createdAt: new Date().toISOString()
         })
 
-        // Execute each tool call
-        for (const toolCall of result.toolCalls) {
+        // Execute all tool calls (read-only ones run concurrently)
+        const toolResults = await this.toolExecutor.executeTools(
+          result.toolCalls.map((tc) => ({ id: tc.id, toolName: tc.toolName, input: tc.input })),
+          signal
+        )
+
+        for (const { id, toolName, input, result: toolResult } of toolResults) {
           if (signal.aborted) return
 
-          // Execute tool
-          const toolResult = await this.toolExecutor.executeTool(
-            toolCall.toolName,
-            toolCall.input,
-            signal
-          )
-
-          // Save tool result message
+          // Save tool result message with toolCallId for provider mapping
           createMessage(sessionId, 'tool', toolResult, {
-            toolName: toolCall.toolName,
-            toolInput: toolCall.input,
-            toolResult
+            toolName,
+            toolInput: input,
+            toolResult,
+            toolCallId: id
           })
 
           // Send tool result to renderer
-          window.webContents.send(IPC.TOOL_RESULT, {
-            toolName: toolCall.toolName,
-            result: toolResult
-          })
+          options.callbacks?.onToolResult?.(toolName, toolResult)
+          window?.webContents.send(IPC.TOOL_RESULT, { toolName, result: toolResult })
+
+          // Notify frontend if a file was edited
+          if (!toolResult.startsWith('[ERROR]') && (toolName === 'FileEditTool' || toolName === 'FileWriteTool')) {
+            const filePath = (input as { path?: string }).path
+            if (filePath) {
+              window?.webContents.send(IPC.FS_FILE_MODIFIED, filePath)
+            }
+          }
 
           // Add tool result to conversation for next AI call
           messages.push({
@@ -158,7 +279,8 @@ export class AgentLoop {
             sessionId,
             role: 'tool',
             content: toolResult,
-            toolName: toolCall.toolName,
+            toolName,
+            toolCallId: id,
             createdAt: new Date().toISOString()
           })
         }
@@ -175,7 +297,8 @@ export class AgentLoop {
       touchSession(sessionId)
 
       // Signal stream end
-      window.webContents.send(IPC.CHAT_STREAM_END, {
+      options.callbacks?.onEnd?.(result.content, result.tokensUsed)
+      window?.webContents.send(IPC.CHAT_STREAM_END, {
         content: result.content,
         tokensUsed: result.tokensUsed
       })
@@ -184,10 +307,9 @@ export class AgentLoop {
     }
 
     // If we hit max iterations, send error
-    window.webContents.send(
-      IPC.CHAT_ERROR,
-      'Agent loop exceeded maximum iterations. This may indicate an infinite tool call loop.'
-    )
+    const message = 'Agent loop exceeded maximum iterations. This may indicate an infinite tool call loop.'
+    options.callbacks?.onError?.(message)
+    window?.webContents.send(IPC.CHAT_ERROR, message)
   }
 
   /**

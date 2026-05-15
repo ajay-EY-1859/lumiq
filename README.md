@@ -1,200 +1,92 @@
-# ✨ Lumiq
-### One interface. Every model.
+# Lumiq
 
-A cross-platform **Electron + React** desktop application that brings the full power of `openclaude`-style agentic workflows into a native GUI. Supports OpenAI, Anthropic Claude, Google Gemini, Amazon Bedrock, Ollama, DeepSeek, and 200+ models — with a proper windowed interface instead of a terminal.
+Lumiq is an Electron and React desktop app for agentic AI chat, local tools, MCP servers, and a local developer-server bridge. The product direction is hybrid: Lumiq is becoming a standalone AI IDE while the VS Code extension remains a companion client for users who want to stay in VS Code.
 
----
+Current IDE readiness is about 35-40%. The agent engine, tools, providers, routing, skills, MCP MVP, gRPC server, and VS Code extension scaffold exist. The full IDE shell is still missing: workspace explorer, editor tabs, diff approval/apply, embedded terminal, problems panel, task runner, and LSP-backed navigation.
 
-## ✨ What This Is
+## Quick Start
 
-`openclaude` is a powerful CLI agentic tool (terminal-based). This project wraps its core engine into a **real desktop GUI** — same agentic capabilities, same multi-provider support, but with:
+Prerequisites:
 
-- A proper windowed application (not a terminal)
-- Visual chat interface with message bubbles
-- Sidebar for session history, agents, settings
-- GUI-based API key management
-- Visual tool approval dialogs
-- Dark/Light theme toggle
+- Node.js 20 or newer
+- npm
+- At least one provider API key, or Ollama running locally
 
----
-
-## 🚀 Quick Start
-
-### Prerequisites
-- Node.js 18+
-- npm or yarn
-- API key for at least one provider (OpenAI, Anthropic, Gemini, or local Ollama)
-
-### Install & Run
 ```bash
-git clone https://github.com/your-org/lumiq.git
-cd lumiq
 npm install
 npm run dev
 ```
 
-### First Launch
-1. App opens → Settings panel appears
-2. Add your API key (OpenAI / Anthropic / Gemini / Ollama)
-3. Select a model
-4. Start chatting
-
----
-
-## 🧱 Tech Stack
-
-| Layer | Technology |
-|-------|------------|
-| Desktop Shell | Electron 28+ |
-| UI Framework | React 18 + TypeScript |
-| Styling | Tailwind CSS |
-| State | Zustand |
-| Build | Vite + electron-builder |
-| Database | SQLite (better-sqlite3) |
-| AI SDK | @anthropic-ai/sdk, openai, @google/generative-ai |
-| Packaging | electron-builder |
-
----
-
-## 📁 Project Structure
-
-```
-lumiq/
-├── docs/                      # 📚 All project documentation
-│   ├── plan.md
-│   ├── prd.md
-│   ├── srs.md
-│   ├── architecture.md
-│   ├── ui-design.md
-│   ├── api-integration.md
-│   └── user-manual.md
-├── src/
-│   ├── main/                  # Electron main process
-│   │   ├── index.ts           # App entry, window creation
-│   │   ├── ipc/               # IPC handlers (bridge to renderer)
-│   │   ├── providers/         # AI provider clients
-│   │   ├── agent/             # Agentic engine (tools, planner)
-│   │   ├── db/                # SQLite database
-│   │   └── security/          # API key encryption
-│   ├── renderer/              # React frontend
-│   │   ├── components/        # UI components
-│   │   ├── pages/             # App screens
-│   │   ├── store/             # Zustand state
-│   │   ├── hooks/             # Custom React hooks
-│   │   └── utils/             # Helpers
-│   └── shared/                # Types shared between main/renderer
-├── public/                    # Static assets
-├── README.md
-├── package.json
-├── vite.config.ts
-├── electron-builder.yml
-└── tsconfig.json
-```
-
----
-
-## 🤖 Supported AI Providers
-
-| Provider | Models | Auth |
-|----------|--------|------|
-| Anthropic | claude-opus-4, claude-sonnet-4, claude-haiku | API Key |
-| OpenAI | gpt-4o, gpt-4-turbo, gpt-3.5-turbo | API Key |
-| Google | gemini-1.5-pro, gemini-1.5-flash | API Key |
-| Amazon Bedrock | Claude, Llama, Mistral, Titan, Cohere, AI21 | AWS Keys |
-| Ollama | llama3, mistral, qwen2.5-coder, any local | None |
-| DeepSeek | deepseek-chat, deepseek-coder | API Key |
-| Custom | Any OpenAI-compatible endpoint | Configurable |
-
----
-
-## 🛠️ Agentic Tools
-
-The app includes a built-in tool execution engine (inspired by openclaude):
-
-- **BashTool** — Run shell commands (with permission prompt)
-- **FileReadTool** — Read files from disk
-- **FileWriteTool** / **FileEditTool** — Write and edit files
-- **GlobTool** — Find files by pattern
-- **GrepTool** — Search file contents
-- **WebFetchTool** — Fetch web pages
-- **WebSearchTool** — Search the web
-
-All tool executions show a **GUI approval dialog** before running.
-
----
-
-## 📄 Documentation
-
-Saari docs `docs/` folder mein hain — source code se bilkul alag:
-
-| File | Description |
-|------|-------------|
-| [docs/plan.md](./docs/plan.md) | Project phases and task breakdown |
-| [docs/prd.md](./docs/prd.md) | Product requirements and user stories |
-| [docs/srs.md](./docs/srs.md) | Software requirements specification |
-| [docs/architecture.md](./docs/architecture.md) | System architecture and data flow |
-| [docs/ui-design.md](./docs/ui-design.md) | UI/UX specifications and component library |
-| [docs/api-integration.md](./docs/api-integration.md) | AI provider integration details |
-| [docs/user-manual.md](./docs/user-manual.md) | End-user guide |
-
----
-
-## 🌐 Environment Variables
-
-```env
-# Optional — can also be set via GUI Settings
-ANTHROPIC_API_KEY=sk-ant-...
-OPENAI_API_KEY=sk-...
-GOOGLE_API_KEY=...
-OLLAMA_BASE_URL=http://localhost:11434
-```
-
----
-
-## 🏗️ Build for Production
+Useful validation commands:
 
 ```bash
-# Windows
-npm run build:win
-
-# macOS
-npm run build:mac
-
-# Linux
-npm run build:linux
-
-# All platforms
-npm run build:all
+npm run typecheck
+npm run lint
+npm run build
+cd extensions/vscode
+npm run compile
 ```
 
-Output: `dist/` folder with platform-specific installers.
+## Current Capabilities
 
----
+- Electron `^41.5.1`, React 18, TypeScript, Vite, Zustand, SQLite via `better-sqlite3`.
+- Providers: Anthropic, OpenAI, Gemini, Ollama, DeepSeek, Bedrock, GitHub Models, OpenRouter, Groq, and custom OpenAI-compatible endpoints.
+- Authentication: API keys for most providers, plus Google and GitHub OAuth setup paths.
+- Agent loop with streaming, context trimming, tool calls, cancellation, and persisted sessions/messages.
+- Tools: Bash, PowerShell, file read/write/edit, glob, grep, web fetch, web search, todo write, sleep, and dynamic MCP tools.
+- Permission modes: `MANUAL`, `LIMITED`, `EXTENDED`, and `AUTO`, plus per-tool allow/ask/deny settings.
+- MCP MVP: save/import/start/stop/test stdio servers, list tools, and expose running MCP tools to the agent.
+- Routing and skills MVP: task mode routing, custom skills, and slash-command insertion in chat input.
+- Local developer gRPC server on `127.0.0.1:43187`.
+- VS Code extension scaffold that can send selected editor text to the local Lumiq server.
 
-## 🤖 Agent Instructions
+## Project Structure
 
-### On Error
-Jab bhi koi error aaye task execute karte waqt, turant ek file banao:
-**Filename:** `ERROR_LOG.md`
+```text
+src/
+  main/
+    agent/          Agent loop, context manager, tool executor
+    auth/           Google and GitHub OAuth helpers
+    db/             SQLite migrations and CRUD modules
+    ipc/            Main-process IPC handlers
+    providers/      AI provider implementations
+    security/       Encryption, keychain, permission evaluation
+    services/       MCP manager and gRPC server
+    tools/          Built-in and dynamic tools
+  preload/          Secure contextBridge API
+  renderer/
+    src/components/ Chat, settings, agents, sidebar, UI primitives
+    src/store/      Zustand stores
+  shared/           Shared types and IPC channel constants
+extensions/vscode/  Companion VS Code extension
+docs/               Product, architecture, plan, and user docs
+```
 
-File mein yeh sab likho:
-- Kaunsa task chal raha tha jab error aaya
-- Error ka poora message (exact text)
-- Kaunsi file ya line mein error tha
-- Sambhavit karan (possible cause)
-- Kya try kiya tha solve karne ke liye
-- Agle steps kya hone chahiye
+## Documentation
 
-### On Interruption or Risk
-Jab bhi task execution achanak band ho ya khatre mein ho, turant ek file banao:
-**Filename:** `REMAINING_PLAN.md`
+- [Architecture](docs/architecture.md)
+- [Product Requirements](docs/prd.md)
+- [Software Requirements](docs/srs.md)
+- [Implementation Plan](docs/plan.md)
+- [User Manual](docs/user-manual.md)
+- [Implementation Guide](docs/pln/IMPLEMENTATION_GUIDE.md)
 
-File mein yeh sab likho:
-- Kya kaam poora ho chuka hai (completed tasks)
-- Kaunsa kaam chal raha tha jab ruka (in-progress task)
-- Kya kaam abhi bacha hai (pending tasks)
-- Koi important context jo agli baar kaam aaye
+## Roadmap
 
----
+1. Stabilize the existing agent app, tooling, and docs.
+2. Add workspace binding, project explorer, file open/edit tabs, and session-to-workspace persistence.
+3. Add diff-first editing with accept/reject per hunk.
+4. Add terminal/task runner and problems panel from lint, typecheck, build, and runtime output.
+5. Add LSP-backed symbols, outline, go-to-definition, and richer code context.
+6. Mature the VS Code extension with sidebar UX, connection status, inline diff preview, and apply edits.
 
-**Version:** 1.0 | **Last Updated:** April 27, 2026
+## Build
+
+```bash
+npm run build
+npm run build:win
+npm run build:mac
+npm run build:linux
+```
+
+Packaged app output is written to `dist/`.

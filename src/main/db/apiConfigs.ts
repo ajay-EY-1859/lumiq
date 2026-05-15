@@ -26,17 +26,17 @@ export function saveApiConfig(config: ProviderConfig): void {
   const stmt = db.prepare(`
     INSERT INTO api_configs (id, provider, api_key_encrypted, base_url, default_model, is_active,
                              aws_access_key_encrypted, aws_secret_key_encrypted, aws_session_token, aws_region, auth_method)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, 'us-east-1'), COALESCE(?, 'apikey'))
     ON CONFLICT(provider) DO UPDATE SET
-      api_key_encrypted = excluded.api_key_encrypted,
-      base_url = excluded.base_url,
+      api_key_encrypted = COALESCE(excluded.api_key_encrypted, api_configs.api_key_encrypted),
+      base_url = COALESCE(excluded.base_url, api_configs.base_url),
       default_model = excluded.default_model,
       is_active = excluded.is_active,
-      aws_access_key_encrypted = excluded.aws_access_key_encrypted,
-      aws_secret_key_encrypted = excluded.aws_secret_key_encrypted,
-      aws_session_token = excluded.aws_session_token,
-      aws_region = excluded.aws_region,
-      auth_method = excluded.auth_method
+      aws_access_key_encrypted = COALESCE(excluded.aws_access_key_encrypted, api_configs.aws_access_key_encrypted),
+      aws_secret_key_encrypted = COALESCE(excluded.aws_secret_key_encrypted, api_configs.aws_secret_key_encrypted),
+      aws_session_token = COALESCE(excluded.aws_session_token, api_configs.aws_session_token),
+      aws_region = COALESCE(excluded.aws_region, api_configs.aws_region),
+      auth_method = COALESCE(excluded.auth_method, api_configs.auth_method)
   `)
 
   stmt.run(
@@ -49,8 +49,8 @@ export function saveApiConfig(config: ProviderConfig): void {
     encryptedAwsAccessKey,
     encryptedAwsSecretKey,
     config.awsSessionToken || null,
-    config.awsRegion || 'us-east-1',
-    config.authMethod || 'apikey'
+    config.awsRegion || null,
+    config.authMethod || null
   )
 }
 

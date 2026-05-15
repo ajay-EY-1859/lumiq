@@ -17,6 +17,8 @@ export function createMessage(
     toolName?: string
     toolInput?: Record<string, unknown>
     toolResult?: string
+    toolCallId?: string
+    toolCalls?: { id: string; toolName: string; input: any }[]
     tokensUsed?: number
   }
 ): Message {
@@ -25,8 +27,8 @@ export function createMessage(
   const now = new Date().toISOString()
 
   const stmt = db.prepare(`
-    INSERT INTO messages (id, session_id, role, content, tool_name, tool_input, tool_result, tokens_used, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO messages (id, session_id, role, content, tool_name, tool_input, tool_result, tool_call_id, tool_calls, tokens_used, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `)
 
   stmt.run(
@@ -37,6 +39,8 @@ export function createMessage(
     options?.toolName || null,
     options?.toolInput ? JSON.stringify(options.toolInput) : null,
     options?.toolResult || null,
+    options?.toolCallId || null,
+    options?.toolCalls ? JSON.stringify(options.toolCalls) : null,
     options?.tokensUsed || 0,
     now
   )
@@ -49,6 +53,8 @@ export function createMessage(
     toolName: options?.toolName,
     toolInput: options?.toolInput,
     toolResult: options?.toolResult,
+    toolCallId: options?.toolCallId,
+    toolCalls: options?.toolCalls,
     tokensUsed: options?.tokensUsed || 0,
     createdAt: now
   }
@@ -69,7 +75,9 @@ export function getSessionMessages(
   const stmt = db.prepare(`
     SELECT id, session_id as sessionId, role, content,
            tool_name as toolName, tool_input as toolInput,
-           tool_result as toolResult, tokens_used as tokensUsed,
+           tool_result as toolResult, tool_call_id as toolCallId,
+           tool_calls as toolCalls,
+           tokens_used as tokensUsed,
            created_at as createdAt
     FROM messages
     WHERE session_id = ?
@@ -77,12 +85,13 @@ export function getSessionMessages(
     LIMIT ? OFFSET ?
   `)
 
-  const rows = stmt.all(sessionId, limit, offset) as Message[]
+  const rows = stmt.all(sessionId, limit, offset) as any[]
 
   // Parse JSON fields
   return rows.map((row) => ({
     ...row,
-    toolInput: row.toolInput ? JSON.parse(row.toolInput as unknown as string) : undefined
+    toolInput: row.toolInput ? JSON.parse(row.toolInput as string) : undefined,
+    toolCalls: row.toolCalls ? JSON.parse(row.toolCalls as string) : undefined
   }))
 }
 
@@ -106,7 +115,9 @@ export function getRecentMessages(sessionId: string, limit: number): Message[] {
   const stmt = db.prepare(`
     SELECT id, session_id as sessionId, role, content,
            tool_name as toolName, tool_input as toolInput,
-           tool_result as toolResult, tokens_used as tokensUsed,
+           tool_result as toolResult, tool_call_id as toolCallId,
+           tool_calls as toolCalls,
+           tokens_used as tokensUsed,
            created_at as createdAt
     FROM messages
     WHERE session_id = ?
@@ -114,12 +125,13 @@ export function getRecentMessages(sessionId: string, limit: number): Message[] {
     LIMIT ?
   `)
 
-  const rows = stmt.all(sessionId, limit) as Message[]
+  const rows = stmt.all(sessionId, limit) as any[]
 
   // Reverse to get chronological order and parse JSON
   return rows.reverse().map((row) => ({
     ...row,
-    toolInput: row.toolInput ? JSON.parse(row.toolInput as unknown as string) : undefined
+    toolInput: row.toolInput ? JSON.parse(row.toolInput as string) : undefined,
+    toolCalls: row.toolCalls ? JSON.parse(row.toolCalls as string) : undefined
   }))
 }
 

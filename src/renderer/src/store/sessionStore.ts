@@ -16,6 +16,7 @@ interface SessionState {
   createSession: (provider: string, model: string) => Promise<Session>
   deleteSession: (sessionId: string) => Promise<void>
   renameSession: (sessionId: string, title: string) => Promise<void>
+  setWorkspace: (sessionId: string, workspacePath: string | null) => Promise<void>
 }
 
 export const useSessionStore = create<SessionState>((set) => ({
@@ -26,7 +27,11 @@ export const useSessionStore = create<SessionState>((set) => ({
   loadSessions: async () => {
     try {
       const sessions = await window.electronAPI.session.list() as Session[]
-      set({ sessions, isLoading: false })
+      set((state) => ({
+        sessions,
+        isLoading: false,
+        activeSessionId: state.activeSessionId || sessions[0]?.id || null
+      }))
     } catch {
       set({ isLoading: false })
     }
@@ -58,6 +63,15 @@ export const useSessionStore = create<SessionState>((set) => ({
     set((state) => ({
       sessions: state.sessions.map((s) =>
         s.id === sessionId ? { ...s, title } : s
+      )
+    }))
+  },
+
+  setWorkspace: async (sessionId, workspacePath) => {
+    await window.electronAPI.session.setWorkspace(sessionId, workspacePath ?? null)
+    set((state) => ({
+      sessions: state.sessions.map((s) =>
+        s.id === sessionId ? { ...s, workspacePath } : s
       )
     }))
   }
