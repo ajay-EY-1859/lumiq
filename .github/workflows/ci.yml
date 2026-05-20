@@ -1,0 +1,110 @@
+name: CI/CD
+
+on:
+  pull_request:
+    branches:
+      - main
+      - master
+  push:
+    branches:
+      - main
+      - master
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        shell: pwsh
+        run: |
+          $hasFlatConfig = Test-Path eslint.config.js -PathType Leaf
+          $hasLegacyConfig = Test-Path .eslintrc -PathType Leaf -or Test-Path .eslintrc.json -PathType Leaf -or Test-Path .eslintrc.js -PathType Leaf -or Test-Path .eslintrc.cjs -PathType Leaf
+          if ($hasFlatConfig -or $hasLegacyConfig) {
+            npm run lint
+          } else {
+            Write-Host "Skipping lint: no ESLint config file found."
+          }
+
+      - name: Build
+        run: npm run build
+
+      - name: Upload build output
+        uses: actions/upload-artifact@v4
+        with:
+          name: electron-vite-build
+          path: out/
+          if-no-files-found: error
+
+  package:
+    name: Package ${{ matrix.os }}
+    needs: verify
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            script: build:win
+            artifact: dist/*
+          - os: macos-latest
+            script: build:mac
+            artifact: dist/*
+          - os: ubuntu-latest
+            script: build:linux
+            artifact: dist/*
+
+    runs-on: ${{ matrix.os }}
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: false
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Linux packaging dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsecret-1-dev rpm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build installer
+        run: npm run ${{ matrix.script }}
+
+      - name: Upload installer artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lumiq-${{ runner.os }}
+          path: ${{ matrix.artifact }}
+          if-no-files-found: error

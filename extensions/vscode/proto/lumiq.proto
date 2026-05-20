@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package lumiq;
+
+service LumiqDeveloper {
+  rpc StreamChat (ChatRequest) returns (stream ChatChunk);
+  rpc Ping (PingRequest) returns (PingResponse);
+}
+
+message ChatRequest {
+  string prompt = 1;
+  string provider = 2;
+  string model = 3;
+}
+
+message ChatChunk {
+  string content = 1;
+  bool done = 2;
+  string error = 3;
+}
+
+message PingRequest {
+}
+
+message PingResponse {
+  bool ok = 1;
+  string version = 2;
+}

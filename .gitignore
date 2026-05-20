@@ -1,0 +1,13 @@
+node_modules/
+out/
+dist/
+docs/
+*.env
+prompts/
+*.env.local
+.DS_Store
+Thumbs.db
+ERROR_LOG.md
+REMAINING_PLAN.md
+nextPlan.md
+prompt.md

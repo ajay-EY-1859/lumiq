@@ -1,0 +1,41 @@
+appId: com.lumiq.desktop
+productName: Lumiq
+directories:
+  buildResources: build
+  output: dist
+
+files:
+  - '!**/.vscode/*'
+  - '!src/*'
+  - '!electron.vite.config.*'
+  - '!{.eslintignore,.eslintrc.*,*.md,*.yaml}'
+  - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+  - '!docs/*'
+
+asarUnpack:
+  - resources/**
+  - node_modules/better-sqlite3/**
+  - node_modules/keytar/**
+
+win:
+  target: nsis
+  executableName: Lumiq
+
+nsis:
+  artifactName: Lumiq-Setup-${version}.${ext}
+  shortcutName: Lumiq
+  uninstallDisplayName: Lumiq ${version}
+  deleteAppDataOnUninstall: false
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+
+mac:
+  target: dmg
+  category: public.app-category.developer-tools
+
+linux:
+  target:
+    - AppImage
+    - deb
+  category: Development
+  maintainer: lumiq@example.com
