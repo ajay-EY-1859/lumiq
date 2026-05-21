@@ -19,7 +19,10 @@
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "test": "echo \"No tests configured yet. Add your test suite here.\" && exit 0",
+    "test:watch": "echo \"Add watch mode for your tests\" && exit 0"
   },
   "dependencies": {
     "@anthropic-ai/bedrock-sdk": "^0.29.1",

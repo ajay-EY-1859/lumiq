@@ -3,7 +3,7 @@
 // Safely delete files and directories with approval requirement
 // ═══════════════════════════════════════════════════════════════════
 
-import { existsSync, lstatSync, rmSync } from 'fs'
+import { existsSync, lstatSync, rmSync, readdirSync } from 'fs'
 import type { Tool } from './Tool'
 import { validatePathWithinWorkspace } from '../security/pathValidation'
 
@@ -46,7 +46,7 @@ export class FileDeleteTool implements Tool {
     // Check if it's a non-empty directory without recursive flag
     if (isDirectory && !recursive) {
       try {
-        const entries = require('fs').readdirSync(targetPath)
+        const entries = readdirSync(targetPath)
         if (entries.length > 0) {
           return `[ERROR] Directory is not empty: ${targetPath}. Set recursive: true to delete with contents.`
         }

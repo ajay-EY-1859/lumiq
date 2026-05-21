@@ -5,7 +5,7 @@ import { useChatStore } from '@renderer/store/chatStore'
 import { Button } from '@renderer/components/ui/Button'
 
 export function TaskPanel(): React.JSX.Element {
-  const { tasks, definitions, activeTaskId, setActiveTask, runTask, stopTask, removeTask, syncWorkspace, sendInput } = useTaskStore()
+  const { tasks, definitions, activeTaskId, setActiveTask, runTask, stopTask, removeTask, sendInput } = useTaskStore()
   const { activeSessionId, sessions } = useSessionStore()
   const activeSession = sessions.find(s => s.id === activeSessionId)
   
@@ -20,14 +20,6 @@ export function TaskPanel(): React.JSX.Element {
       terminalEndRef.current?.scrollIntoView({ behavior: 'smooth' })
     }
   }, [activeTask?.logs, activeTab])
-
-  useEffect(() => {
-    if (activeSession?.workspacePath) {
-      syncWorkspace(activeSession.workspacePath).catch((error) => {
-        console.error('Failed to sync workspace tasks', error)
-      })
-    }
-  }, [activeSession?.workspacePath, syncWorkspace])
 
   const handleRunTask = (name: string, command: string, args: string[]) => {
     if (!activeSession?.workspacePath) {
@@ -94,9 +86,11 @@ export function TaskPanel(): React.JSX.Element {
         {activeTab === 'tasks' && (
           <div style={{ padding: '16px', overflowY: 'auto', height: '100%' }}>
             {activeSession?.workspacePath ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxWidth: '400px' }}>
-                <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '8px' }}>
-                  Workspace: {activeSession.workspacePath}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxWidth: '500px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+                  <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                    Workspace: {activeSession.workspacePath}
+                  </div>
                 </div>
                 {definitions.length > 0 ? (
                   definitions.map(task => (
@@ -114,7 +108,7 @@ export function TaskPanel(): React.JSX.Element {
                   ))
                 ) : (
                   <div style={{ color: 'var(--text-muted)', fontSize: '13px', padding: '12px', background: 'var(--bg-secondary)', borderRadius: '6px' }}>
-                    No tasks found. Create a package.json to see available tasks.
+                    No workspace tasks are configured yet.
                   </div>
                 )}
               </div>

@@ -223,14 +223,6 @@ export class AgentLoop {
       .join('|')
   }
 
-  private buildLoopSignature(result: SendResult): string {
-    const toolSignature = result.toolCalls && result.toolCalls.length > 0
-      ? this.buildToolSignature(result.toolCalls)
-      : 'no_tool'
-    const contentExcerpt = result.content.trim().replace(/\s+/g, ' ').slice(0, 256)
-    return `${result.stopReason}:${toolSignature}:${contentExcerpt}`
-  }
-
   /**
    * The core agentic loop. Runs until AI gives a final response
    * with no tool calls.

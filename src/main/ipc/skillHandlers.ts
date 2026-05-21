@@ -1,6 +1,7 @@
 import { IPC, type CustomSkill } from '@shared/types'
 import { deleteSkill, listSkills, saveSkill } from '../db/skills'
 import fs from 'node:fs'
+import path from 'node:path'
 import { handleWithTimeout, IPC_TIMEOUT } from './handleWithTimeout'
 import { validatePathWithinWorkspace } from '../security/pathValidation'
 
@@ -49,12 +50,12 @@ export function registerSkillHandlers(): void {
       function processDirectory(dir: string) {
         const entries = fs.readdirSync(dir, { withFileTypes: true })
         for (const entry of entries) {
-          const fullPath = require('path').join(dir, entry.name)
+          const fullPath = path.join(dir, entry.name)
           if (entry.isDirectory()) {
             // Recursive scan for skills inside subfolders (e.g., SKILL.md inside subfolders)
             processDirectory(fullPath)
           } else if (entry.isFile()) {
-            const ext = require('path').extname(entry.name).toLowerCase()
+            const ext = path.extname(entry.name).toLowerCase()
             if (ext === '.json') {
               try {
                 const content = fs.readFileSync(fullPath, 'utf-8')

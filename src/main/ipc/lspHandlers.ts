@@ -1,5 +1,4 @@
 import { readFileSync, existsSync } from 'fs'
-import { join } from 'path'
 import { IPC, DocumentSymbol, SymbolKind, DefinitionResult } from '@shared/types'
 import { handleWithTimeout, IPC_TIMEOUT } from './handleWithTimeout'
 
@@ -8,13 +7,13 @@ export function registerLspHandlers(): void {
     return getDocumentSymbols(filePath)
   })
 
-  handleWithTimeout(IPC.LSP_WORKSPACE_SYMBOLS, IPC_TIMEOUT.long, (_event, req: { workspacePath: string, query: string }): DocumentSymbol[] => {
+  handleWithTimeout(IPC.LSP_WORKSPACE_SYMBOLS, IPC_TIMEOUT.long, (_event, _req: { workspacePath: string, query: string }): DocumentSymbol[] => {
     // For now, workspace symbols just search across files or return empty.
     // Real implementation would index the workspace.
     return []
   })
 
-  handleWithTimeout(IPC.LSP_DEFINITION, IPC_TIMEOUT.short, (_event, req: { workspacePath: string, filePath: string, line: number, column: number }): DefinitionResult | null => {
+  handleWithTimeout(IPC.LSP_DEFINITION, IPC_TIMEOUT.short, (_event, _req: { workspacePath: string, filePath: string, line: number, column: number }): DefinitionResult | null => {
     // Basic definition logic: parse the word at line/col, then search workspace or current file.
     return null
   })

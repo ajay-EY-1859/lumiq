@@ -14,13 +14,22 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: ci-cd-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: 22
+  NODE_ENV: production
 
 jobs:
   verify:
-    name: Verify
-    runs-on: windows-latest
-
+    name: Verify & Lint
+    runs-on: ubuntu-latest
+    
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -28,7 +37,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: ${{ env.NODE_VERSION }}
           cache: npm
 
       - name: Install dependencies
@@ -38,25 +47,46 @@ jobs:
         run: npm run typecheck
 
       - name: Lint
-        shell: pwsh
-        run: |
-          $hasFlatConfig = Test-Path eslint.config.js -PathType Leaf
-          $hasLegacyConfig = Test-Path .eslintrc -PathType Leaf -or Test-Path .eslintrc.json -PathType Leaf -or Test-Path .eslintrc.js -PathType Leaf -or Test-Path .eslintrc.cjs -PathType Leaf
-          if ($hasFlatConfig -or $hasLegacyConfig) {
-            npm run lint
-          } else {
-            Write-Host "Skipping lint: no ESLint config file found."
-          }
+        run: npm run lint
 
-      - name: Build
+      - name: Build (verify only)
         run: npm run build
-
+        
       - name: Upload build output
         uses: actions/upload-artifact@v4
         with:
           name: electron-vite-build
           path: out/
+          retention-days: 1
           if-no-files-found: error
+
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run npm audit
+        continue-on-error: true
+        run: npm audit --audit-level=moderate
+
+      - name: Check for vulnerable packages
+        run: |
+          if npm audit | grep -q "high\|critical"; then
+            echo "⚠️ High/Critical vulnerabilities found in dependencies"
+            npm audit --json > audit-report.json
+          fi
 
   package:
     name: Package ${{ matrix.os }}
@@ -68,13 +98,13 @@ jobs:
         include:
           - os: windows-latest
             script: build:win
-            artifact: dist/*
+            artifact: dist/**
           - os: macos-latest
             script: build:mac
-            artifact: dist/*
+            artifact: dist/**
           - os: ubuntu-latest
             script: build:linux
-            artifact: dist/*
+            artifact: dist/**
 
     runs-on: ${{ matrix.os }}
     env:
@@ -87,7 +117,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: ${{ env.NODE_VERSION }}
           cache: npm
 
       - name: Install Linux packaging dependencies
@@ -99,7 +129,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build installer
+      - name: Build package
         run: npm run ${{ matrix.script }}
 
       - name: Upload installer artifacts
@@ -107,4 +137,51 @@ jobs:
         with:
           name: Lumiq-${{ runner.os }}
           path: ${{ matrix.artifact }}
+          retention-days: 30
           if-no-files-found: error
+
+  release:
+    name: Create Release
+    needs: package
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "TAG=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Generate release notes
+        id: notes
+        run: |
+          echo "## Changes in ${{ steps.version.outputs.VERSION }}" > RELEASE_NOTES.md
+          echo "" >> RELEASE_NOTES.md
+          echo "### Platform-specific builds available:" >> RELEASE_NOTES.md
+          echo "- 🪟 Windows (.exe, .msi)" >> RELEASE_NOTES.md
+          echo "- 🍎 macOS (.dmg)" >> RELEASE_NOTES.md
+          echo "- 🐧 Linux (.AppImage, .deb)" >> RELEASE_NOTES.md
+          echo "" >> RELEASE_NOTES.md
+          echo "**Commit:** \`$(git rev-parse --short HEAD)\`" >> RELEASE_NOTES.md
+
+      - name: Create GitHub Release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: ${{ steps.version.outputs.TAG }}
+          name: Lumiq ${{ steps.version.outputs.VERSION }}
+          bodyFile: RELEASE_NOTES.md
+          artifacts: artifacts/**/*
+          artifactContentType: application/octet-stream
+          draft: false
+          prerelease: ${{ contains(steps.version.outputs.VERSION, 'alpha') || contains(steps.version.outputs.VERSION, 'beta') }}
+          token: ${{ secrets.GITHUB_TOKEN }}

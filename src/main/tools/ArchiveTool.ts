@@ -4,7 +4,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 import { execSync } from 'child_process'
-import { existsSync, statSync } from 'fs'
+import { existsSync, statSync, mkdirSync } from 'fs'
 import { extname } from 'path'
 import type { Tool } from './Tool'
 import { validatePathWithinWorkspace } from '../security/pathValidation'
@@ -156,7 +156,7 @@ export class ArchiveTool implements Tool {
 
     if (!existsSync(destPath)) {
       try {
-        require('fs').mkdirSync(destPath, { recursive: true })
+        mkdirSync(destPath, { recursive: true })
       } catch (error) {
         return `[ERROR] Failed to create destination directory: ${(error as Error).message}`
       }

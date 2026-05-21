@@ -278,7 +278,13 @@ export class ToolExecutor {
     // Check if tool is enabled
     const settings = this.toolSettings.get(toolName)
     if (settings && !settings.enabled) {
-      return `Error: Tool "${toolName}" is disabled`
+      if (settings.permission === 'always-deny') {
+        return `Error: Tool "${toolName}" execution is denied by settings`
+      }
+      const approved = await this.requestApproval(refreshedTool, toolInput)
+      if (!approved) {
+        return `Tool execution denied by user: ${toolName}`
+      }
     }
 
     const toolPermission = settings?.permission || (refreshedTool.requiresApproval ? 'always-ask' : 'always-allow')

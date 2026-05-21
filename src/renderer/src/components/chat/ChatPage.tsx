@@ -38,9 +38,6 @@ export function ChatPage(): React.JSX.Element {
   const [taskMode, setTaskMode] = useState<string | null>(null)
 
   const activeSession = sessions.find((s) => s.id === activeSessionId)
-  
-  // Compute recent workspaces from all sessions (sorted by recent usage typically, assuming sessions are ordered)
-  const recentWorkspaces = Array.from(new Set(sessions.map(s => s.workspacePath).filter(Boolean))) as string[]
 
   const handleSelectWorkspace = async (): Promise<void> => {
     if (!activeSessionId) return
@@ -197,42 +194,22 @@ export function ChatPage(): React.JSX.Element {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
             Workspace:
           </span>
-          {activeSession?.workspacePath ? (
-            <>
-              <span className="font-mono text-[var(--text-primary)] bg-[var(--bg-tertiary)] px-2 py-0.5 rounded-md border border-[var(--border)] shadow-sm">{activeSession.workspacePath}</span>
-              <button 
-                onClick={handleSelectWorkspace}
-                className="text-[var(--accent-blue)] hover:text-[var(--accent-blue-hover)] font-medium hover:underline transition-colors ml-1"
-              >
-                Change
-              </button>
-            </>
-          ) : (
-            <Button variant="outline" size="sm" onClick={handleSelectWorkspace} className="py-1 px-3 h-auto text-xs">Bind Workspace...</Button>
-          )}
-
-          {/* Recent Workspaces Quick-Select */}
-          {recentWorkspaces.length > 0 && (
-            <div className="ml-auto flex items-center gap-2">
-              <span className="text-[var(--text-secondary)] opacity-70">Recent:</span>
-              <select 
-                className="bg-[var(--bg-secondary)] border border-[var(--border)] rounded text-[var(--text-primary)] px-2 py-1 outline-none text-xs w-[200px]"
-                value={activeSession?.workspacePath || ""}
-                onChange={async (e) => {
-                  const val = e.target.value
-                  if (val && activeSessionId) {
-                    await setWorkspace(activeSessionId, val)
-                    await loadSession(activeSessionId)
-                  }
-                }}
-              >
-                <option value="" disabled>Select a recent workspace...</option>
-                {recentWorkspaces.map(ws => (
-                  <option key={ws} value={ws}>{ws.length > 40 ? '...' + ws.slice(-40) : ws}</option>
-                ))}
-              </select>
-            </div>
-          )}
+          <span className="text-[var(--text-secondary)] font-medium flex items-center gap-2">
+            <span>Workspace:</span>
+            {activeSession?.workspacePath ? (
+              <>
+                <span className="font-mono text-[var(--text-primary)] bg-[var(--bg-tertiary)] px-2 py-0.5 rounded-md border border-[var(--border)] shadow-sm">{activeSession.workspacePath}</span>
+                <button 
+                  onClick={handleSelectWorkspace}
+                  className="text-[var(--accent-blue)] hover:text-[var(--accent-blue-hover)] font-medium hover:underline transition-colors ml-1"
+                >
+                  Change
+                </button>
+              </>
+            ) : (
+              <Button variant="outline" size="sm" onClick={handleSelectWorkspace} className="py-1 px-3 h-auto text-xs">Bind Workspace...</Button>
+            )}
+          </span>
         </div>
       )}
 
@@ -287,7 +264,7 @@ export function ChatPage(): React.JSX.Element {
       </div>
 
       {/* Tool Approval Dialogs */}
-      {pendingApprovals.map((request, index) => (
+      {pendingApprovals.map((request) => (
         <ToolApprovalDialog
           key={request.requestId}
           request={request}

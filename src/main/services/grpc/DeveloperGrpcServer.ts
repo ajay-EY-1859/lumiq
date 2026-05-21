@@ -57,10 +57,10 @@ class DeveloperGrpcServer {
     this.authToken = authToken
     this.server = new grpc.Server()
     this.server.addService(loaded.lumiq.LumiqDeveloper.service, {
-      streamChat: (call: StreamCall) => {
-        void this.handleStreamChat(call)
+      streamChat: (_call: StreamCall) => {
+        void this.handleStreamChat(_call)
       },
-      ping: (call: PingCall, callback: grpc.sendUnaryData<{ ok: boolean; version: string }>) => {
+      ping: (_call: PingCall, callback: grpc.sendUnaryData<{ ok: boolean; version: string }>) => {
         callback(null, { ok: true, version: '0.1.0' })
       }
     })

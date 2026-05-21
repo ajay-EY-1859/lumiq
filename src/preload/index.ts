@@ -22,6 +22,7 @@ import type {
   GrpcStatus,
   ToolApprovalRequest,
   WorkspaceTaskDefinition,
+  EditDecision,
   SearchRequest,
   SearchResponse,
   GitStatusResult,

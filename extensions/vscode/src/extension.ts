@@ -6,7 +6,7 @@ import * as protoLoader from '@grpc/proto-loader'
 type ChatChunk = { content?: string; done?: boolean; error?: string }
 type LumiqClient = grpc.Client & {
   streamChat(request: { prompt: string }, metadata?: grpc.Metadata): NodeJS.ReadableStream
-  ping(request: {}, callback: (error: grpc.ServiceError | null, response: { ok: boolean; version: string }) => void): void
+  ping(request: Record<string, never>, callback: (error: grpc.ServiceError | null, response: { ok: boolean; version: string }) => void): void
 }
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -87,7 +87,7 @@ class SidebarProvider implements vscode.WebviewViewProvider {
 
   public resolveWebviewView(
     webviewView: vscode.WebviewView,
-    context: vscode.WebviewViewResolveContext,
+    _context: vscode.WebviewViewResolveContext,
     _token: vscode.CancellationToken
   ) {
     webviewView.webview.options = {
@@ -154,7 +154,7 @@ class SidebarProvider implements vscode.WebviewViewProvider {
     })
   }
 
-  private _getHtmlForWebview(webview: vscode.Webview) {
+  private _getHtmlForWebview(_webview: vscode.Webview) {
     // Basic UI for now:
     return `<!DOCTYPE html>
       <html lang="en">

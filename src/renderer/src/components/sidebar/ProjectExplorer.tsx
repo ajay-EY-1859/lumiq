@@ -87,32 +87,6 @@ export function ProjectExplorer(): React.JSX.Element {
   const [renamingNode, setRenamingNode] = useState<FileNode | null>(null)
   const [renameValue, setRenameValue] = useState('')
 
-  useEffect(() => {
-    const handleGlobalClick = () => setContextMenu(null)
-    window.addEventListener('click', handleGlobalClick)
-    return () => window.removeEventListener('click', handleGlobalClick)
-  }, [])
-
-  useEffect(() => {
-    if (activeSession?.workspacePath) {
-      // First fetch ignored files
-      window.electronAPI.git.getIgnored(activeSession.workspacePath)
-        .then(ignored => {
-          // git ls-files outputs directories with trailing slashes, so let's normalize
-          const ignoreSet = new Set(ignored.map(p => p.replace(/\/$/, '')))
-          // Hardcode .git as ignored
-          ignoreSet.add('.git')
-          setIgnoredPaths(ignoreSet)
-          return loadDir(activeSession.workspacePath, ignoreSet)
-        })
-        .then(setRootNodes)
-        .catch(() => setRootNodes([]))
-    } else {
-      setRootNodes([])
-      setIgnoredPaths(new Set())
-    }
-  }, [activeSession?.workspacePath])
-
   const loadDir = async (dirPath: string, ignores: Set<string> = ignoredPaths): Promise<FileNode[]> => {
     try {
       const entries = await window.electronAPI.fs.listDir(dirPath)
@@ -123,12 +97,14 @@ export function ProjectExplorer(): React.JSX.Element {
       }))
 
       // Filter ignored
-      if (!activeSession?.workspacePath) return nodes
-      const workspacePath = activeSession.workspacePath.replace(/\\/g, '/')
+      const workspacePath = activeSession?.workspacePath
+      if (!workspacePath) return nodes
+
+      const normalizedWorkspacePath = workspacePath.replace(/\\/g, '/')
       
       return nodes.filter(node => {
         // compute relative path
-        let rel = node.path.replace(workspacePath, '')
+        let rel = node.path.replace(normalizedWorkspacePath, '')
         if (rel.startsWith('/')) rel = rel.slice(1)
         
         // Also check if any parent directory is ignored
@@ -144,6 +120,33 @@ export function ProjectExplorer(): React.JSX.Element {
       return []
     }
   }
+
+  useEffect(() => {
+    const handleGlobalClick = () => setContextMenu(null)
+    window.addEventListener('click', handleGlobalClick)
+    return () => window.removeEventListener('click', handleGlobalClick)
+  }, [])
+
+  useEffect(() => {
+    const workspacePath = activeSession?.workspacePath
+    if (workspacePath) {
+      // First fetch ignored files
+      window.electronAPI.git.getIgnored(workspacePath)
+        .then(ignored => {
+          // git ls-files outputs directories with trailing slashes, so let's normalize
+          const ignoreSet = new Set(ignored.map(p => p.replace(/\/$/, '')))
+          // Hardcode .git as ignored
+          ignoreSet.add('.git')
+          setIgnoredPaths(ignoreSet)
+          return loadDir(workspacePath, ignoreSet)
+        })
+        .then(setRootNodes)
+        .catch(() => setRootNodes([]))
+    } else {
+      setRootNodes([])
+      setIgnoredPaths(new Set())
+    }
+  }, [activeSession?.workspacePath])
 
   const toggleNode = async (node: FileNode) => {
     if (!node.isDirectory) return
@@ -183,13 +186,14 @@ export function ProjectExplorer(): React.JSX.Element {
   }
 
   const reloadWorkspace = () => {
-    if (activeSession?.workspacePath) {
-      window.electronAPI.git.getIgnored(activeSession.workspacePath)
+    const workspacePath = activeSession?.workspacePath
+    if (workspacePath) {
+      window.electronAPI.git.getIgnored(workspacePath)
         .then(ignored => {
           const ignoreSet = new Set(ignored.map(p => p.replace(/\/$/, '')))
           ignoreSet.add('.git')
           setIgnoredPaths(ignoreSet)
-          return loadDir(activeSession.workspacePath, ignoreSet)
+          return loadDir(workspacePath, ignoreSet)
         })
         .then(setRootNodes)
     }
