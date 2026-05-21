@@ -257,9 +257,6 @@ export class AgentLoop {
     while (iteration < MAX_ITERATIONS) {
       if (signal.aborted) return
       iteration++
-
-      let fullContent = ''
-
       // Stream response from AI (with retry on transient failures)
       const result: SendResult = await this.withRetry(
         () => provider.sendMessage(messages, {
@@ -272,7 +269,6 @@ export class AgentLoop {
             inputSchema: tool.inputSchema
           })),
           onChunk: (chunk: string) => {
-            fullContent += chunk
             if (!signal.aborted) {
               options.callbacks?.onChunk?.(chunk)
               window?.webContents.send(IPC.CHAT_STREAM_CHUNK, chunk)

@@ -1,6 +1,6 @@
 // Lumiq — Settings: Providers Tab
 // Contains: ProvidersTab, ProviderSetupPanel, ModelSelector, ConnectedAccountsSection, OAuthAccountCard
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { useProviderStore } from '@renderer/store/providerStore'
 import { Button } from '@renderer/components/ui/Button'
 import { Input } from '@renderer/components/ui/Input'
@@ -33,9 +33,7 @@ export function ProvidersTab(): React.JSX.Element {
   const [selectedProvider, setSelectedProvider] = useState<ProviderType | null>(null)
   useEffect(() => { loadProviders() }, [loadProviders])
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const configuredProviders = PROVIDER_INFO.filter((info) => { const existing = providers.find((p) => p.provider === info.id) as any; return info.id === 'bedrock' ? existing?.hasAwsKeys : existing?.hasApiKey })
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const unconfiguredProviders = PROVIDER_INFO.filter((info) => { const existing = providers.find((p) => p.provider === info.id) as any; const hasCredentials = info.id === 'bedrock' ? existing?.hasAwsKeys : existing?.hasApiKey; return !hasCredentials })
 
   const handleTest = async (pid: string): Promise<void> => { setTesting(pid); const r = await testProvider(pid); setTesting(null); r.success ? showToast('success', 'Connected!', `${pid} working.`) : showToast('error', 'Failed', r.error) }
@@ -43,7 +41,6 @@ export function ProvidersTab(): React.JSX.Element {
   const handleSaveComplete = (): void => { setSelectedProvider(null) }
 
   const activeInfo = selectedProvider ? PROVIDER_INFO.find((p) => p.id === selectedProvider) : null
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const activeExisting = selectedProvider ? providers.find((p) => p.provider === selectedProvider) as any : null
 
   return (
@@ -56,7 +53,6 @@ export function ProvidersTab(): React.JSX.Element {
         ) : (
           <div className={styles.configuredList}>
             {configuredProviders.map((info) => {
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
               const existing = providers.find((p) => p.provider === info.id) as any
               const isActive = selectedProvider === info.id
               return (
@@ -97,7 +93,6 @@ export function ProvidersTab(): React.JSX.Element {
 // ── Provider Setup Panel ──
 function ProviderSetupPanel({ info, existing, onSave, onTest, onDelete, onClose, onSaveComplete, isTesting, isAlreadyConfigured }: {
   info: { id: ProviderType; name: string; emoji: string; needsKey: boolean }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   existing?: any
   onSave: (config: Omit<ProviderConfig, 'id'> & Partial<Pick<ProviderConfig, 'id'>>) => Promise<void>
   onTest: () => void; onDelete: () => void; onClose: () => void; onSaveComplete: () => void
@@ -169,7 +164,7 @@ function ProviderSetupPanel({ info, existing, onSave, onTest, onDelete, onClose,
 
 // ── Model Selector ──
 function ModelSelector({ providerId, value, onChange }: { providerId: ProviderType; value: string; onChange: (v: string) => void }): React.JSX.Element {
-  const staticModels = PROVIDER_MODELS[providerId] || []
+  const staticModels = useMemo(() => PROVIDER_MODELS[providerId] || [], [providerId])
   const [remoteModels, setRemoteModels] = useState<{ id: string; label: string }[]>([])
   const [isFetchingModels, setIsFetchingModels] = useState(false)
   const shouldDefaultCustom = providerId === 'bedrock' || providerId === 'custom' || (Boolean(value) && !staticModels.some((m) => m.id === value))

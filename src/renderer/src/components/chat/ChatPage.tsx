@@ -145,7 +145,7 @@ export function ChatPage(): React.JSX.Element {
       // Send via IPC
       await sendMessage(message, sessionId, activeProvider, activeModel, undefined, taskMode || undefined)
     },
-    [activeSessionId, activeProvider, activeModel, sendMessage, createSession, addMessage, taskMode]
+    [activeSessionId, activeProvider, activeModel, sendMessage, createSession, addMessage, taskMode, setActiveSession, setError]
   )
 
   // ── Empty State ──

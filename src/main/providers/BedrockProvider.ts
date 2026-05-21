@@ -166,7 +166,6 @@ export class BedrockProvider implements AIProvider {
     for (let i = Math.max(0, len - 2); i < len; i++) {
       const msg = mappedMessages[i]
       if (Array.isArray(msg.content) && msg.content.length > 0) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ;(msg.content[msg.content.length - 1] as any).cache_control = { type: 'ephemeral' }
       }
     }

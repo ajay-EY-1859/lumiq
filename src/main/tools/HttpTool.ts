@@ -57,7 +57,7 @@ export class HttpTool implements Tool {
     // Validate URL
     try {
       new URL(url)
-    } catch (error) {
+    } catch {
       return `[ERROR] Invalid URL: ${url}`
     }
 
@@ -166,7 +166,7 @@ Headers:
       try {
         const parsed = JSON.parse(data)
         output += JSON.stringify(parsed, null, 2)
-      } catch (e) {
+      } catch {
         output += data
       }
     } else {
@@ -203,7 +203,7 @@ Headers:
       }
 
       return false
-    } catch (e) {
+    } catch {
       return false
     }
   }

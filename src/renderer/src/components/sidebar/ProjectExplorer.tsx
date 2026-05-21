@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { useSessionStore } from '@renderer/store/sessionStore'
 import { useEditorStore } from '@renderer/store/editorStore'
 
@@ -87,7 +87,7 @@ export function ProjectExplorer(): React.JSX.Element {
   const [renamingNode, setRenamingNode] = useState<FileNode | null>(null)
   const [renameValue, setRenameValue] = useState('')
 
-  const loadDir = async (dirPath: string, ignores: Set<string> = ignoredPaths): Promise<FileNode[]> => {
+  const loadDir = useCallback(async (dirPath: string, ignores: Set<string> = ignoredPaths): Promise<FileNode[]> => {
     try {
       const entries = await window.electronAPI.fs.listDir(dirPath)
       const nodes = entries.map((e: { name: string, isDirectory: boolean }) => ({
@@ -119,7 +119,7 @@ export function ProjectExplorer(): React.JSX.Element {
       console.error(e)
       return []
     }
-  }
+  }, [ignoredPaths, activeSession])
 
   useEffect(() => {
     const handleGlobalClick = () => setContextMenu(null)
@@ -146,7 +146,7 @@ export function ProjectExplorer(): React.JSX.Element {
       setRootNodes([])
       setIgnoredPaths(new Set())
     }
-  }, [activeSession?.workspacePath])
+  }, [activeSession?.workspacePath, loadDir])
 
   const toggleNode = async (node: FileNode) => {
     if (!node.isDirectory) return

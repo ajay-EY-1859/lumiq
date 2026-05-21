@@ -132,12 +132,12 @@ export class FileSearchTool implements Tool {
                   results.push(result)
                 }
               }
-            } catch (e) {
+            } catch {
               // Skip files that can't be read
             }
           }
         }
-      } catch (e) {
+      } catch {
         // Skip directories that can't be read
       }
     }

@@ -98,7 +98,7 @@ export class NotebookTool implements Tool {
     } finally {
       try {
         unlinkSync(tempFile)
-      } catch (e) {
+      } catch {
         // Ignore cleanup errors
       }
     }
@@ -125,7 +125,7 @@ export class NotebookTool implements Tool {
     } finally {
       try {
         unlinkSync(tempFile)
-      } catch (e) {
+      } catch {
         // Ignore cleanup errors
       }
     }

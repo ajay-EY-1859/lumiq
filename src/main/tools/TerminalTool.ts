@@ -226,7 +226,7 @@ export class TerminalTool implements Tool {
       session.process.kill('SIGTERM')
       SESSIONS.delete(input.sessionId)
       return `[OK] Session terminated: ${input.sessionId}`
-    } catch (error) {
+    } catch {
       SESSIONS.delete(input.sessionId)
       return `[OK] Session cleaned up: ${input.sessionId}`
     }
@@ -238,7 +238,7 @@ export class TerminalTool implements Tool {
       if (now - session.createdAt > SESSION_TIMEOUT) {
         try {
           session.process.kill('SIGTERM')
-        } catch (error) {
+        } catch {
           // Ignore
         }
         SESSIONS.delete(sessionId)
