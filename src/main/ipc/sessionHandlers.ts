@@ -12,8 +12,8 @@ import {
   getSession,
   updateSessionWorkspace
 } from '../db/sessions'
-import { getSessionMessages, clearSessionMessages, compactSessionMessages } from '../db/messages'
-import { setWorkspaceRoot, validateWorkspaceRootCandidate } from '../security/pathValidation'
+import { getSessionMessages, clearSessionMessages, compactSessionMessages, deleteMessagesFrom } from '../db/messages'
+import { setWorkspaceRoot, setAllowedExtraPaths, validateWorkspaceRootCandidate, parseAttachedPaths } from '../security/pathValidation'
 import { handleWithTimeout, IPC_TIMEOUT } from './handleWithTimeout'
 
 export function registerSessionHandlers(): void {
@@ -31,6 +31,18 @@ export function registerSessionHandlers(): void {
     setWorkspaceRoot(session.workspacePath || null)
 
     const messages = getSessionMessages(sessionId)
+
+    // Extract all attached paths from the session history
+    const attachedPathsSet = new Set<string>()
+
+
+    for (const msg of messages) {
+      if (msg.content) {
+        parseAttachedPaths(msg.content).forEach((p) => attachedPathsSet.add(p))
+      }
+    }
+    setAllowedExtraPaths(Array.from(attachedPathsSet))
+
     return { session, messages }
   })
 
@@ -107,6 +119,15 @@ export function registerSessionHandlers(): void {
     IPC_TIMEOUT.short,
     (_event, data: { sessionId: string; keepCount?: number }) => {
       return compactSessionMessages(data.sessionId, data.keepCount || 10)
+    }
+  )
+
+  // ── Delete messages from a specific message ID ──
+  handleWithTimeout(
+    IPC.SESSION_DELETE_MESSAGES_FROM,
+    IPC_TIMEOUT.short,
+    (_event, data: { sessionId: string; messageId: string }) => {
+      return deleteMessagesFrom(data.sessionId, data.messageId)
     }
   )
 }

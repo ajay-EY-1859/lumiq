@@ -13,6 +13,7 @@ import { getSession } from '../db/sessions'
 import { getAgentRoute } from '../db/agentRoutes'
 import { getAgent } from '../db/agents'
 import { handleWithTimeout, IPC_TIMEOUT } from './handleWithTimeout'
+import { setAllowedExtraPaths, parseAttachedPaths } from '../security/pathValidation'
 
 const DEFAULT_SYSTEM_PROMPT = `You are Lumiq, an advanced agentic AI coding assistant embedded in a desktop IDE.
 You operate directly on the user's local file system within a designated workspace directory.
@@ -114,6 +115,20 @@ All file paths should be relative to the workspace directory above. Use it as th
       // Set workspace path on tool executor so tools default to workspace
       // instead of process.cwd() (which is Electron's install directory)
       agentLoop.getToolExecutor().setWorkspacePath(session.workspacePath || null)
+
+      // Extract all attached paths from the current message and session history
+      const attachedPathsSet = new Set<string>()
+      
+
+
+      parseAttachedPaths(message).forEach((p) => attachedPathsSet.add(p))
+      for (const msg of messages) {
+        if (msg.content) {
+          parseAttachedPaths(msg.content).forEach((p) => attachedPathsSet.add(p))
+        }
+      }
+
+      setAllowedExtraPaths(Array.from(attachedPathsSet))
 
       // Process through agent loop (handles streaming internally)
       await agentLoop.processMessage(message, sessionId, messages, config, {

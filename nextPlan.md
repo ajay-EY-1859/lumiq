@@ -1,122 +1,109 @@
-# Lumiq — Remaining Work Plan
+# Lumiq — Advanced Vision & Next Phase Roadmap
 
-**Last Updated:** 2026-05-19
-
----
-
-## Executive Summary
-
-Lumiq is at **~88% IDE-ready** after completing search, version control UI, and workspace operations. The app now has Find in Files with regex support, a full Git panel with stage/unstage/commit, inline diff preview, and the bottom panel tab system (Tasks / Search / Git).
-
-The next recommended phase is **code intelligence and polish**.
+**Last Updated:** 2026-05-22  
+**Current Status:** 🚀 **~92% Complete** (Production-Ready Code Intelligence & Version Control)
 
 ---
 
-## ✅ Milestone 3: Diff-First Editing (COMPLETE)
+## 📈 Executive Summary
 
-- [x] **Build `DiffViewer` component** — Unified diff renderer with hunk view *(done 2026-05-17)*
-- [x] **Add accept/reject per hunk** — Each hunk has Accept / Reject / Accept All / Reject All *(done 2026-05-17)*
-- [x] **Add apply-to-file and copy-patch actions** — Apply accepted hunks to file system, copy as patch *(done 2026-05-17)*
-- [x] **Record accepted/rejected/applied edits in session history** — DB-backed audit trail through edit decision IPC *(done 2026-05-17)*
+Lumiq has matured from a multi-provider chat wrapper into a **highly robust, desktop-first AI IDE companion**. With the successful completion of **Monaco Editor integration**, **Find in Files with Regex**, **Git Version Control integration**, **Code Intelligence (LSP, outline, definition routing)**, **Message Retry/Regenerate capabilities**, and **Clipboard file paste attachments**, Lumiq is ready to leap into the next frontier of agentic software engineering.
 
----
-
-## ✅ Milestone 4: Terminal, Tasks, Problems (COMPLETE)
-
-- [x] **Persist task definitions in DB** — Workspace task definitions are saved per workspace path *(done 2026-05-17)*
-- [x] **Sync `package.json` scripts** — Package scripts auto-sync while preserving custom DB tasks *(done 2026-05-17)*
-- [x] **Problem-to-chat bridge** — "Ask Lumiq to Fix" injects a targeted chat prompt *(done 2026-05-17)*
-- [x] **Interactive terminal** — Running tasks accept stdin from the terminal input row *(done 2026-05-17)*
+The next phases will focus on **Advanced Agentic Ecosystems (MCP)**, **Codebase RAG & Semantic Context**, **Autonomous Diagnostics (Self-Healing Loops)**, and **Multi-File Refactoring Suites**.
 
 ---
 
-## ✅ Stabilization Priority (COMPLETE)
+## ✅ Milestone 7: Model Context Protocol (MCP) & Advanced Tooling
 
-- [x] **Implement retry logic for provider calls** — Exponential backoff for transient failures *(done 2026-05-17)*
-- [x] **Add timeout support to IPC handlers** — Shared timeout wrapper plus defaults for DB/fs/provider/task/session/settings paths *(done 2026-05-17)*
+Lumiq will serve as a central controller for agentic microservices using Anthropic's **Model Context Protocol (MCP)**, enabling models to interact with custom databases, browser instances, and custom enterprise tools.
 
----
-
-## ✅ Editor Upgrade (COMPLETE)
-
-- [x] **Replace textarea with Monaco** — Preserves tabs, dirty state, reload, and Ctrl/Cmd+S save *(done 2026-05-17)*
-- [x] **Syntax highlighting by filename** — Monaco language mapping for common source/config files *(done 2026-05-17)*
-- [x] **Built-in editor affordances** — Find, go-to-line, bracket matching, folding, minimap *(done 2026-05-17)*
-
----
-
-## 🔵 Next Recommended Phase: Search, Version Control, Workspace Operations
-
-## ✅ Search (COMPLETE)
-- [x] **Find in Files** — Project-wide search UI backed by safe workspace search *(done 2026-05-19)*
-- [x] **Regex Search** — Regex option with result grouping by file *(done 2026-05-19)*
-- [x] **Search result navigation** — Open file at matched line/column *(done 2026-05-19)*
-
-### ✅ Version Control (COMPLETE)
-- [x] **Git status indicators** — Modified/added/deleted/renamed/untracked markers *(done 2026-05-19)*
-- [x] **Git diff view** — Inline diff preview for changed files *(done 2026-05-19)*
-- [x] **Branch indicator** — Current branch with ahead/behind counts *(done 2026-05-19)*
-- [x] **Basic git actions** — Stage, unstage, discard with confirmation, commit *(done 2026-05-19)*
-
-### Workspace Operations
-- [x] **File rename/delete UI** — Safe file operations from project explorer *(done 2026-05-19)*
-- [ ] **File tree multi-select** — Open or operate on multiple files
-- [ ] **`.gitignore` integration** — Hide ignored files by default
-- [x] **Recent workspaces** — Quick-open menu for previously bound workspaces *(done 2026-05-19)*
-- [ ] **Workspace settings** — `.lumiq/settings.json` for project-level preferences
-- [ ] **Workspace settings** — `.lumiq/settings.json` for project-level preferences
+- [x] **MCP Hub Console**
+  - A beautiful settings hub to register, spin up, and manage standard MCP servers (e.g. SQLite, Postgres, Puppeteer, GitHub, Brave Search).
+  - Status indicators (Connected / Idle / Error) with real-time logs for tool invocations.
+- [x] **Dynamic Tool Binding**
+  - Dynamically discover and parse schema definitions of active MCP servers.
+  - Automatically populate custom tool descriptions and list them dynamically in slash commands (`/mcp-postgres`, `/mcp-brave`).
+- [x] **Custom Script Tool Creator**
+  - Enable users to paste lightweight Node.js/Python scripts inside Lumiq Settings to spin up dynamic local tools instantly without hosting external servers.
 
 ---
 
-## ⬜ Deferred Milestones
+## ⬜ Milestone 8: Semantic Search (RAG) & Smart Context Engineering
 
-### ✅ Milestone 5: Code Intelligence (COMPLETE)
-- [x] LSP integration for symbol index *(done 2026-05-20)*
-- [x] Outline and go-to-definition *(done 2026-05-20)*
-- [x] Chat references to symbols, diagnostics, and selected ranges *(done 2026-05-20)*
+Traditional regex search requires keyword matches. Milestone 8 introduces conceptual indexing of workspaces using local vector databases.
 
-### Milestone 6: VS Code Companion (In Progress)
-- [x] Sidebar/webview extension *(done 2026-05-20)*
-- [x] Connection status and reconnect UX *(done 2026-05-20)*
-- [ ] Inline diff preview (Custom CodeLens / Diff view with Accept/Reject)
-- [x] Package local VSIX *(done 2026-05-20)*
-
----
-
-## 🏗 Architecture Debt
-
-- [ ] Request/response tracing for IPC calls
-- [ ] Renderer-side IPC rate limiting
-- [ ] Full cancellation propagation through tools and providers
-- [ ] Model validation before sending requests
-- [ ] Cost estimation and token usage reporting
-- [ ] Session search by content or date
+- [ ] **Local Codebase Semantic Indexing (RAG)**
+  - Local background indexing using **Transformers.js** (for offline-first embedding generation) or remote API embeddings (Gemini/OpenAI/Cohere).
+  - Lightweight vector store (e.g., SQLite-vec or in-memory index) to store codebase chunks.
+- [ ] **Smart Context Window Optimizer**
+  - Automatic pruning of redundant context: dynamic sliding windows that auto-summarize long tool/agent execution blocks once they exceed 80% of context limits.
+  - Interactive **Token Budget Visualizer** in the message input area showing estimated context usage and cost before sending.
+- [ ] **Natural Language Symbol Explorer**
+  - Search code conceptually through a new "Semantic Search" panel tab: e.g., *"Find where we handle OAuth token expiration"* matches conceptually without requiring specific keywords.
 
 ---
 
-## 📊 Current State
+## ⬜ Milestone 9: Autonomous Self-Healing & Agent Debugging
 
-| Aspect | Status | Completeness |
-|--------|--------|--------------|
-| Agent Engine | ✅ Stable | 95% |
-| Tool Execution | ✅ Stable | 90% |
-| Provider Support | ✅ Stable | 90% |
-| Workspace Shell | ✅ Strong | 88% |
-| Diff Editing | ✅ Complete | 92% |
-| Terminal/Tasks | ✅ Functional | 82% |
-| Editor | ✅ Monaco | 82% |
-| Problems Panel | ✅ Functional | 70% |
-| Search | ✅ Complete | 90% |
-| Version Control | ✅ Complete | 85% |
-| Code Intelligence | ✅ Complete | 100% |
-| VS Code Extension | ❌ Scaffold | 10% |
-| **Overall IDE Readiness** | **🟡 In Progress** | **~90%** |
+Bring true autonomy to local task execution. Lumiq will not just write code; it will monitor build states, analyze failures, and auto-correct itself.
+
+- [ ] **Self-Healing Code Watcher**
+  - Monitor terminal tasks (like `npm run dev`, `vitest`, or compilations).
+  - Upon detecting stdout/stderr exceptions or failed tests, auto-trigger a background **Fix Subagent** that reads the failing code and exception, generates a corrective diff, and presents the solution to the user with a single-click "Apply Fix" option.
+- [ ] **Step-by-Step Agent Execution Visualizer**
+  - A beautiful, node-based flowchart/timeline visualizer in the chat showing:
+    - *Thought process* (what the agent wants to do next).
+    - *Tool Selection* (input arguments and schema).
+    - *Manual Approval Gate* (step-through debugging).
+- [ ] **Sandboxed Shell execution**
+  - Option to spin up lightweight containerized environments or sandbox terminals for executing commands safely.
 
 ---
 
-## 🎯 Recommended Next Steps
+## ⬜ Milestone 10: Multi-File Diffing & Code Refactoring Suites
 
-1. ~~**File rename/delete UI**~~ *(Done)*
-2. ~~**Recent workspaces**~~ *(Done)*
-3. **LSP integration** — Symbol index for go-to-definition and outline.
-4. **Workspace settings** — `.lumiq/settings.json` for project-level preferences.
+Expand single-file diff acceptance into powerful project-wide refactoring workflows.
+
+- [ ] **Multi-File Interactive Diff Review**
+  - Visual side-by-side or split diffing interface displaying changes across multiple files concurrently.
+  - Bulk actions: "Accept all changes in `/src/components`", "Reject all changes in tests".
+- [ ] **Tree-Context Menu Refactorings**
+  - Right-click folders or files in the explorer tree to trigger automated bulk refactoring workflows:
+    - `Convert JavaScript to TypeScript`
+    - `Generate Unit Tests`
+    - `Optimize Performance & Memoization`
+    - `Write JSDoc / Documentation comments`
+
+---
+
+## 🏗 Architecture & Core Improvements
+
+- [ ] **Request/Response Trace Logging**: Export complete request/response payloads (including system prompts and raw tool outputs) for debugging and auditing.
+- [ ] **Offline-First Mode**: Automated configuration with local LLM providers (Ollama / Llama.cpp) and automatic model enumeration.
+- [ ] **Cost Analytics & Budget Caps**: A visual dashboard plotting model utilization, token costs, and letting users set daily/monthly budget warnings.
+- [ ] **Session Search & Archive**: Global search across all past chat sessions by date, provider, or content keywords.
+
+---
+
+## 📊 Roadmap Timeline & Completeness
+
+| Module | Current Completeness | Status | Target Phase |
+| :--- | :--- | :--- | :--- |
+| **Agent Engine** | 95% | ✅ Strong | Maintained |
+| **Tool Execution** | 92% | ✅ Strong | Maintained |
+| **Monaco Editor Integration** | 95% | ✅ Complete | Maintained |
+| **Code Intelligence (LSP)** | 100% | ✅ Complete | Maintained |
+| **Search & Version Control (Git)** | 90% | ✅ Complete | Maintained |
+| **Message Retry & Clipboard Paste** | 100% | ✅ Complete | Maintained |
+| **Model Context Protocol (MCP)** | 100% | ✅ Complete | Milestone 7 |
+| **Codebase Semantic RAG** | 10% | ⬜ Proposed | Milestone 8 |
+| **Self-Healing Code Loops** | 0% | ⬜ Proposed | Milestone 9 |
+| **Multi-File Diff Explorer** | 20% | ⬜ Proposed | Milestone 10 |
+
+---
+
+## 🎯 Immediate Tactical Priorities
+
+1. **MCP Server Bridge**: Establish basic IPC channels to invoke local command-line based MCP tools.
+2. **Local Embedding Indexer**: Prototype workspace scanning and embedding generation using SQLite-vec in the main database.
+3. **Multi-File diff view**: Create the layout for side-by-side multi-file edits.

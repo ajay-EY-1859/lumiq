@@ -31,7 +31,8 @@ export function ChatPage(): React.JSX.Element {
     resetStream,
     setError,
     addPendingApproval,
-    addMessage
+    addMessage,
+    deleteMessagesFrom
   } = useChatStore()
   const { activeSessionId, createSession, sessions, setWorkspace, setActiveSession } = useSessionStore()
   const { activeProvider, activeModel } = useProviderStore()
@@ -148,6 +149,55 @@ export function ChatPage(): React.JSX.Element {
     [activeSessionId, activeProvider, activeModel, sendMessage, createSession, addMessage, taskMode, setActiveSession, setError]
   )
 
+  const handleRetry = useCallback(
+    async (messageId: string) => {
+      const msg = messages.find((m) => m.id === messageId)
+      if (!msg) return
+
+      if (isStreaming) {
+        await cancelStream()
+      }
+
+      await deleteMessagesFrom(activeSessionId!, messageId)
+
+      addMessage({
+        id: Date.now().toString(),
+        sessionId: activeSessionId!,
+        role: 'user',
+        content: msg.content,
+        createdAt: new Date().toISOString()
+      })
+
+      await sendMessage(
+        msg.content,
+        activeSessionId!,
+        activeProvider,
+        activeModel || 'default',
+        undefined,
+        taskMode || undefined
+      )
+    },
+    [
+      messages,
+      isStreaming,
+      cancelStream,
+      deleteMessagesFrom,
+      activeSessionId,
+      addMessage,
+      sendMessage,
+      activeProvider,
+      activeModel,
+      taskMode
+    ]
+  )
+
+  const handleRetryLast = useCallback(async () => {
+    const userMessages = messages.filter((m) => m.role === 'user')
+    if (userMessages.length === 0) return
+    const lastUserMsg = userMessages[userMessages.length - 1]
+    await handleRetry(lastUserMsg.id)
+  }, [messages, handleRetry])
+
   // ── Empty State ──
   if (!activeSessionId && messages.length === 0) {
     return (
@@ -195,7 +245,6 @@ export function ChatPage(): React.JSX.Element {
             Workspace:
           </span>
           <span className="text-[var(--text-secondary)] font-medium flex items-center gap-2">
-            <span>Workspace:</span>
             {activeSession?.workspacePath ? (
               <>
                 <span className="font-mono text-[var(--text-primary)] bg-[var(--bg-tertiary)] px-2 py-0.5 rounded-md border border-[var(--border)] shadow-sm">{activeSession.workspacePath}</span>
@@ -217,7 +266,7 @@ export function ChatPage(): React.JSX.Element {
       <div className="flex-1 overflow-y-auto px-6 py-6 custom-scrollbar scroll-smooth">
         <div className="max-w-4xl mx-auto flex flex-col gap-6">
           {messages.map((msg) => (
-            <MessageBubble key={msg.id} message={msg} />
+            <MessageBubble key={msg.id} message={msg} onRetry={handleRetry} />
           ))}
 
           {/* Streaming content */}
@@ -243,9 +292,25 @@ export function ChatPage(): React.JSX.Element {
               <span className="flex-1 text-sm text-red-500 font-medium">
                 {error}
               </span>
-              <Button variant="outline" size="sm" onClick={() => setError(null)}>
-                Dismiss
-              </Button>
+              <div className="flex gap-2">
+                {messages.some((m) => m.role === 'user') && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleRetryLast}
+                    className="flex items-center gap-1.5 border-red-500/20 hover:border-red-500/40 hover:bg-red-500/5 text-red-400"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" />
+                      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                    </svg>
+                    Retry
+                  </Button>
+                )}
+                <Button variant="outline" size="sm" onClick={() => setError(null)}>
+                  Dismiss
+                </Button>
+              </div>
             </div>
           )}
 

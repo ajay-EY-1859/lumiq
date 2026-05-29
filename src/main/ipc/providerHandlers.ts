@@ -65,12 +65,46 @@ export function registerProviderHandlers(): void {
   })
 
   // ── Test provider connection ──
-  handleWithTimeout(IPC.PROVIDER_TEST, IPC_TIMEOUT.long, async (_event, provider: string) => {
+  handleWithTimeout(IPC.PROVIDER_TEST, IPC_TIMEOUT.long, async (_event, provider: string, customConfig?: Omit<ProviderConfig, 'id'> & Partial<Pick<ProviderConfig, 'id'>>) => {
     assertProvider(provider)
-    const config = getApiConfig(provider)
+    const existing = getApiConfig(provider)
+    let config: ProviderConfig | null = null
+
+    if (customConfig) {
+      config = {
+        id: customConfig.id || (existing ? existing.id : provider),
+        provider: provider as ProviderType,
+        apiKey: customConfig.apiKey || (existing ? existing.apiKey : undefined),
+        baseUrl: customConfig.baseUrl || (existing ? existing.baseUrl : undefined),
+        defaultModel: customConfig.defaultModel || (existing ? existing.defaultModel : ''),
+        isActive: customConfig.isActive ?? (existing ? existing.isActive : true),
+        authMethod: customConfig.authMethod || (existing ? existing.authMethod : 'apikey'),
+        awsAccessKeyId: customConfig.awsAccessKeyId || (existing ? existing.awsAccessKeyId : undefined),
+        awsSecretAccessKey: customConfig.awsSecretAccessKey || (existing ? existing.awsSecretAccessKey : undefined),
+        awsSessionToken: customConfig.awsSessionToken || (existing ? existing.awsSessionToken : undefined),
+        awsRegion: customConfig.awsRegion || (existing ? existing.awsRegion : 'us-east-1')
+      }
+    } else {
+      config = existing
+    }
+
     if (!config) {
       return { success: false, error: 'Provider not configured' }
     }
+
+    // Ephemeral check for required credentials before invoking API
+    if (config.authMethod !== 'oauth' && provider !== 'ollama' && provider !== 'custom') {
+      if (provider === 'bedrock') {
+        if (!config.awsAccessKeyId || !config.awsSecretAccessKey) {
+          return { success: false, error: 'AWS Access Key ID and Secret Access Key are required to test connection.' }
+        }
+      } else {
+        if (!config.apiKey) {
+          return { success: false, error: 'API Key is required to test connection.' }
+        }
+      }
+    }
+
     try {
       const client = ProviderFactory.create(config)
       return await client.testConnection()

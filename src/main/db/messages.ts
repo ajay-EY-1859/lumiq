@@ -20,6 +20,7 @@ export function createMessage(
     toolCallId?: string
     toolCalls?: { id: string; toolName: string; input: any }[]
     tokensUsed?: number
+    executionStatus?: string
   }
 ): Message {
   const db = getDatabase()
@@ -36,8 +37,8 @@ export function createMessage(
   }
 
   const stmt = db.prepare(`
-    INSERT INTO messages (id, session_id, role, content, tool_name, tool_input, tool_result, tool_call_id, tool_calls, tokens_used, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO messages (id, session_id, role, content, tool_name, tool_input, tool_result, tool_call_id, tool_calls, tokens_used, execution_status, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `)
 
   stmt.run(
@@ -51,6 +52,7 @@ export function createMessage(
     options?.toolCallId || null,
     options?.toolCalls ? JSON.stringify(options.toolCalls) : null,
     options?.tokensUsed || 0,
+    options?.executionStatus || 'completed',
     now
   )
 
@@ -65,8 +67,9 @@ export function createMessage(
     toolCallId: options?.toolCallId,
     toolCalls: options?.toolCalls,
     tokensUsed: options?.tokensUsed || 0,
+    executionStatus: options?.executionStatus || 'completed',
     createdAt: now
-  }
+  } as any
 }
 
 /**
@@ -87,6 +90,7 @@ export function getSessionMessages(
            tool_result as toolResult, tool_call_id as toolCallId,
            tool_calls as toolCalls,
            tokens_used as tokensUsed,
+           execution_status as executionStatus,
            created_at as createdAt
     FROM messages
     WHERE session_id = ?
@@ -142,6 +146,7 @@ export function getRecentMessages(sessionId: string, limit: number): Message[] {
            tool_result as toolResult, tool_call_id as toolCallId,
            tool_calls as toolCalls,
            tokens_used as tokensUsed,
+           execution_status as executionStatus,
            created_at as createdAt
     FROM messages
     WHERE session_id = ?
@@ -205,4 +210,66 @@ export function compactSessionMessages(sessionId: string, keepCount: number = 10
   `)
   const result = stmt.run(sessionId, sessionId, keepCount)
   return result.changes > 0
+}
+
+/**
+ * Updates an existing message's content and optionally execution_status/tokens_used.
+ */
+export function updateMessageContent(
+  messageId: string,
+  content: string,
+  options?: {
+    executionStatus?: string
+    tokensUsed?: number
+    toolCalls?: { id: string; toolName: string; input: any }[]
+  }
+): boolean {
+  const db = getDatabase()
+  
+  let query = 'UPDATE messages SET content = ?'
+  const params: any[] = [content]
+  
+  if (options?.executionStatus !== undefined) {
+    query += ', execution_status = ?'
+    params.push(options.executionStatus)
+  }
+  
+  if (options?.tokensUsed !== undefined) {
+    query += ', tokens_used = ?'
+    params.push(options.tokensUsed)
+  }
+
+  if (options?.toolCalls !== undefined) {
+    query += ', tool_calls = ?'
+    params.push(options.toolCalls ? JSON.stringify(options.toolCalls) : null)
+  }
+  
+  query += ' WHERE id = ?'
+  params.push(messageId)
+  
+  const stmt = db.prepare(query)
+  const result = stmt.run(...params)
+  return result.changes > 0
+}
+
+/**
+ * Deletes all messages in a session starting from and including a target messageId.
+ */
+export function deleteMessagesFrom(sessionId: string, messageId: string): boolean {
+  const db = getDatabase()
+  const messages = db.prepare('SELECT id FROM messages WHERE session_id = ? ORDER BY created_at ASC').all(sessionId) as { id: string }[]
+  const idx = messages.findIndex((m) => m.id === messageId)
+  if (idx === -1) return false
+  
+  const idsToDelete = messages.slice(idx).map((m) => m.id)
+  if (idsToDelete.length === 0) return false
+  
+  const stmt = db.prepare('DELETE FROM messages WHERE id = ?')
+  const deleteTx = db.transaction((ids: string[]) => {
+    for (const id of ids) {
+      stmt.run(id)
+    }
+  })
+  deleteTx(idsToDelete)
+  return true
 }

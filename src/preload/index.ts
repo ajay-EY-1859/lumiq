@@ -54,12 +54,13 @@ export interface ElectronAPI {
     setWorkspace: (sessionId: string, workspacePath: string | null) => Promise<void>
     clearMessages: (sessionId: string) => Promise<boolean>
     compactMessages: (sessionId: string, keepCount?: number) => Promise<boolean>
+    deleteMessagesFrom: (sessionId: string, messageId: string) => Promise<boolean>
   }
   provider: {
     list: () => Promise<ProviderConfig[]>
     save: (config: Omit<ProviderConfig, 'id'> & Partial<Pick<ProviderConfig, 'id'>>) => Promise<void>
     delete: (provider: string) => Promise<boolean>
-    test: (provider: string) => Promise<{ success: boolean; error?: string }>
+    test: (provider: string, config?: any) => Promise<{ success: boolean; error?: string }>
     models: (provider: string) => Promise<{ id: string; label: string }[]>
   }
   settings: {
@@ -86,6 +87,7 @@ export interface ElectronAPI {
     test: (id: string) => Promise<{ success: boolean; error?: string }>
     import: (filePath: string) => Promise<McpServer[]>
     onStatusChange: (callback: (change: { serverId: string; status: string; lastError?: string }) => void) => () => void
+    onLog: (callback: (entry: { serverId: string; type: 'stdout' | 'stderr' | 'system'; message: string }) => void) => () => void
   }
   routing: {
     list: () => Promise<AgentRoute[]>
@@ -235,7 +237,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     clearMessages: (sessionId: string) => 
       ipcRenderer.invoke(IPC.SESSION_CLEAR_MESSAGES, sessionId),
     compactMessages: (sessionId: string, keepCount?: number) => 
-      ipcRenderer.invoke(IPC.SESSION_COMPACT_MESSAGES, { sessionId, keepCount })
+      ipcRenderer.invoke(IPC.SESSION_COMPACT_MESSAGES, { sessionId, keepCount }),
+    deleteMessagesFrom: (sessionId: string, messageId: string) =>
+      ipcRenderer.invoke(IPC.SESSION_DELETE_MESSAGES_FROM, { sessionId, messageId })
   },
 
   // ── Providers ──
@@ -243,7 +247,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     list: () => ipcRenderer.invoke(IPC.PROVIDER_LIST),
     save: (config: Omit<ProviderConfig, 'id'> & Partial<Pick<ProviderConfig, 'id'>>) => ipcRenderer.invoke(IPC.PROVIDER_SAVE, config),
     delete: (provider: string) => ipcRenderer.invoke(IPC.PROVIDER_DELETE, provider),
-    test: (provider: string) => ipcRenderer.invoke(IPC.PROVIDER_TEST, provider),
+    test: (provider: string, config?: any) => ipcRenderer.invoke(IPC.PROVIDER_TEST, provider, config),
     models: (provider: string) => ipcRenderer.invoke(IPC.PROVIDER_MODELS, provider)
   },
 
@@ -274,15 +278,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     stop: (id: string) => ipcRenderer.invoke(IPC.MCP_STOP, id),
     test: (id: string) => ipcRenderer.invoke(IPC.MCP_TEST, id),
     import: (filePath: string) => ipcRenderer.invoke(IPC.MCP_IMPORT, filePath),
-    onStatusChange: (cb: (change: { serverId: string; status: string; lastError?: string }) => void) => createListener(IPC.MCP_STATUS_CHANGE, cb)
+    onStatusChange: (cb: (change: { serverId: string; status: string; lastError?: string }) => void) => createListener(IPC.MCP_STATUS_CHANGE, cb),
+    onLog: (cb: (entry: { serverId: string; type: 'stdout' | 'stderr' | 'system'; message: string }) => void) => createListener(IPC.MCP_LOG, cb)
   },
-
   routing: {
     list: () => ipcRenderer.invoke(IPC.ROUTING_LIST),
     save: (route: Partial<AgentRoute>) => ipcRenderer.invoke(IPC.ROUTING_SAVE, route),
     delete: (id: string) => ipcRenderer.invoke(IPC.ROUTING_DELETE, id)
   },
-
   skill: {
     list: () => ipcRenderer.invoke(IPC.SKILL_LIST),
     save: (skill: Partial<CustomSkill> & Pick<CustomSkill, 'name' | 'promptTemplate'>) =>

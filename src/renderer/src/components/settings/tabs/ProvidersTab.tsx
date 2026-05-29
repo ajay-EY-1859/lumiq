@@ -23,7 +23,7 @@ const PROVIDER_INFO: { id: ProviderType; name: string; emoji: string; needsKey: 
 ]
 
 // ── OAuth Types ──
-type OAuthSetupStatus = { isConfigured: boolean; clientId?: string | null }
+type OAuthSetupStatus = { isConfigured: boolean; clientId?: string | null; isReadOnly?: boolean }
 type OAuthStatusState = { isLoggedIn: boolean; email?: string; expiresAt?: number; error?: string }
 
 // ── Main Providers Tab ──
@@ -36,7 +36,7 @@ export function ProvidersTab(): React.JSX.Element {
   const configuredProviders = PROVIDER_INFO.filter((info) => { const existing = providers.find((p) => p.provider === info.id) as any; return info.id === 'bedrock' ? existing?.hasAwsKeys : existing?.hasApiKey })
   const unconfiguredProviders = PROVIDER_INFO.filter((info) => { const existing = providers.find((p) => p.provider === info.id) as any; const hasCredentials = info.id === 'bedrock' ? existing?.hasAwsKeys : existing?.hasApiKey; return !hasCredentials })
 
-  const handleTest = async (pid: string): Promise<void> => { setTesting(pid); const r = await testProvider(pid); setTesting(null); r.success ? showToast('success', 'Connected!', `${pid} working.`) : showToast('error', 'Failed', r.error) }
+  const handleTest = async (pid: string, config?: Omit<ProviderConfig, 'id'> & Partial<Pick<ProviderConfig, 'id'>>): Promise<void> => { setTesting(pid); const r = await testProvider(pid, config); setTesting(null); r.success ? showToast('success', 'Connected!', `${pid} working.`) : showToast('error', 'Failed', r.error) }
   const handleDelete = async (pid: string): Promise<void> => { if (!confirm(`Delete the ${pid} API key? This cannot be undone.`)) return; await deleteProvider(pid); if (selectedProvider === pid) setSelectedProvider(null); showToast('info', 'API Key Deleted', `${pid} configuration removed.`) }
   const handleSaveComplete = (): void => { setSelectedProvider(null) }
 
@@ -68,7 +68,7 @@ export function ProvidersTab(): React.JSX.Element {
         )}
       </div>
       {activeInfo && configuredProviders.some((p) => p.id === selectedProvider) && (
-        <ProviderSetupPanel key={selectedProvider} info={activeInfo} existing={activeExisting} onSave={saveProvider} onTest={() => handleTest(activeInfo.id)} onDelete={() => handleDelete(activeInfo.id)} onClose={() => setSelectedProvider(null)} onSaveComplete={handleSaveComplete} isTesting={testing === activeInfo.id} isAlreadyConfigured />
+        <ProviderSetupPanel key={selectedProvider} info={activeInfo} existing={activeExisting} onSave={saveProvider} onTest={(config) => handleTest(activeInfo.id, config)} onDelete={() => handleDelete(activeInfo.id)} onClose={() => setSelectedProvider(null)} onSaveComplete={handleSaveComplete} isTesting={testing === activeInfo.id} isAlreadyConfigured />
       )}
       {unconfiguredProviders.length > 0 && (
         <div>
@@ -84,7 +84,7 @@ export function ProvidersTab(): React.JSX.Element {
         </div>
       )}
       {activeInfo && unconfiguredProviders.some((p) => p.id === selectedProvider) && (
-        <ProviderSetupPanel key={selectedProvider} info={activeInfo} existing={activeExisting} onSave={saveProvider} onTest={() => handleTest(activeInfo.id)} onDelete={() => handleDelete(activeInfo.id)} onClose={() => setSelectedProvider(null)} onSaveComplete={handleSaveComplete} isTesting={testing === activeInfo.id} isAlreadyConfigured={false} />
+        <ProviderSetupPanel key={selectedProvider} info={activeInfo} existing={activeExisting} onSave={saveProvider} onTest={(config) => handleTest(activeInfo.id, config)} onDelete={() => handleDelete(activeInfo.id)} onClose={() => setSelectedProvider(null)} onSaveComplete={handleSaveComplete} isTesting={testing === activeInfo.id} isAlreadyConfigured={false} />
       )}
     </div>
   )
@@ -95,7 +95,8 @@ function ProviderSetupPanel({ info, existing, onSave, onTest, onDelete, onClose,
   info: { id: ProviderType; name: string; emoji: string; needsKey: boolean }
   existing?: any
   onSave: (config: Omit<ProviderConfig, 'id'> & Partial<Pick<ProviderConfig, 'id'>>) => Promise<void>
-  onTest: () => void; onDelete: () => void; onClose: () => void; onSaveComplete: () => void
+  onTest: (config: Omit<ProviderConfig, 'id'> & Partial<Pick<ProviderConfig, 'id'>>) => void
+  onDelete: () => void; onClose: () => void; onSaveComplete: () => void
   isTesting: boolean; isAlreadyConfigured: boolean
 }): React.JSX.Element {
   const [apiKey, setApiKey] = useState('')
@@ -126,15 +127,18 @@ function ProviderSetupPanel({ info, existing, onSave, onTest, onDelete, onClose,
         <button className={styles.setupPanelClose} onClick={onClose} title="Close" aria-label="Close setup panel">✕</button>
       </div>
       <div className={styles.setupPanelBody}>
-        {consoleUrl && !isAlreadyConfigured && (
-          <div className={styles.setupPanelHint}>Get your {isBedrock ? 'credentials' : 'API key'} from{' '}
-            <button type="button" onClick={() => window.electronAPI.shell.openExternal(consoleUrl.url)} style={{ background: 'none', border: 'none', color: 'var(--accent-blue)', cursor: 'pointer', textDecoration: 'underline', fontSize: '11px', padding: 0, fontFamily: 'inherit' }}>{consoleUrl.label} →</button>
-          </div>
-        )}
         {isBedrock && (<>
           <Input label="AWS Access Key ID" placeholder={isAlreadyConfigured ? 'Enter new Access Key to update...' : 'AKIA...'} value={awsAccessKeyId} onChange={(e) => setAwsAccessKeyId(e.target.value)} />
           <Input label="AWS Secret Access Key" type="password" placeholder={isAlreadyConfigured ? 'Enter new Secret Key to update...' : 'Secret key...'} value={awsSecretAccessKey} onChange={(e) => setAwsSecretAccessKey(e.target.value)} />
           <Input label="AWS Region" placeholder="us-east-1" value={awsRegion} onChange={(e) => setAwsRegion(e.target.value)} />
+          {consoleUrl && (
+            <div className={styles.bedrickLinkText} style={{ marginTop: '-4px', marginBottom: '8px' }}>
+              Need credentials? Obtain them from the{' '}
+              <button type="button" className={styles.bedrickLink} onClick={() => window.electronAPI.shell.openExternal(consoleUrl.url)}>
+                {consoleUrl.label} ↗
+              </button>
+            </div>
+          )}
         </>)}
         {isLocalProvider && <Input label="Base URL" placeholder={info.id === 'ollama' ? 'http://localhost:11434' : 'https://your-endpoint.com/v1'} value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} />}
         {supportsOAuth && (
@@ -147,14 +151,33 @@ function ProviderSetupPanel({ info, existing, onSave, onTest, onDelete, onClose,
           </div>
         )}
         {info.needsKey && authMethod !== 'oauth' && !isBedrock && (
-          <Input label="API Key" type="password" placeholder={isAlreadyConfigured ? 'Enter new key to update...' : 'Paste your API key here...'} value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <Input label="API Key" type="password" placeholder={isAlreadyConfigured ? 'Enter new key to update...' : 'Paste your API key here...'} value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
+            {consoleUrl && (
+              <div className={styles.bedrickLinkText} style={{ marginTop: '-2px', marginBottom: '4px' }}>
+                Don't have an API key? Get it from{' '}
+                <button type="button" className={styles.bedrickLink} onClick={() => window.electronAPI.shell.openExternal(consoleUrl.url)}>
+                  {consoleUrl.label} ↗
+                </button>
+              </div>
+            )}
+          </div>
         )}
         <ModelSelector providerId={info.id} value={defaultModel} onChange={setDefaultModel} />
         <div className={styles.setupPanelDivider} />
         <div className={styles.setupPanelActions}>
           {isAlreadyConfigured && <Button variant="danger" size="sm" onClick={onDelete} title="Delete credentials">🗑️ Remove</Button>}
-          {consoleUrl && <Button variant="outline" size="sm" onClick={() => window.electronAPI.shell.openExternal(consoleUrl.url)} title={`Open ${consoleUrl.label}`}>🌐 Get {isBedrock ? 'Credentials' : 'API Key'}</Button>}
-          <Button variant="outline" size="sm" onClick={onTest} isLoading={isTesting} title="Test connection">🔗 Test</Button>
+          <Button variant="outline" size="sm" onClick={() => onTest({
+            provider: info.id,
+            apiKey: apiKey || undefined,
+            awsAccessKeyId: awsAccessKeyId || undefined,
+            awsSecretAccessKey: awsSecretAccessKey || undefined,
+            awsRegion: awsRegion || undefined,
+            baseUrl: baseUrl || undefined,
+            defaultModel,
+            isActive: true,
+            authMethod
+          })} isLoading={isTesting} title="Test connection">🔗 Test</Button>
           <Button size="sm" onClick={handleSave} title="Save and connect">{isAlreadyConfigured ? '💾 Update' : '🚀 Connect'}</Button>
         </div>
       </div>
@@ -253,7 +276,7 @@ function OAuthAccountCard({ name, badge, setupUrl, setupHelp, statusLoader, setu
   onProviderChanged: () => Promise<void>; clientIdPlaceholder: string; clientSecretPlaceholder: string
 }): React.JSX.Element {
   const [oauthStatus, setOauthStatus] = useState<OAuthStatusState>({ isLoggedIn: false })
-  const [setupStatus, setSetupStatus] = useState<OAuthSetupStatus>({ isConfigured: false })
+  const [setupStatus, setSetupStatus] = useState<OAuthSetupStatus>({ isConfigured: false, isReadOnly: false })
   const [showSetup, setShowSetup] = useState(false)
   const [clientId, setClientId] = useState('')
   const [clientSecret, setClientSecret] = useState('')
@@ -291,9 +314,33 @@ function OAuthAccountCard({ name, badge, setupUrl, setupHelp, statusLoader, setu
           <Button variant="outline" size="sm" onClick={handleLogout} style={{ marginLeft: 'auto' }}>Sign Out</Button>
         </div>
       ) : (
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-          {setupStatus.isConfigured && <Button size="sm" onClick={handleLogin} isLoading={isLoggingIn}>Sign in with {name}</Button>}
-          <Button variant="outline" size="sm" onClick={() => setShowSetup(!showSetup)}>{setupStatus.isConfigured ? 'Edit OAuth Setup' : 'Setup OAuth'}</Button>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', width: '100%' }}>
+          {setupStatus.isConfigured ? (
+            <Button size="sm" onClick={handleLogin} isLoading={isLoggingIn}>Sign in with {name}</Button>
+          ) : (
+            <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontStyle: 'italic' }}>Built-in Integration Unavailable</span>
+          )}
+          {setupStatus.isReadOnly ? (
+            <span style={{ 
+              fontSize: '11px', 
+              padding: '4px 8px', 
+              background: 'rgba(234, 179, 8, 0.1)', 
+              color: '#eab308', 
+              borderRadius: '6px', 
+              fontWeight: 500,
+              marginLeft: 'auto',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              border: '1px solid rgba(234, 179, 8, 0.2)'
+            }}>
+              🔐 Managed by Developer (Read-Only)
+            </span>
+          ) : (
+            <Button variant="outline" size="sm" onClick={() => setShowSetup(!showSetup)} style={{ marginLeft: 'auto' }}>
+              {setupStatus.isConfigured ? 'Edit OAuth Setup' : 'Setup OAuth'}
+            </Button>
+          )}
         </div>
       )}
       {showSetup && (

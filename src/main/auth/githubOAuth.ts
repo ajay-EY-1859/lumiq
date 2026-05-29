@@ -10,6 +10,7 @@ import { URL } from 'url'
 import { deleteApiConfig, getApiConfig, saveApiConfig } from '../db/apiConfigs'
 import { deleteOAuthTokens, getOAuthConfig, getOAuthTokens, saveOAuthConfig, saveOAuthTokens } from './oauthStore'
 import type { GitHubOAuthConfig, OAuthStatus, OAuthTokens } from '@shared/types'
+import { isDeveloperMode } from './devMode'
 
 const GITHUB_AUTH_URL = 'https://github.com/login/oauth/authorize'
 const GITHUB_TOKEN_URL = 'https://github.com/login/oauth/access_token'
@@ -21,10 +22,19 @@ const SCOPES = ['read:user', 'user:email'].join(' ')
 const OAUTH_TIMEOUT_MS = 2 * 60 * 1000
 
 export function saveGitHubOAuthConfig(config: GitHubOAuthConfig): void {
+  if (!isDeveloperMode()) {
+    throw new Error('Modification of GitHub OAuth configuration is restricted to developers.')
+  }
   saveOAuthConfig(GITHUB_PROVIDER, config)
 }
 
 export function getGitHubOAuthConfig(): GitHubOAuthConfig | null {
+  if (process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET) {
+    return {
+      clientId: process.env.GITHUB_CLIENT_ID,
+      clientSecret: process.env.GITHUB_CLIENT_SECRET
+    }
+  }
   return getOAuthConfig(GITHUB_PROVIDER)
 }
 

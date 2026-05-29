@@ -95,6 +95,31 @@ export function MessageInput({ onSend, onCancel, isStreaming, disabled, onTaskMo
     [handleSend, isStreaming, onCancel]
   )
 
+  const handlePaste = useCallback(
+    (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+      const files = e.clipboardData?.files
+      if (files && files.length > 0) {
+        const filePaths: string[] = []
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i]
+          const path = (file as any).path
+          if (path) {
+            filePaths.push(path)
+          }
+        }
+
+        if (filePaths.length > 0) {
+          e.preventDefault()
+          setAttachments((prev) => {
+            const newPaths = filePaths.filter((p) => !prev.includes(p))
+            return [...prev, ...newPaths]
+          })
+        }
+      }
+    },
+    []
+  )
+
   const slashQuery = value.startsWith('/') ? value.slice(1).toLowerCase() : ''
   const slashItems = value.startsWith('/')
     ? [
@@ -232,6 +257,7 @@ export function MessageInput({ onSend, onCancel, isStreaming, disabled, onTaskMo
           value={value}
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
           placeholder="Message... (Enter to send, Shift+Enter for new line)"
           disabled={disabled}
           className="flex-1 min-h-[44px] max-h-[200px] py-2.5 px-4 bg-black/5 dark:bg-white/5 border border-[var(--border)] rounded-xl text-[14px] text-[var(--text-primary)] resize-none outline-none focus:border-[var(--accent-blue)] focus:ring-2 focus:ring-[var(--accent-blue)] focus:ring-opacity-20 transition-all duration-200 overflow-auto shadow-inner"

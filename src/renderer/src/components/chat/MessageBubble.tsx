@@ -12,6 +12,7 @@ import type { Message } from '@shared/types'
 
 interface MessageBubbleProps {
   message: Message
+  onRetry?: (messageId: string) => void
 }
 
 function isSafeExternalUrl(url: string): boolean {
@@ -23,7 +24,7 @@ function isSafeExternalUrl(url: string): boolean {
   }
 }
 
-export function MessageBubble({ message }: MessageBubbleProps): React.JSX.Element {
+export function MessageBubble({ message, onRetry }: MessageBubbleProps): React.JSX.Element {
   const [showCopy, setShowCopy] = useState(false)
   const [copied, setCopied] = useState(false)
 
@@ -109,14 +110,29 @@ export function MessageBubble({ message }: MessageBubbleProps): React.JSX.Elemen
           </ReactMarkdown>
         </div>
 
-        {/* Copy button on hover */}
+        {/* Copy / Retry buttons on hover */}
         {showCopy && (
-          <button
-            onClick={handleCopy}
-            className={`absolute top-2 right-2 px-2 py-1 bg-black/5 dark:bg-white/10 backdrop-blur-md rounded-md border border-[var(--border)] text-xs font-medium cursor-pointer transition-colors ${copied ? 'text-green-500 border-green-500/30' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-black/10 dark:hover:bg-white/20'}`}
-          >
-            {copied ? '✓ Copied' : 'Copy'}
-          </button>
+          <div className="absolute top-2 right-2 flex gap-1.5 z-10">
+            {isUser && onRetry && (
+              <button
+                onClick={() => onRetry(message.id)}
+                className="px-2 py-1 bg-black/5 dark:bg-white/10 backdrop-blur-md rounded-md border border-[var(--border)] text-xs font-medium cursor-pointer transition-colors text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-black/10 dark:hover:bg-white/20 flex items-center gap-1"
+                title="Retry message from here"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" />
+                  <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                </svg>
+                Retry
+              </button>
+            )}
+            <button
+              onClick={handleCopy}
+              className={`px-2 py-1 bg-black/5 dark:bg-white/10 backdrop-blur-md rounded-md border border-[var(--border)] text-xs font-medium cursor-pointer transition-colors ${copied ? 'text-green-500 border-green-500/30' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-black/10 dark:hover:bg-white/20'}`}
+            >
+              {copied ? '✓ Copied' : 'Copy'}
+            </button>
+          </div>
         )}
       </div>
 

@@ -56,7 +56,9 @@ const ALLOWED_VARS = new Set([
   'VERSION',
   'BUILD_NUMBER',
   'ENVIRONMENT',
-  'APP_ENV'
+  'APP_ENV',
+  'WORKSPACE',
+  'WORKSPACE_PATH'
 ])
 
 export class EnvTool implements Tool {

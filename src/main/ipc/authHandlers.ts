@@ -21,6 +21,7 @@ import {
   getGitHubOAuthConfig
 } from '../auth/githubOAuth'
 import { handleWithTimeout, IPC_TIMEOUT } from './handleWithTimeout'
+import { isDeveloperMode } from '../auth/devMode'
 
 export function registerAuthHandlers(): void {
   // ── Google OAuth: Login ──
@@ -45,6 +46,9 @@ export function registerAuthHandlers(): void {
 
   // ── Google OAuth: Save Setup (Client ID + Secret) ──
   handleWithTimeout(IPC.AUTH_GOOGLE_SETUP, IPC_TIMEOUT.short, (_event, config: GoogleOAuthConfig) => {
+    if (!isDeveloperMode()) {
+      throw new Error('Modification of Google OAuth configuration is restricted to developers.')
+    }
     saveGoogleOAuthConfig(config)
     return { success: true }
   })
@@ -54,7 +58,8 @@ export function registerAuthHandlers(): void {
     const config = getGoogleOAuthConfig()
     return {
       isConfigured: config !== null,
-      clientId: config ? config.clientId.substring(0, 8) + '...' : null
+      clientId: config ? config.clientId.substring(0, 8) + '...' : null,
+      isReadOnly: !isDeveloperMode()
     }
   })
 
@@ -80,6 +85,9 @@ export function registerAuthHandlers(): void {
 
   // ── GitHub OAuth: Save Setup (Client ID + Secret) ──
   handleWithTimeout(IPC.AUTH_GITHUB_SETUP, IPC_TIMEOUT.short, (_event, config: GitHubOAuthConfig) => {
+    if (!isDeveloperMode()) {
+      throw new Error('Modification of GitHub OAuth configuration is restricted to developers.')
+    }
     saveGitHubOAuthConfig(config)
     return { success: true }
   })
@@ -89,7 +97,8 @@ export function registerAuthHandlers(): void {
     const config = getGitHubOAuthConfig()
     return {
       isConfigured: config !== null,
-      clientId: config ? config.clientId.substring(0, 8) + '...' : null
+      clientId: config ? config.clientId.substring(0, 8) + '...' : null,
+      isReadOnly: !isDeveloperMode()
     }
   })
 

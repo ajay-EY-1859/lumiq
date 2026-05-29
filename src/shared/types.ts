@@ -16,6 +16,7 @@ export interface Message {
   toolInput?: Record<string, unknown>
   toolResult?: string
   tokensUsed?: number
+  executionStatus?: 'streaming' | 'completed' | 'interrupted'
   createdAt: string // ISO string for serialization safety
 }
 
@@ -185,6 +186,7 @@ export interface McpServer {
   status: McpServerStatus
   lastError?: string
   toolsCount: number
+  tools?: string[]
   createdAt: string
   updatedAt: string
 }
@@ -266,6 +268,7 @@ export const IPC = {
   SESSION_SET_WORKSPACE: 'session:set-workspace',
   SESSION_CLEAR_MESSAGES: 'session:clear-messages',
   SESSION_COMPACT_MESSAGES: 'session:compact-messages',
+  SESSION_DELETE_MESSAGES_FROM: 'session:delete-messages-from',
 
   // Provider management
   PROVIDER_LIST: 'provider:list',
@@ -314,6 +317,7 @@ export const IPC = {
   MCP_STOP: 'mcp:stop',
   MCP_TEST: 'mcp:test',
   MCP_STATUS_CHANGE: 'mcp:status-change',
+  MCP_LOG: 'mcp:log',
   MCP_IMPORT: 'mcp:import',
 
   // Agent routing

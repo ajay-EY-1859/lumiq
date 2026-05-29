@@ -23,7 +23,7 @@ interface ProviderState {
   loadProviders: () => Promise<void>
   saveProvider: (config: ProviderConfigInput) => Promise<void>
   deleteProvider: (provider: string) => Promise<void>
-  testProvider: (provider: string) => Promise<{ success: boolean; error?: string }>
+  testProvider: (provider: string, config?: Omit<ProviderConfig, 'id'> & Partial<Pick<ProviderConfig, 'id'>>) => Promise<{ success: boolean; error?: string }>
   setActiveProvider: (provider: ProviderType) => void
   setActiveModel: (model: string) => void
   getModelsForProvider: (provider: ProviderType) => { id: string; label: string }[]
@@ -73,8 +73,8 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
     await get().loadProviders()
   },
 
-  testProvider: async (provider) => {
-    return await window.electronAPI.provider.test(provider)
+  testProvider: async (provider, config) => {
+    return await window.electronAPI.provider.test(provider, config)
   },
 
   setActiveProvider: (provider) => {

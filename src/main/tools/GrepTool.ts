@@ -2,29 +2,11 @@
 // Lumiq — GrepTool (Search file contents)
 // ═══════════════════════════════════════════════════════════════════
 
-import { readdirSync, readFileSync, realpathSync, statSync } from 'fs'
-import { join, relative } from 'path'
 import type { Tool } from './Tool'
 import { validatePathWithinWorkspace, getWorkspaceRoot } from '../security/pathValidation'
+import { RegexSandbox } from '../security/RegexSandbox'
 
 const MAX_RESULTS = 200
-const MAX_FILE_SIZE = 5 * 1024 * 1024 // 5MB
-const BINARY_EXTENSIONS = new Set([
-  '.png', '.jpg', '.jpeg', '.gif', '.ico', '.bmp', '.webp',
-  '.mp3', '.mp4', '.avi', '.mov', '.wav',
-  '.zip', '.tar', '.gz', '.rar', '.7z',
-  '.exe', '.dll', '.so', '.dylib',
-  '.pdf', '.doc', '.docx', '.xls', '.xlsx',
-  '.woff', '.woff2', '.ttf', '.eot', '.otf',
-  '.sqlite', '.db'
-])
-const IGNORED_DIRS = new Set(['node_modules', '.git', '.svn', '__pycache__', 'dist', 'out'])
-
-interface GrepMatch {
-  file: string
-  line: number
-  content: string
-}
 
 export class GrepTool implements Tool {
   name = 'GrepTool'
@@ -45,18 +27,9 @@ export class GrepTool implements Tool {
     const pattern = input.pattern as string
     const searchPath = validatePathWithinWorkspace((input.path as string) || getWorkspaceRoot())
     const includeFilter = input.include as string | undefined
-    const matches: GrepMatch[] = []
-    const visited = new Set<string>()
-
-    let regex: RegExp
-    try {
-      regex = new RegExp(pattern, 'i')
-    } catch {
-      regex = new RegExp(pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')
-    }
 
     try {
-      searchFiles(searchPath, searchPath, regex, matches, includeFilter, visited)
+      const matches = await RegexSandbox.runGrep(pattern, searchPath, includeFilter)
 
       if (matches.length === 0) {
         return `No matches found for "${pattern}"`
@@ -77,94 +50,3 @@ export class GrepTool implements Tool {
   }
 }
 
-function searchFiles(
-  base: string,
-  dir: string,
-  pattern: RegExp,
-  matches: GrepMatch[],
-  includeFilter: string | undefined,
-  visited: Set<string>
-): void {
-  if (matches.length >= MAX_RESULTS * 2) return
-
-  let stat
-  try {
-    stat = statSync(dir)
-  } catch {
-    return
-  }
-
-  if (stat.isFile()) {
-    searchFile(base, dir, pattern, matches)
-    return
-  }
-
-  let realDir
-  try {
-    realDir = realpathSync(dir)
-  } catch {
-    return
-  }
-  if (visited.has(realDir)) return
-  visited.add(realDir)
-
-  let entries
-  try {
-    entries = readdirSync(dir, { withFileTypes: true })
-  } catch {
-    return
-  }
-
-  for (const entry of entries) {
-    if (IGNORED_DIRS.has(entry.name)) continue
-
-    const fullPath = join(dir, entry.name)
-
-    if (entry.isDirectory()) {
-      if (entry.isSymbolicLink()) {
-        let target
-        try {
-          target = realpathSync(fullPath)
-        } catch {
-          continue
-        }
-        if (visited.has(target)) continue
-      }
-      searchFiles(base, fullPath, pattern, matches, includeFilter, visited)
-    } else if (entry.isFile()) {
-      const ext = entry.name.substring(entry.name.lastIndexOf('.'))
-      if (BINARY_EXTENSIONS.has(ext.toLowerCase())) continue
-      if (includeFilter && !matchesFilter(entry.name, includeFilter)) continue
-
-      searchFile(base, fullPath, pattern, matches)
-    }
-  }
-}
-
-function searchFile(base: string, filePath: string, pattern: RegExp, matches: GrepMatch[]): void {
-  try {
-    const stat = statSync(filePath)
-    if (stat.size > MAX_FILE_SIZE) return
-
-    const content = readFileSync(filePath, 'utf8')
-    const lines = content.split('\n')
-    const relPath = relative(base, filePath)
-
-    for (let i = 0; i < lines.length; i++) {
-      pattern.lastIndex = 0 // Reset regex state
-      if (pattern.test(lines[i])) {
-        matches.push({ file: relPath, line: i + 1, content: lines[i] })
-      }
-    }
-  } catch {
-    // Skip unreadable files silently
-  }
-}
-
-function matchesFilter(filename: string, filter: string): boolean {
-  const regex = new RegExp(
-    '^' + filter.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\\\*/g, '.*').replace(/\\\?/g, '[^\\/]').replace(/\\\|/g, '|') + '$',
-    'i'
-  )
-  return regex.test(filename)
-}

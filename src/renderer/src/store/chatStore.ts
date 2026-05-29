@@ -31,6 +31,7 @@ interface ChatState {
   respondToApproval: (requestId: string, approved: boolean, alwaysAllow: boolean) => Promise<void>
   clearSessionDb: (sessionId: string) => Promise<void>
   compactSessionDb: (sessionId: string, keepCount?: number) => Promise<void>
+  deleteMessagesFrom: (sessionId: string, messageId: string) => Promise<void>
 }
 
 export const useChatStore = create<ChatState>((set) => ({
@@ -92,6 +93,19 @@ export const useChatStore = create<ChatState>((set) => ({
     await window.electronAPI.session.compactMessages(sessionId, keepCount)
     // Reload messages from DB after compacting
     try {
+      const data = (await window.electronAPI.session.load(sessionId)) as unknown as {
+        messages: Message[]
+      }
+      set({ messages: data.messages, error: null })
+    } catch (error) {
+      set({ error: (error as Error).message })
+    }
+  },
+
+  deleteMessagesFrom: async (sessionId, messageId) => {
+    try {
+      await window.electronAPI.session.deleteMessagesFrom(sessionId, messageId)
+      // Reload session messages
       const data = (await window.electronAPI.session.load(sessionId)) as unknown as {
         messages: Message[]
       }

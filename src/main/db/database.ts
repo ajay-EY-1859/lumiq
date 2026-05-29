@@ -1,13 +1,7 @@
-// ═══════════════════════════════════════════════════════════════════
-// Lumiq — SQLite Database Setup & Migrations
-// All database operations run in the MAIN process only.
-// The renderer process NEVER has direct DB access.
-// ═══════════════════════════════════════════════════════════════════
-
 import Database from 'better-sqlite3'
 import { app } from 'electron'
 import { join } from 'path'
-import { existsSync, mkdirSync } from 'fs'
+import { existsSync, mkdirSync, copyFileSync, unlinkSync } from 'fs'
 import { DEFAULT_TOOL_SETTINGS } from '../tools/defaultToolSettings'
 
 let db: Database.Database | null = null
@@ -27,8 +21,24 @@ function getDbPath(): string {
 }
 
 /**
+ * Creates a redundant backup of the database.
+ */
+function backupDatabase(dbPath: string): void {
+  try {
+    if (db) {
+      db.pragma('wal_checkpoint(TRUNCATE)')
+    }
+    const backupPath = dbPath + '.backup'
+    copyFileSync(dbPath, backupPath)
+  } catch (err) {
+    console.error('[Database] Failed to create database backup:', err)
+  }
+}
+
+/**
  * Initializes the SQLite database connection and runs migrations.
  * Uses WAL mode for better concurrent read performance.
+ * Includes integrity check self-healing recovery.
  *
  * SECURITY:
  * - Database file has restrictive permissions
@@ -39,19 +49,92 @@ export function initDatabase(): Database.Database {
   if (db) return db
 
   const dbPath = getDbPath()
-  db = new Database(dbPath)
+  const backupPath = dbPath + '.backup'
+  const corruptPath = dbPath + '.corrupt'
+  let initialized = false
+
+  // Try opening primary DB and checking integrity
+  try {
+    db = new Database(dbPath)
+    const integrityCheck = db.pragma('integrity_check') as any
+    const result = Array.isArray(integrityCheck) ? integrityCheck[0]?.integrity_check : integrityCheck
+    if (result !== 'ok') {
+      throw new Error(`Database corrupted: integrity_check returned "${result}"`)
+    }
+    initialized = true
+  } catch (err) {
+    console.error(`[Database] Startup validation failed: ${(err as Error).message}. Attempting recovery...`)
+    if (db) {
+      try { db.close() } catch {}
+      db = null
+    }
+
+    // Backup damaged file to .corrupt
+    try {
+      if (existsSync(dbPath)) {
+        copyFileSync(dbPath, corruptPath)
+        try { unlinkSync(dbPath) } catch {}
+      }
+    } catch (copyErr) {
+      console.error('[Database] Failed to quarantine corrupted DB:', copyErr)
+    }
+
+    // Try restoring backup
+    if (existsSync(backupPath)) {
+      console.warn('[Database] Restoring from backup...')
+      try {
+        copyFileSync(backupPath, dbPath)
+        db = new Database(dbPath)
+        const integrityCheck = db.pragma('integrity_check') as any
+        const result = Array.isArray(integrityCheck) ? integrityCheck[0]?.integrity_check : integrityCheck
+        if (result === 'ok') {
+          initialized = true
+        } else {
+          throw new Error('Restored backup is also corrupted')
+        }
+      } catch (backupErr) {
+        console.error('[Database] Backup restoration failed:', backupErr)
+        if (db) {
+          try { db.close() } catch {}
+          db = null
+        }
+      }
+    }
+  }
+
+  // If primary and backup both failed, recreate a fresh DB
+  if (!initialized) {
+    console.warn('[Database] Recreating fresh database...')
+    try {
+      if (existsSync(dbPath)) {
+        try { unlinkSync(dbPath) } catch {}
+      }
+      db = new Database(dbPath)
+    } catch (recreateErr) {
+      console.error('[Database] Fatal DB recreation error:', recreateErr)
+      throw recreateErr
+    }
+  }
+
+  const database = db
+  if (!database) {
+    throw new Error('Fatal: Database could not be initialized.')
+  }
 
   // Performance & safety settings
-  db.pragma('journal_mode = WAL') // Write-Ahead Logging for performance
-  db.pragma('foreign_keys = ON') // Enforce foreign key constraints
-  db.pragma('synchronous = NORMAL') // Good balance of safety & speed
-  db.pragma('cache_size = -64000') // 64MB cache
-  db.pragma('busy_timeout = 5000') // Wait 5s on locked DB
+  database.pragma('journal_mode = WAL') // Write-Ahead Logging for performance
+  database.pragma('foreign_keys = ON') // Enforce foreign key constraints
+  database.pragma('synchronous = NORMAL') // Good balance of safety & speed
+  database.pragma('cache_size = -64000') // 64MB cache
+  database.pragma('busy_timeout = 5000') // Wait 5s on locked DB
 
   // Run migrations
-  runMigrations(db)
+  runMigrations(database)
 
-  return db
+  // Write successful backup
+  backupDatabase(dbPath)
+
+  return database
 }
 
 /**
@@ -71,6 +154,11 @@ export function getDatabase(): Database.Database {
  */
 export function closeDatabase(): void {
   if (db) {
+    try {
+      backupDatabase(getDbPath())
+    } catch (err) {
+      console.error('[Database] Failed to backup on close:', err)
+    }
     db.close()
     db = null
   }
@@ -318,6 +406,13 @@ function runMigrations(database: Database.Database): void {
 
       CREATE INDEX IF NOT EXISTS idx_custom_commands_name ON custom_commands(name);
     `)
+
+    // ── Migration 12: Add execution_status column to messages ────────
+    try {
+      database.exec(`ALTER TABLE messages ADD COLUMN execution_status TEXT DEFAULT 'completed'`)
+    } catch {
+      // Column already exists — ignore
+    }
   })
 
   migrate()

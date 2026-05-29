@@ -11,6 +11,8 @@ export function McpServersTab(): React.JSX.Element {
   const [command, setCommand] = useState('')
   const [args, setArgs] = useState('')
   const [env, setEnv] = useState('')
+  const [logs, setLogs] = useState<Record<string, string[]>>({})
+  const [expandedLogs, setExpandedLogs] = useState<Record<string, boolean>>({})
 
   const load = async (): Promise<void> => {
     setServers(await window.electronAPI.mcp.list() as McpServer[])
@@ -18,7 +20,17 @@ export function McpServersTab(): React.JSX.Element {
 
   useEffect(() => {
     load()
-    return window.electronAPI.mcp.onStatusChange(() => { void load() })
+    const removeStatus = window.electronAPI.mcp.onStatusChange(() => { void load() })
+    const removeLog = window.electronAPI.mcp.onLog((entry) => {
+      setLogs((prev) => ({
+        ...prev,
+        [entry.serverId]: [...(prev[entry.serverId] || []), `${entry.type.toUpperCase()}: ${entry.message.trim()}`]
+      }))
+    })
+    return () => {
+      removeStatus()
+      removeLog()
+    }
   }, [])
 
   const save = async (): Promise<void> => {
@@ -72,6 +84,13 @@ export function McpServersTab(): React.JSX.Element {
     }
   }
 
+  const toggleLogs = (serverId: string): void => {
+    setExpandedLogs((prev) => ({
+      ...prev,
+      [serverId]: !prev[serverId]
+    }))
+  }
+
   return (
     <div style={{ maxWidth: '760px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
       <div style={{ padding: '14px', background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: '10px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
@@ -85,18 +104,35 @@ export function McpServersTab(): React.JSX.Element {
         </div>
       </div>
       {servers.map((server) => (
-        <div key={server.id} style={{ padding: '12px', background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: '8px', display: 'flex', gap: '10px', alignItems: 'center' }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: '13px', fontWeight: 700 }}>{server.name} <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>({server.status}, {server.toolsCount} tools)</span></div>
-            <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{server.command} {server.args.join(' ')}</div>
-            {server.lastError && <div style={{ fontSize: '11px', color: 'var(--accent-red)' }}>{server.lastError}</div>}
+        <div key={server.id} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div style={{ padding: '12px', background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: '8px', display: 'flex', gap: '10px', alignItems: 'center' }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: '13px', fontWeight: 700 }}>{server.name} <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>({server.status}, {server.toolsCount} tools)</span></div>
+              <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{server.command} {server.args.join(' ')}</div>
+              {server.tools && server.tools.length > 0 && (
+                <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '6px' }}>
+                  Tools: {server.tools.join(', ')}
+                </div>
+              )}
+              {server.lastError && <div style={{ fontSize: '11px', color: 'var(--accent-red)' }}>{server.lastError}</div>}
+            </div>
+            <Button variant="outline" size="sm" onClick={() => toggleLogs(server.id)}>Logs</Button>
+            <Button variant="outline" size="sm" onClick={() => window.electronAPI.mcp.test(server.id).then(load)}>Test</Button>
+            {server.status === 'running'
+              ? <Button variant="outline" size="sm" onClick={() => window.electronAPI.mcp.stop(server.id).then(load)}>Stop</Button>
+              : <Button size="sm" onClick={() => window.electronAPI.mcp.start(server.id).then(load).catch((e: Error) => showToast('error', 'MCP Start Failed', e.message))}>Start</Button>}
+            <Button variant="outline" size="sm" onClick={() => restart(server.id)}>Restart</Button>
+            <Button variant="danger" size="sm" onClick={() => window.electronAPI.mcp.delete(server.id).then(load)}>Delete</Button>
           </div>
-          <Button variant="outline" size="sm" onClick={() => window.electronAPI.mcp.test(server.id).then(load)}>Test</Button>
-          {server.status === 'running'
-            ? <Button variant="outline" size="sm" onClick={() => window.electronAPI.mcp.stop(server.id).then(load)}>Stop</Button>
-            : <Button size="sm" onClick={() => window.electronAPI.mcp.start(server.id).then(load).catch((e: Error) => showToast('error', 'MCP Start Failed', e.message))}>Start</Button>}
-          <Button variant="outline" size="sm" onClick={() => restart(server.id)}>Restart</Button>
-          <Button variant="danger" size="sm" onClick={() => window.electronAPI.mcp.delete(server.id).then(load)}>Delete</Button>
+          {expandedLogs[server.id] && (
+            <div style={{ padding: '10px 14px', background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: '8px', fontSize: '12px', color: 'var(--text-muted)', whiteSpace: 'pre-wrap', maxHeight: '220px', overflowY: 'auto' }}>
+              {logs[server.id]?.length ? (
+                logs[server.id].map((entry, index) => <div key={`${server.id}-log-${index}`}>{entry}</div>)
+              ) : (
+                <div style={{ color: 'var(--text-muted)' }}>No logs yet for this server.</div>
+              )}
+            </div>
+          )}
         </div>
       ))}
     </div>

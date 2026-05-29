@@ -32,7 +32,12 @@ export class McpServerManager extends EventEmitter {
     return listMcpServers().map((server) => {
       const active = this.running.get(server.id)
       return active
-        ? { ...server, status: 'running', toolsCount: active.tools.length }
+        ? {
+            ...server,
+            status: 'running',
+            toolsCount: active.tools.length,
+            tools: active.tools.map((tool) => tool.name)
+          }
         : server
     })
   }
@@ -78,12 +83,20 @@ export class McpServerManager extends EventEmitter {
     }
     this.running.set(serverId, running)
 
-    child.stdout.on('data', (chunk: Buffer) => this.handleStdout(serverId, chunk.toString('utf8')))
+    child.stdout.on('data', (chunk: Buffer) => {
+      const text = chunk.toString('utf8')
+      this.emitLog(serverId, 'stdout', text)
+      this.handleStdout(serverId, text)
+    })
     child.stderr.on('data', (chunk: Buffer) => {
       const message = chunk.toString('utf8').trim()
-      if (message) this.emitStatus({ serverId, status: 'running', lastError: message })
+      if (message) {
+        this.emitStatus({ serverId, status: 'running', lastError: message })
+        this.emitLog(serverId, 'stderr', message)
+      }
     })
     child.on('exit', () => {
+      this.emitLog(serverId, 'system', 'MCP server exited')
       this.rejectPending(serverId, new Error('MCP server exited'))
       this.running.delete(serverId)
       this.setStatus(serverId, 'stopped')
@@ -222,6 +235,12 @@ export class McpServerManager extends EventEmitter {
       pending.reject(error)
     }
     running.pending.clear()
+  }
+
+  private emitLog(serverId: string, type: 'stdout' | 'stderr' | 'system', message: string): void {
+    for (const window of BrowserWindow.getAllWindows()) {
+      window.webContents.send(IPC.MCP_LOG, { serverId, type, message })
+    }
   }
 
   private setStatus(

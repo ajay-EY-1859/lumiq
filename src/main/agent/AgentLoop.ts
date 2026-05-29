@@ -11,8 +11,9 @@ import type { Message, ProviderConfig, SendResult } from '@shared/types'
 import { ProviderFactory } from '../providers/ProviderFactory'
 import { ToolExecutor } from './ToolExecutor'
 import { ContextManager } from './ContextManager'
-import { createMessage } from '../db/messages'
+import { createMessage, updateMessageContent } from '../db/messages'
 import { touchSession } from '../db/sessions'
+import { listApiConfigs } from '../db/apiConfigs'
 import type { AIProvider } from '../providers/AIProvider'
 
 // Active request tracking for cancellation
@@ -145,7 +146,7 @@ export class AgentLoop {
       ]
 
       // Run the agentic loop (may loop multiple times if tool calls happen)
-      await this.runLoop(provider, allMessages, sessionId, options, signal, window || undefined)
+      await this.runLoop(provider, config, allMessages, sessionId, options, signal, window || undefined)
     } catch (error) {
       if ((error as Error).name === 'AbortError') {
         // User cancelled — not an error
@@ -223,12 +224,25 @@ export class AgentLoop {
       .join('|')
   }
 
+  private getFallbackConfigs(triedProviders: string[]): ProviderConfig[] {
+    const allConfigs = listApiConfigs().filter(c => c.isActive && !triedProviders.includes(c.provider));
+    const priorityOrder = ['openai', 'anthropic', 'gemini', 'bedrock', 'ollama'];
+    return allConfigs.sort((a, b) => {
+      const idxA = priorityOrder.indexOf(a.provider);
+      const idxB = priorityOrder.indexOf(b.provider);
+      const valA = idxA === -1 ? 99 : idxA;
+      const valB = idxB === -1 ? 99 : idxB;
+      return valA - valB;
+    });
+  }
+
   /**
    * The core agentic loop. Runs until AI gives a final response
    * with no tool calls.
    */
   private async runLoop(
     provider: AIProvider,
+    config: ProviderConfig,
     messages: Message[],
     sessionId: string,
     options: { model: string; systemPrompt?: string; callbacks?: AgentLoopCallbacks },
@@ -251,44 +265,145 @@ export class AgentLoop {
 
     const MAX_ITERATIONS = 100 // High-progress safety limit (Lumiq's consecutive loop check handles actual loops)
     let iteration = 0
-    let lastToolSignature: string | null = null
-    let consecutiveDuplicateCount = 0
+    const executionSignatures: string[] = []
+
+    let currentConfig = config
+    let currentModel = options.model
+    let currentProvider = provider
 
     while (iteration < MAX_ITERATIONS) {
       if (signal.aborted) return
       iteration++
-      // Stream response from AI (with retry on transient failures)
-      const result: SendResult = await this.withRetry(
-        () => provider.sendMessage(messages, {
-          model: options.model,
-          stream: true,
-          systemPrompt: options.systemPrompt,
-          tools: this.toolExecutor.getAvailableTools().map((tool) => ({
-            name: tool.name,
-            description: tool.description,
-            inputSchema: tool.inputSchema
-          })),
-          onChunk: (chunk: string) => {
-            if (!signal.aborted) {
-              options.callbacks?.onChunk?.(chunk)
-              window?.webContents.send(IPC.CHAT_STREAM_CHUNK, chunk)
+
+      let result: SendResult | null = null
+      let streamSucceeded = false
+      let currentStreamedContent = ''
+      let assistantMessageId: string | null = null
+      const triedProviders: string[] = [currentConfig.provider]
+
+      while (!streamSucceeded) {
+        try {
+          result = await this.withRetry(
+            () => currentProvider.sendMessage(messages, {
+              model: currentModel,
+              stream: true,
+              systemPrompt: options.systemPrompt,
+              tools: this.toolExecutor.getAvailableTools().map((tool) => ({
+                name: tool.name,
+                description: tool.description,
+                inputSchema: tool.inputSchema
+              })),
+              onChunk: (chunk: string) => {
+                if (signal.aborted) return
+
+                if (!assistantMessageId) {
+                  const msg = safeCreateMessage(sessionId, 'assistant', '', {
+                    executionStatus: 'streaming'
+                  })
+                  assistantMessageId = msg.id
+                }
+
+                currentStreamedContent += chunk
+                updateMessageContent(assistantMessageId, currentStreamedContent, {
+                  executionStatus: 'streaming'
+                })
+
+                options.callbacks?.onChunk?.(chunk)
+                window?.webContents.send(IPC.CHAT_STREAM_CHUNK, chunk)
+              },
+              signal
+            }),
+            3,   // max retries
+            1000, // base delay 1s
+            signal
+          )
+
+          streamSucceeded = true
+
+          // Since the stream succeeded, we update the assistant message ID in the DB
+          if (assistantMessageId) {
+            updateMessageContent(assistantMessageId, result.content, {
+              executionStatus: 'completed',
+              tokensUsed: result.tokensUsed,
+              toolCalls: result.toolCalls
+            })
+            // Update messages array for subsequent tool execution logic, avoiding duplicates
+            const existingMsgIndex = messages.findIndex(m => m.id === assistantMessageId)
+            if (existingMsgIndex !== -1) {
+              messages[existingMsgIndex].content = result.content
+              messages[existingMsgIndex].toolCalls = result.toolCalls
+              messages[existingMsgIndex].executionStatus = 'completed' as any
+            } else {
+              messages.push({
+                id: assistantMessageId,
+                sessionId,
+                role: 'assistant',
+                content: result.content,
+                toolCalls: result.toolCalls,
+                createdAt: new Date().toISOString()
+              })
             }
-          },
-          signal
-        }),
-        3,   // max retries
-        1000, // base delay 1s
-        signal
-      )
+          } else {
+            const msg = safeCreateMessage(sessionId, 'assistant', result.content, {
+              tokensUsed: result.tokensUsed,
+              toolCalls: result.toolCalls,
+              executionStatus: 'completed'
+            })
+            messages.push({
+              id: msg.id,
+              sessionId,
+              role: 'assistant',
+              content: result.content,
+              toolCalls: result.toolCalls,
+              createdAt: new Date().toISOString()
+            })
+          }
+        } catch (err) {
+          if (signal.aborted) throw err
+
+          console.error(`[AgentLoop] Provider ${currentConfig.provider} failed:`, err)
+
+          if (assistantMessageId) {
+            updateMessageContent(assistantMessageId, currentStreamedContent, {
+              executionStatus: 'interrupted'
+            })
+            const existingMsgIndex = messages.findIndex(m => m.id === assistantMessageId)
+            if (existingMsgIndex !== -1) {
+              messages[existingMsgIndex].content = currentStreamedContent
+              messages[existingMsgIndex].executionStatus = 'interrupted' as any
+            } else {
+              messages.push({
+                id: assistantMessageId,
+                sessionId,
+                role: 'assistant',
+                content: currentStreamedContent,
+                executionStatus: 'interrupted' as any,
+                createdAt: new Date().toISOString()
+              })
+            }
+          }
+
+          triedProviders.push(currentConfig.provider)
+          const fallbacks = this.getFallbackConfigs(triedProviders)
+          if (fallbacks.length === 0) {
+            throw err
+          }
+
+          currentConfig = fallbacks[0]
+          currentModel = currentConfig.defaultModel
+          currentProvider = ProviderFactory.create(currentConfig)
+          console.warn(`[AgentLoop] Cascading failover to backup provider: ${currentConfig.provider} with model ${currentModel}`)
+        }
+      }
 
       // Fallback parser for raw XML tool calls (e.g. minimax, some local models)
-      if (!result.toolCalls || result.toolCalls.length === 0) {
+      if (!result!.toolCalls || result!.toolCalls.length === 0) {
         const invokeRegex = /<invoke\s+name="([^"]+)">([\s\S]*?)<\/invoke>/g
         let match
         const parsedCalls: any[] = []
         let hasToolCalls = false
 
-        while ((match = invokeRegex.exec(result.content)) !== null) {
+        while ((match = invokeRegex.exec(result!.content)) !== null) {
           hasToolCalls = true
           let rawName = match[1]
           let innerXml = match[2]
@@ -323,49 +438,49 @@ export class AgentLoop {
         }
 
         if (hasToolCalls) {
-          result.toolCalls = parsedCalls
+          result!.toolCalls = parsedCalls
         }
       }
 
-      // Stop repeated tool call loops early for IDE responsiveness
-      if (result.toolCalls && result.toolCalls.length > 0) {
-        const currentToolSignature = this.buildToolSignature(result.toolCalls)
-        if (currentToolSignature === lastToolSignature) {
-          consecutiveDuplicateCount++
-          if (consecutiveDuplicateCount >= 2) { // Allow 1 retry/fail-handling, but block consecutive repetition on the 2nd
-            const message = 'Agent detected a repeated tool call loop and stopped to keep the IDE responsive.'
-            options.callbacks?.onError?.(message)
-            window?.webContents.send(IPC.CHAT_ERROR, message)
-            return
-          }
-        } else {
-          consecutiveDuplicateCount = 0
+      // Circular execution / loop detection using sliding window signature validator
+      if (result!.toolCalls && result!.toolCalls.length > 0) {
+        const currentToolSignature = this.buildToolSignature(result!.toolCalls)
+        executionSignatures.push(currentToolSignature)
+
+        const n = executionSignatures.length
+
+        // Size 1 (consecutive duplicate): A-A
+        if (n >= 2 && executionSignatures[n - 1] === executionSignatures[n - 2]) {
+          const err = new Error('Circular execution detected: consecutive duplicate tool calls.')
+          err.name = 'CircularExecutionException'
+          throw err
         }
-        lastToolSignature = currentToolSignature
-      } else {
-        lastToolSignature = null
-        consecutiveDuplicateCount = 0
+
+        // Size 2: A-B-A-B
+        if (n >= 4 &&
+            executionSignatures[n - 1] === executionSignatures[n - 3] &&
+            executionSignatures[n - 2] === executionSignatures[n - 4]) {
+          const err = new Error('Circular execution detected: loop pattern A-B-A-B detected.')
+          err.name = 'CircularExecutionException'
+          throw err
+        }
+
+        // Size 3: A-B-C-A-B-C
+        if (n >= 6 &&
+            executionSignatures[n - 1] === executionSignatures[n - 4] &&
+            executionSignatures[n - 2] === executionSignatures[n - 5] &&
+            executionSignatures[n - 3] === executionSignatures[n - 6]) {
+          const err = new Error('Circular execution detected: loop pattern A-B-C-A-B-C detected.')
+          err.name = 'CircularExecutionException'
+          throw err
+        }
       }
 
       // Check for tool calls
-      if (result.toolCalls && result.toolCalls.length > 0) {
-        // Save the assistant's message (with tool call info, including toolCalls for history replay)
-        safeCreateMessage(sessionId, 'assistant', result.content, {
-          tokensUsed: result.tokensUsed,
-          toolCalls: result.toolCalls
-        })
-        messages.push({
-          id: '',
-          sessionId,
-          role: 'assistant',
-          content: result.content,
-          toolCalls: result.toolCalls,
-          createdAt: new Date().toISOString()
-        })
-
+      if (result!.toolCalls && result!.toolCalls.length > 0) {
         // Execute all tool calls (read-only ones run concurrently)
         const toolResults = await this.toolExecutor.executeTools(
-          result.toolCalls.map((tc) => ({ id: tc.id, toolName: tc.toolName, input: tc.input })),
+          result!.toolCalls.map((tc) => ({ id: tc.id, toolName: tc.toolName, input: tc.input })),
           signal
         )
 
@@ -408,18 +523,13 @@ export class AgentLoop {
         continue
       }
 
-      // No tool calls — this is the final response
-      safeCreateMessage(sessionId, 'assistant', result.content, {
-        tokensUsed: result.tokensUsed
-      })
-
       try { touchSession(sessionId) } catch { /* session may be gone */ }
 
       // Signal stream end
-      options.callbacks?.onEnd?.(result.content, result.tokensUsed)
+      options.callbacks?.onEnd?.(result!.content, result!.tokensUsed)
       window?.webContents.send(IPC.CHAT_STREAM_END, {
-        content: result.content,
-        tokensUsed: result.tokensUsed
+        content: result!.content,
+        tokensUsed: result!.tokensUsed
       })
 
       return // Exit the loop

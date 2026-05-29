@@ -21,8 +21,8 @@
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "test": "echo \"No tests configured yet. Add your test suite here.\" && exit 0",
-    "test:watch": "echo \"Add watch mode for your tests\" && exit 0"
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@anthropic-ai/bedrock-sdk": "^0.29.1",
@@ -69,6 +69,7 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "tailwindcss": "^4.1.0",
     "typescript": "^5.7.2",
-    "vite": "^7.0.0"
+    "vite": "^7.0.0",
+    "vitest": "^3.2.4"
   }
 }

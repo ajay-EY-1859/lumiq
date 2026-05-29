@@ -11,6 +11,7 @@ import { URL } from 'url'
 import { saveApiConfig, deleteApiConfig } from '../db/apiConfigs'
 import { deleteOAuthTokens, getOAuthConfig, getOAuthTokens, saveOAuthConfig, saveOAuthTokens } from './oauthStore'
 import type { OAuthTokens, OAuthStatus, GoogleOAuthConfig } from '@shared/types'
+import { isDeveloperMode } from './devMode'
 
 // Google OAuth endpoints
 const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth'
@@ -42,6 +43,9 @@ function generateCodeChallenge(verifier: string): string {
  * Saves Google OAuth client credentials.
  */
 export function saveGoogleOAuthConfig(config: GoogleOAuthConfig): void {
+  if (!isDeveloperMode()) {
+    throw new Error('Modification of Google OAuth configuration is restricted to developers.')
+  }
   saveOAuthConfig('gemini', config)
 }
 
@@ -49,6 +53,12 @@ export function saveGoogleOAuthConfig(config: GoogleOAuthConfig): void {
  * Retrieves Google OAuth client credentials.
  */
 export function getGoogleOAuthConfig(): GoogleOAuthConfig | null {
+  if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+    return {
+      clientId: process.env.GOOGLE_CLIENT_ID,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET
+    }
+  }
   return getOAuthConfig('gemini')
 }
 
