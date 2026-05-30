@@ -65,7 +65,7 @@ export function initDatabase(): Database.Database {
   } catch (err) {
     console.error(`[Database] Startup validation failed: ${(err as Error).message}. Attempting recovery...`)
     if (db) {
-      try { db.close() } catch {}
+      try { db.close() } catch { /* ignore */ }
       db = null
     }
 
@@ -73,7 +73,7 @@ export function initDatabase(): Database.Database {
     try {
       if (existsSync(dbPath)) {
         copyFileSync(dbPath, corruptPath)
-        try { unlinkSync(dbPath) } catch {}
+        try { unlinkSync(dbPath) } catch { /* ignore */ }
       }
     } catch (copyErr) {
       console.error('[Database] Failed to quarantine corrupted DB:', copyErr)
@@ -95,7 +95,7 @@ export function initDatabase(): Database.Database {
       } catch (backupErr) {
         console.error('[Database] Backup restoration failed:', backupErr)
         if (db) {
-          try { db.close() } catch {}
+          try { db.close() } catch { /* ignore */ }
           db = null
         }
       }
@@ -107,7 +107,7 @@ export function initDatabase(): Database.Database {
     console.warn('[Database] Recreating fresh database...')
     try {
       if (existsSync(dbPath)) {
-        try { unlinkSync(dbPath) } catch {}
+        try { unlinkSync(dbPath) } catch { /* ignore */ }
       }
       db = new Database(dbPath)
     } catch (recreateErr) {
@@ -442,12 +442,25 @@ function runMigrations(database: Database.Database): void {
         chunk_index INTEGER NOT NULL,
         content TEXT NOT NULL,
         embedding BLOB NOT NULL,
+        file_mtime_ms REAL,
+        file_size INTEGER,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
     `)
     try {
+      database.exec(`ALTER TABLE codebase_embeddings ADD COLUMN file_mtime_ms REAL`)
+    } catch {
+      // Column already exists
+    }
+    try {
+      database.exec(`ALTER TABLE codebase_embeddings ADD COLUMN file_size INTEGER`)
+    } catch {
+      // Column already exists
+    }
+    try {
       database.exec(`CREATE INDEX IF NOT EXISTS idx_chat_summaries_session ON chat_summaries(session_id);`)
       database.exec(`CREATE INDEX IF NOT EXISTS idx_codebase_embeddings_path ON codebase_embeddings(workspace_path);`)
+      database.exec(`CREATE INDEX IF NOT EXISTS idx_codebase_embeddings_file ON codebase_embeddings(workspace_path, file_path);`)
     } catch {
       // Ignore index errors if any
     }

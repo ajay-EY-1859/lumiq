@@ -375,6 +375,11 @@ export const IPC = {
   // Search (Find in Files)
   SEARCH_FILES: 'search:files',
 
+  // Semantic Search / Codebase RAG
+  SEMANTIC_SEARCH: 'semantic:search',
+  SEMANTIC_INDEX: 'semantic:index',
+  SEMANTIC_STATUS: 'semantic:status',
+
   // Code Intelligence (LSP)
   LSP_DOCUMENT_SYMBOLS: 'lsp:document-symbols',
   LSP_WORKSPACE_SYMBOLS: 'lsp:workspace-symbols',
@@ -468,6 +473,38 @@ export interface SearchResponse {
   totalMatches: number
   truncated: boolean
   elapsed: number // ms
+}
+
+// ─── Semantic Search Types ─────────────────────────────────────────
+export type SemanticIndexState = 'idle' | 'indexing' | 'ready' | 'error'
+
+export interface SemanticIndexStatus {
+  workspacePath: string
+  state: SemanticIndexState
+  filesScanned: number
+  filesIndexed: number
+  chunksStored: number
+  lastIndexedAt?: string
+  lastError?: string
+}
+
+export interface SemanticSearchMatch {
+  filePath: string
+  chunkIndex: number
+  content: string
+  score: number
+}
+
+export interface SemanticSearchRequest {
+  query: string
+  workspacePath: string
+  topK?: number
+}
+
+export interface SemanticSearchResponse {
+  matches: SemanticSearchMatch[]
+  totalMatches: number
+  elapsed: number
 }
 
 // ─── Code Intelligence Types (LSP) ─────────────────────────────────

@@ -6,6 +6,7 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react'
 import type { AgentRoute, CustomSkill, CustomCommand } from '@shared/types'
 import { useChatStore } from '@renderer/store/chatStore'
+import { useSessionStore } from '@renderer/store/sessionStore'
 
 interface MessageInputProps {
   onSend: (message: string) => void
@@ -23,6 +24,39 @@ export function MessageInput({ onSend, onCancel, isStreaming, disabled, onTaskMo
   const [routes, setRoutes] = useState<AgentRoute[]>([])
   const [taskMode, setTaskMode] = useState<string | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  // Token and cost estimations for the interactive budget visualizer
+  const messages = useChatStore((s) => s.messages)
+  const { activeSessionId, sessions } = useSessionStore()
+  const activeSession = sessions.find((s) => s.id === activeSessionId)
+  const modelName = activeSession?.model || 'default'
+
+  const estimateInputTokens = (text: string) => Math.ceil(text.length / 4)
+  const estimateMessagesTokens = (msgs: typeof messages) => {
+    let charCount = 0
+    for (const m of msgs) {
+      charCount += m.role.length + 2
+      charCount += m.content.length
+      if (m.toolName) charCount += m.toolName.length + 5
+      if (m.toolResult) charCount += m.toolResult.length
+      if (m.toolInput) charCount += JSON.stringify(m.toolInput).length
+    }
+    return Math.ceil(charCount / 4)
+  }
+
+  const totalTokenEstimate = estimateMessagesTokens(messages) + estimateInputTokens(value)
+
+  const getCostPerToken = (model: string) => {
+    const name = model.toLowerCase()
+    if (name.includes('sonnet') || name.includes('claude')) return 3.0 / 1000000
+    if (name.includes('gpt-4o')) return 5.0 / 1000000
+    if (name.includes('gemini-1.5-pro') || name.includes('pro')) return 1.25 / 1000000
+    if (name.includes('gemini-1.5-flash') || name.includes('flash')) return 0.075 / 1000000
+    return 1.0 / 1000000
+  }
+
+  const estimatedCost = totalTokenEstimate * getCostPerToken(modelName)
+  const budgetColor = totalTokenEstimate > 3200 ? 'var(--accent-red)' : totalTokenEstimate > 2000 ? 'var(--accent-orange)' : 'var(--accent-blue)'
 
   const adjustHeight = useCallback(() => {
     const textarea = textareaRef.current
@@ -289,6 +323,17 @@ export function MessageInput({ onSend, onCancel, isStreaming, disabled, onTaskMo
             <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
           </button>
         )}
+      </div>
+      
+      {/* Token Budget Visualizer */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '10px', fontSize: '11px', color: 'var(--text-muted)', borderTop: '1px solid var(--border)', paddingTop: '6px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span>Budget: <strong>{totalTokenEstimate.toLocaleString()}</strong> / 4,096 tokens</span>
+          <div style={{ width: '80px', height: '4px', background: 'var(--bg-secondary)', borderRadius: '2px', overflow: 'hidden' }}>
+            <div style={{ width: `${Math.min(100, (totalTokenEstimate / 4096) * 100)}%`, height: '100%', background: budgetColor, borderRadius: '2px', transition: 'width 0.3s ease' }} />
+          </div>
+        </div>
+        <span>Est. Cost: <strong>${estimatedCost.toFixed(5)}</strong></span>
       </div>
     </div>
   )

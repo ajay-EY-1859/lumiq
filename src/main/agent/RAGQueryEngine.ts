@@ -56,7 +56,11 @@ export class RAGQueryEngine {
 
       for (const row of rows) {
         // Deserialize float array from buffer
-        const chunkVec = Array.from(new Float32Array(row.embedding.buffer))
+        const chunkVec = Array.from(new Float32Array(
+          row.embedding.buffer,
+          row.embedding.byteOffset,
+          row.embedding.byteLength / Float32Array.BYTES_PER_ELEMENT
+        ))
         const score = embeddingManager.cosineSimilarity(queryVec, chunkVec)
 
         matches.push({

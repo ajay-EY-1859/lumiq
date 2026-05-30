@@ -21,6 +21,13 @@ export function TaskPanel(): React.JSX.Element {
     }
   }, [activeTask?.logs, activeTab])
 
+  // Load workspace task definitions automatically when workspace path changes
+  useEffect(() => {
+    if (activeSession?.workspacePath) {
+      useTaskStore.getState().loadDefinitions(activeSession.workspacePath)
+    }
+  }, [activeSession?.workspacePath])
+
   const handleRunTask = (name: string, command: string, args: string[]) => {
     if (!activeSession?.workspacePath) {
       alert('Please bind a workspace to this session first.')
@@ -28,6 +35,15 @@ export function TaskPanel(): React.JSX.Element {
     }
     runTask(name, command, args, activeSession.workspacePath)
     // Removed auto-switch to 'terminal' so it stays in the background
+  }
+
+  const handleRestartTask = async (task: NonNullable<typeof activeTask>) => {
+    if (task.status === 'running') {
+      await stopTask(task.id)
+      await new Promise(resolve => setTimeout(resolve, 500))
+    }
+    removeTask(task.id)
+    runTask(task.name, task.command, task.args, task.cwd)
   }
 
   const handleSendInput = async (event: React.FormEvent) => {
@@ -54,7 +70,7 @@ export function TaskPanel(): React.JSX.Element {
               transition: 'color var(--transition-fast)'
             }}
           >
-            TASKS
+            RUNNER
           </button>
           <button
             onClick={() => setActiveTab('terminal')}
@@ -87,10 +103,18 @@ export function TaskPanel(): React.JSX.Element {
           <div style={{ padding: '16px', overflowY: 'auto', height: '100%' }}>
             {activeSession?.workspacePath ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxWidth: '500px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
-                  <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', marginBottom: '8px' }}>
+                  <div style={{ fontSize: '12px', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     Workspace: {activeSession.workspacePath}
                   </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => useTaskStore.getState().syncWorkspace(activeSession.workspacePath!)}
+                    style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0, padding: '2px 8px', fontSize: '11px' }}
+                  >
+                    🔄 Refresh
+                  </Button>
                 </div>
                 {definitions.length > 0 ? (
                   definitions.map(task => (
@@ -155,16 +179,30 @@ export function TaskPanel(): React.JSX.Element {
               <div style={{ flex: 1, padding: '12px', color: '#E6EDF3', fontFamily: 'var(--font-mono)', fontSize: '13px', overflowY: 'auto' }}>
                 {activeTask ? (
                   <>
-                    <div style={{ marginBottom: '8px', color: '#8B949E', display: 'flex', justifyContent: 'space-between', gap: '12px' }}>
-                      <span>$ {activeTask.command} {activeTask.args.join(' ')}</span>
-                      {activeTask.status === 'running' && (
+                    <div style={{ marginBottom: '8px', color: '#8B949E', display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center' }}>
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '70%' }}>
+                        $ {activeTask.command} {activeTask.args.join(' ')}
+                      </span>
+                      <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+                        {activeTask.status === 'running' ? (
+                          <button
+                            onClick={() => stopTask(activeTask.id)}
+                            style={{ background: 'none', border: '1px solid #30363D', borderRadius: '4px', color: '#FF7B72', cursor: 'pointer', fontSize: '12px', padding: '2px 8px' }}
+                          >
+                            Stop
+                          </button>
+                        ) : (
+                          <span style={{ fontSize: '12px', color: activeTask.status === 'success' ? '#3fb950' : '#f85149', padding: '2px 4px', background: '#21262d', borderRadius: '4px' }}>
+                            {activeTask.status.toUpperCase()}
+                          </span>
+                        )}
                         <button
-                          onClick={() => stopTask(activeTask.id)}
-                          style={{ background: 'none', border: '1px solid #30363D', borderRadius: '4px', color: '#FF7B72', cursor: 'pointer', fontSize: '12px', padding: '2px 8px' }}
+                          onClick={() => handleRestartTask(activeTask)}
+                          style={{ background: 'none', border: '1px solid #30363D', borderRadius: '4px', color: '#58a6ff', cursor: 'pointer', fontSize: '12px', padding: '2px 8px' }}
                         >
-                          Stop
+                          🔄 Restart
                         </button>
-                      )}
+                      </div>
                     </div>
                     {activeTask.logs.map((log) => (
                       <span key={log.id} style={{

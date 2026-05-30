@@ -8,6 +8,7 @@ import * as path from 'path'
 import { v4 as uuidv4 } from 'uuid'
 import { getDatabase } from '../db/database'
 import { embeddingManager } from './EmbeddingManager'
+import type { SemanticIndexStatus } from '@shared/types'
 
 // Allowed file extensions for code indexing
 const ALLOWED_EXTENSIONS = new Set([
@@ -23,6 +24,7 @@ const IGNORED_DIRECTORIES = new Set([
 export class CodebaseIndexer {
   private static instance: CodebaseIndexer
   private isCurrentlyIndexing = false
+  private currentStatus: SemanticIndexStatus | null = null
 
   private constructor() {}
 
@@ -34,41 +36,119 @@ export class CodebaseIndexer {
   }
 
   /**
-   * Scans and indexes the entire workspace in the background.
+   * Starts scanning and indexing the workspace in the background.
    */
-  public async indexWorkspace(workspacePath: string): Promise<void> {
+  public async indexWorkspace(workspacePath: string, force = false): Promise<SemanticIndexStatus> {
     if (this.isCurrentlyIndexing) {
       console.warn(`[CodebaseIndexer] Already indexing workspace: ${workspacePath}`)
-      return
+      return this.getStatus(workspacePath)
     }
 
     this.isCurrentlyIndexing = true
+    this.currentStatus = {
+      workspacePath,
+      state: 'indexing',
+      filesScanned: 0,
+      filesIndexed: 0,
+      chunksStored: this.countChunks(workspacePath)
+    }
+    this.startIndexing(workspacePath, force)
+    return this.getStatus(workspacePath)
+  }
+
+  /**
+   * Synchronously runs a complete index pass. Exposed for tests and background jobs.
+   */
+  public async indexWorkspaceNow(workspacePath: string, force = false): Promise<SemanticIndexStatus> {
+    if (this.isCurrentlyIndexing) {
+      return this.getStatus(workspacePath)
+    }
+
+    this.isCurrentlyIndexing = true
+    return this.runIndexPass(workspacePath, force)
+  }
+
+  private async runIndexPass(workspacePath: string, force: boolean): Promise<SemanticIndexStatus> {
+    this.currentStatus = {
+      workspacePath,
+      state: 'indexing',
+      filesScanned: 0,
+      filesIndexed: 0,
+      chunksStored: this.countChunks(workspacePath)
+    }
+
     console.log(`[CodebaseIndexer] Starting semantic indexing for workspace: ${workspacePath}`)
 
-    // Keep it entirely asynchronous to avoid blocking main thread
-    setTimeout(async () => {
-      try {
-        // 1. Gather all indexable file paths recursively
-        const files: string[] = []
-        this.scanFiles(workspacePath, files)
+    try {
+      const files: string[] = []
+      this.scanFiles(workspacePath, files)
+      this.currentStatus.filesScanned = files.length
 
-        console.log(`[CodebaseIndexer] Discovered ${files.length} code files in workspace.`)
+      console.log(`[CodebaseIndexer] Discovered ${files.length} code files in workspace.`)
 
-        // 2. Process and index each file
-        for (const file of files) {
-          try {
-            await this.indexFile(workspacePath, file)
-          } catch (fileErr) {
-            console.error(`[CodebaseIndexer] Failed to index file "${file}":`, fileErr)
+      for (const file of files) {
+        try {
+          const chunksAdded = await this.indexFile(workspacePath, file, force)
+          if (chunksAdded > 0) {
+            this.currentStatus.filesIndexed++
+            this.currentStatus.chunksStored = this.countChunks(workspacePath)
           }
+        } catch (fileErr) {
+          console.error(`[CodebaseIndexer] Failed to index file "${file}":`, fileErr)
         }
-
-        console.log(`[CodebaseIndexer] Completed semantic workspace indexing for: ${workspacePath}`)
-      } catch (err) {
-        console.error('[CodebaseIndexer] Error indexing workspace:', err)
-      } finally {
-        this.isCurrentlyIndexing = false
       }
+
+      this.currentStatus = {
+        ...this.currentStatus,
+        state: 'ready',
+        chunksStored: this.countChunks(workspacePath),
+        lastIndexedAt: new Date().toISOString(),
+        lastError: undefined
+      }
+      console.log(`[CodebaseIndexer] Completed semantic workspace indexing for: ${workspacePath}`)
+    } catch (err) {
+      console.error('[CodebaseIndexer] Error indexing workspace:', err)
+      this.currentStatus = {
+        workspacePath,
+        state: 'error',
+        filesScanned: this.currentStatus?.filesScanned ?? 0,
+        filesIndexed: this.currentStatus?.filesIndexed ?? 0,
+        chunksStored: this.countChunks(workspacePath),
+        lastError: (err as Error).message
+      }
+    } finally {
+      this.isCurrentlyIndexing = false
+    }
+
+    return this.getStatus(workspacePath)
+  }
+
+  public getStatus(workspacePath: string): SemanticIndexStatus {
+    if (this.currentStatus?.workspacePath === workspacePath && this.currentStatus.state === 'indexing') {
+      return { ...this.currentStatus }
+    }
+
+    const chunksStored = this.countChunks(workspacePath)
+    const lastIndexedAt = this.getLastIndexedAt(workspacePath)
+
+    return {
+      workspacePath,
+      state: this.currentStatus?.workspacePath === workspacePath && this.currentStatus.state === 'error'
+        ? 'error'
+        : chunksStored > 0
+          ? 'ready'
+          : 'idle',
+      filesScanned: this.currentStatus?.workspacePath === workspacePath ? this.currentStatus.filesScanned : 0,
+      filesIndexed: this.currentStatus?.workspacePath === workspacePath ? this.currentStatus.filesIndexed : 0,
+      chunksStored,
+      lastIndexedAt,
+      lastError: this.currentStatus?.workspacePath === workspacePath ? this.currentStatus.lastError : undefined
+    }
+  }
+
+  private startIndexing(workspacePath: string, force: boolean): void {
+    setTimeout(() => {
+      void this.runIndexPass(workspacePath, force)
     }, 100)
   }
 
@@ -100,29 +180,47 @@ export class CodebaseIndexer {
   /**
    * Chunks a single file, computes embeddings, and stores them in SQLite.
    */
-  private async indexFile(workspacePath: string, filePath: string): Promise<void> {
+  private async indexFile(workspacePath: string, filePath: string, force: boolean): Promise<number> {
     const db = getDatabase()
 
     // 1. Read stats and check if file has changed
-    const relativePath = path.relative(workspacePath, filePath)
+    const relativePath = path.relative(workspacePath, filePath).replace(/\\/g, '/')
+    const stat = fs.statSync(filePath)
+    const existing = db.prepare(`
+      SELECT file_mtime_ms as fileMtimeMs, file_size as fileSize
+      FROM codebase_embeddings
+      WHERE workspace_path = ? AND file_path = ?
+      LIMIT 1
+    `).get(workspacePath, relativePath) as { fileMtimeMs: number | null; fileSize: number | null } | undefined
 
-    // Check if we already have indexed this file, and if it's up to date
-    // (For simplicity, we delete and re-index the file if it exists, or insert new ones)
+    if (
+      !force &&
+      existing &&
+      existing.fileMtimeMs !== null &&
+      Math.abs(existing.fileMtimeMs - stat.mtimeMs) < 1 &&
+      existing.fileSize === stat.size
+    ) {
+      return 0
+    }
+
     db.prepare('DELETE FROM codebase_embeddings WHERE workspace_path = ? AND file_path = ?').run(
       workspacePath,
       relativePath
     )
 
     const content = fs.readFileSync(filePath, 'utf-8')
-    if (!content.trim()) return
+    if (!content.trim()) return 0
 
     // 2. Semantic Chunking: Split by double newlines (functions, blocks) with max size constraints
     const chunks = this.chunkText(content, 1000, 200) // Chunk size ~1000 chars, overlap 200 chars
+    if (chunks.length === 0) return 0
 
     // 3. Generate embeddings and save to SQLite
     const insertStmt = db.prepare(`
-      INSERT INTO codebase_embeddings (id, workspace_path, file_path, chunk_index, content, embedding)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO codebase_embeddings (
+        id, workspace_path, file_path, chunk_index, content, embedding, file_mtime_ms, file_size, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
 
     for (let i = 0; i < chunks.length; i++) {
@@ -138,9 +236,14 @@ export class CodebaseIndexer {
         relativePath,
         i,
         chunkText,
-        buffer
+        buffer,
+        stat.mtimeMs,
+        stat.size,
+        new Date().toISOString()
       )
     }
+
+    return chunks.length
   }
 
   /**
@@ -175,6 +278,30 @@ export class CodebaseIndexer {
     }
 
     return chunks.filter((c) => c.length > 20)
+  }
+
+  private countChunks(workspacePath: string): number {
+    try {
+      const db = getDatabase()
+      const row = db.prepare(`
+        SELECT COUNT(*) as count FROM codebase_embeddings WHERE workspace_path = ?
+      `).get(workspacePath) as { count: number }
+      return row.count
+    } catch {
+      return 0
+    }
+  }
+
+  private getLastIndexedAt(workspacePath: string): string | undefined {
+    try {
+      const db = getDatabase()
+      const row = db.prepare(`
+        SELECT MAX(updated_at) as lastIndexedAt FROM codebase_embeddings WHERE workspace_path = ?
+      `).get(workspacePath) as { lastIndexedAt: string | null }
+      return row.lastIndexedAt || undefined
+    } catch {
+      return undefined
+    }
   }
 }
 

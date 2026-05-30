@@ -28,17 +28,17 @@ Lumiq will serve as a central controller for agentic microservices using Anthrop
 
 ---
 
-## ⬜ Milestone 8: Semantic Search (RAG) & Smart Context Engineering
+## ✅ Milestone 8: Semantic Search (RAG) & Smart Context Engineering
 
 Traditional regex search requires keyword matches. Milestone 8 introduces conceptual indexing of workspaces using local vector databases.
 
-- [ ] **Local Codebase Semantic Indexing (RAG)**
+- [x] **Local Codebase Semantic Indexing (RAG)**
   - Local background indexing using **Transformers.js** (for offline-first embedding generation) or remote API embeddings (Gemini/OpenAI/Cohere).
   - Lightweight vector store (e.g., SQLite-vec or in-memory index) to store codebase chunks.
-- [ ] **Smart Context Window Optimizer**
+- [x] **Smart Context Window Optimizer**
   - Automatic pruning of redundant context: dynamic sliding windows that auto-summarize long tool/agent execution blocks once they exceed 80% of context limits.
   - Interactive **Token Budget Visualizer** in the message input area showing estimated context usage and cost before sending.
-- [ ] **Natural Language Symbol Explorer**
+- [x] **Natural Language Symbol Explorer**
   - Search code conceptually through a new "Semantic Search" panel tab: e.g., *"Find where we handle OAuth token expiration"* matches conceptually without requiring specific keywords.
 
 ---
@@ -96,7 +96,7 @@ Expand single-file diff acceptance into powerful project-wide refactoring workfl
 | **Search & Version Control (Git)** | 90% | ✅ Complete | Maintained |
 | **Message Retry & Clipboard Paste** | 100% | ✅ Complete | Maintained |
 | **Model Context Protocol (MCP)** | 100% | ✅ Complete | Milestone 7 |
-| **Codebase Semantic RAG** | 10% | ⬜ Proposed | Milestone 8 |
+| **Codebase Semantic RAG** | 100% | ✅ Complete | Milestone 8 |
 | **Self-Healing Code Loops** | 0% | ⬜ Proposed | Milestone 9 |
 | **Multi-File Diff Explorer** | 20% | ⬜ Proposed | Milestone 10 |
 
@@ -105,5 +105,5 @@ Expand single-file diff acceptance into powerful project-wide refactoring workfl
 ## 🎯 Immediate Tactical Priorities
 
 1. **MCP Server Bridge**: Establish basic IPC channels to invoke local command-line based MCP tools.
-2. **Local Embedding Indexer**: Prototype workspace scanning and embedding generation using SQLite-vec in the main database.
+2. [x] **Local Embedding Indexer**: Completed workspace scanning and hybrid embedding generation (MiniLM/Gemini).
 3. **Multi-File diff view**: Create the layout for side-by-side multi-file edits.

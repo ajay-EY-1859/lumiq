@@ -7,14 +7,17 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchStore } from '@renderer/store/searchStore'
 import { useSessionStore } from '@renderer/store/sessionStore'
 import { useEditorStore } from '@renderer/store/editorStore'
-import type { SearchMatch } from '@shared/types'
+import type { SearchMatch, SemanticSearchMatch } from '@shared/types'
 
 export function SearchPanel(): React.JSX.Element {
   const {
+    mode,
     query, isRegex, caseSensitive, includePattern, excludePattern,
     results, totalMatches, truncated, elapsed, isSearching, error,
+    semanticResults, semanticTotalMatches, semanticElapsed, semanticStatus, isSemanticSearching, isIndexing, semanticError,
+    setMode,
     setQuery, setIsRegex, setCaseSensitive, setIncludePattern, setExcludePattern,
-    search, clearResults
+    search, semanticSearch, loadSemanticStatus, indexWorkspace, clearResults
   } = useSearchStore()
 
   const workspacePath = useSessionStore(s => s.sessions.find(s2 => s2.id === s.activeSessionId)?.workspacePath)
@@ -28,15 +31,32 @@ export function SearchPanel(): React.JSX.Element {
     if (!workspacePath) return
     if (debounceTimer.current) clearTimeout(debounceTimer.current)
     debounceTimer.current = setTimeout(() => {
-      search(workspacePath)
+      if (mode === 'semantic') {
+        semanticSearch(workspacePath)
+      } else {
+        search(workspacePath)
+      }
     }, 300)
-  }, [workspacePath, search])
+  }, [workspacePath, mode, search, semanticSearch])
 
   useEffect(() => {
     return () => {
       if (debounceTimer.current) clearTimeout(debounceTimer.current)
     }
   }, [])
+
+  useEffect(() => {
+    if (!workspacePath) return
+    loadSemanticStatus(workspacePath)
+  }, [workspacePath, loadSemanticStatus])
+
+  useEffect(() => {
+    if (!workspacePath || !isIndexing) return
+    const interval = window.setInterval(() => {
+      loadSemanticStatus(workspacePath)
+    }, 1500)
+    return () => window.clearInterval(interval)
+  }, [workspacePath, isIndexing, loadSemanticStatus])
 
   // Ctrl+Shift+F global shortcut focuses search
   useEffect(() => {
@@ -58,7 +78,13 @@ export function SearchPanel(): React.JSX.Element {
   const handleKeyDown = (e: React.KeyboardEvent): void => {
     if (e.key === 'Enter') {
       if (debounceTimer.current) clearTimeout(debounceTimer.current)
-      if (workspacePath) search(workspacePath)
+      if (workspacePath) {
+        if (mode === 'semantic') {
+          semanticSearch(workspacePath)
+        } else {
+          search(workspacePath)
+        }
+      }
     }
     if (e.key === 'Escape') {
       clearResults()
@@ -70,6 +96,13 @@ export function SearchPanel(): React.JSX.Element {
     if (!workspacePath) return
     const fullPath = `${workspacePath}/${match.file}`.replace(/\//g, '\\')
     const fileName = match.file.split('/').pop() || match.file
+    openFile(fullPath, fileName)
+  }
+
+  const handleSemanticResultClick = (match: SemanticSearchMatch): void => {
+    if (!workspacePath) return
+    const fullPath = `${workspacePath}/${match.filePath}`.replace(/\//g, '\\')
+    const fileName = match.filePath.split(/[\\/]/).pop() || match.filePath
     openFile(fullPath, fileName)
   }
 
@@ -116,43 +149,91 @@ export function SearchPanel(): React.JSX.Element {
           />
 
           {/* Toggle buttons */}
-          <button
-            title="Match Case"
-            onClick={() => { setCaseSensitive(!caseSensitive); triggerSearch() }}
-            style={{
-              ...toggleBtnStyle,
-              background: caseSensitive ? 'var(--accent-blue)' : 'transparent',
-              color: caseSensitive ? '#fff' : 'var(--text-muted)'
-            }}
-          >
-            Aa
-          </button>
-          <button
-            title="Use Regex"
-            onClick={() => { setIsRegex(!isRegex); triggerSearch() }}
-            style={{
-              ...toggleBtnStyle,
-              background: isRegex ? 'var(--accent-blue)' : 'transparent',
-              color: isRegex ? '#fff' : 'var(--text-muted)'
-            }}
-          >
-            .*
-          </button>
+          {mode === 'text' && (
+            <>
+              <button
+                title="Match Case"
+                onClick={() => { setCaseSensitive(!caseSensitive); triggerSearch() }}
+                style={{
+                  ...toggleBtnStyle,
+                  background: caseSensitive ? 'var(--accent-blue)' : 'transparent',
+                  color: caseSensitive ? '#fff' : 'var(--text-muted)'
+                }}
+              >
+                Aa
+              </button>
+              <button
+                title="Use Regex"
+                onClick={() => { setIsRegex(!isRegex); triggerSearch() }}
+                style={{
+                  ...toggleBtnStyle,
+                  background: isRegex ? 'var(--accent-blue)' : 'transparent',
+                  color: isRegex ? '#fff' : 'var(--text-muted)'
+                }}
+              >
+                .*
+              </button>
+            </>
+          )}
           <button
             title="Toggle Filters"
+            disabled={mode === 'semantic'}
             onClick={() => setShowFilters(!showFilters)}
             style={{
               ...toggleBtnStyle,
-              background: showFilters ? 'var(--accent-blue)' : 'transparent',
-              color: showFilters ? '#fff' : 'var(--text-muted)'
+              opacity: mode === 'semantic' ? 0.4 : 1,
+              background: showFilters && mode === 'text' ? 'var(--accent-blue)' : 'transparent',
+              color: showFilters && mode === 'text' ? '#fff' : 'var(--text-muted)'
             }}
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" /></svg>
           </button>
         </div>
 
+        <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
+          <button
+            onClick={() => setMode('text')}
+            style={{
+              ...modeBtnStyle,
+              background: mode === 'text' ? 'var(--accent-blue)' : 'transparent',
+              color: mode === 'text' ? '#fff' : 'var(--text-muted)'
+            }}
+          >
+            Text
+          </button>
+          <button
+            onClick={() => {
+              setMode('semantic')
+              if (workspacePath) {
+                loadSemanticStatus(workspacePath)
+                if (query.trim()) semanticSearch(workspacePath)
+              }
+            }}
+            style={{
+              ...modeBtnStyle,
+              background: mode === 'semantic' ? 'var(--accent-blue)' : 'transparent',
+              color: mode === 'semantic' ? '#fff' : 'var(--text-muted)'
+            }}
+          >
+            Semantic
+          </button>
+          {mode === 'semantic' && (
+            <button
+              disabled={!workspacePath || isIndexing}
+              onClick={() => workspacePath && indexWorkspace(workspacePath, semanticStatus?.state === 'ready')}
+              style={{
+                ...modeBtnStyle,
+                marginLeft: 'auto',
+                opacity: !workspacePath || isIndexing ? 0.5 : 1
+              }}
+            >
+              {semanticStatus?.state === 'ready' ? 'Rebuild Index' : isIndexing ? 'Indexing...' : 'Index Workspace'}
+            </button>
+          )}
+        </div>
+
         {/* Filters row */}
-        {showFilters && (
+        {showFilters && mode === 'text' && (
           <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
             <input
               placeholder="Include (e.g. *.ts,*.tsx)"
@@ -170,7 +251,7 @@ export function SearchPanel(): React.JSX.Element {
         )}
 
         {/* Status line */}
-        {(totalMatches > 0 || isSearching || error) && (
+        {mode === 'text' && (totalMatches > 0 || isSearching || error) && (
           <div style={{ marginTop: '8px', fontSize: '11px', color: 'var(--text-muted)', display: 'flex', gap: '8px', alignItems: 'center' }}>
             {isSearching && (
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
@@ -189,25 +270,77 @@ export function SearchPanel(): React.JSX.Element {
             {error && <span style={{ color: 'var(--accent-red, #ef4444)' }}>{error}</span>}
           </div>
         )}
+
+        {mode === 'semantic' && (
+          <div style={{ marginTop: '8px', fontSize: '11px', color: 'var(--text-muted)', display: 'flex', gap: '8px', alignItems: 'center', minHeight: '16px' }}>
+            {(isSemanticSearching || isIndexing) && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                <span style={{ width: '10px', height: '10px', border: '2px solid var(--accent-blue)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.6s linear infinite', display: 'inline-block' }} />
+                {isIndexing ? 'Indexing workspace...' : 'Searching semantically...'}
+              </span>
+            )}
+            {!isSemanticSearching && !isIndexing && semanticStatus && (
+              <span>
+                <strong style={{ color: 'var(--text-primary)' }}>{semanticStatus.chunksStored}</strong> chunks
+                {semanticStatus.state !== 'ready' && <span> · {semanticStatus.state}</span>}
+                {semanticTotalMatches > 0 && (
+                  <span>
+                    {' '}· <strong style={{ color: 'var(--text-primary)' }}>{semanticTotalMatches}</strong> matches
+                    <span style={{ opacity: 0.6 }}> · {semanticElapsed}ms</span>
+                  </span>
+                )}
+              </span>
+            )}
+            {semanticError && <span style={{ color: 'var(--accent-red, #ef4444)' }}>{semanticError}</span>}
+          </div>
+        )}
       </div>
 
       {/* Results */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '4px 0' }} className="custom-scrollbar">
-        {groupedResults.map(([file, matches]) => (
-          <FileGroup key={file} file={file} matches={matches} onResultClick={handleResultClick} />
+        {mode === 'text' && groupedResults.map(([file, matches]) => (
+            <FileGroup key={file} file={file} matches={matches} onResultClick={handleResultClick} />
+          ))}
+
+        {mode === 'semantic' && semanticResults.map(match => (
+          <SemanticResult key={`${match.filePath}-${match.chunkIndex}`} match={match} onResultClick={handleSemanticResultClick} />
         ))}
 
-        {!isSearching && results.length === 0 && query && (
+        {mode === 'text' && !isSearching && results.length === 0 && query && (
           <div style={{ textAlign: 'center', padding: '32px 16px', color: 'var(--text-muted)', fontSize: '13px' }}>
             <div style={{ fontSize: '28px', marginBottom: '8px', opacity: 0.3 }}>🔍</div>
             No results found
           </div>
         )}
 
-        {!query && (
+        {mode === 'semantic' && !workspacePath && (
+          <div style={{ textAlign: 'center', padding: '32px 16px', color: 'var(--text-muted)', fontSize: '13px' }}>
+            Select a workspace to use semantic search
+          </div>
+        )}
+
+        {mode === 'semantic' && workspacePath && semanticStatus?.state !== 'ready' && !isIndexing && (
+          <div style={{ textAlign: 'center', padding: '32px 16px', color: 'var(--text-muted)', fontSize: '13px' }}>
+            Build a semantic index for this workspace
+          </div>
+        )}
+
+        {mode === 'semantic' && workspacePath && semanticStatus?.state === 'ready' && !isSemanticSearching && semanticResults.length === 0 && query && (
+          <div style={{ textAlign: 'center', padding: '32px 16px', color: 'var(--text-muted)', fontSize: '13px' }}>
+            No semantic matches found
+          </div>
+        )}
+
+        {!query && mode === 'text' && (
           <div style={{ textAlign: 'center', padding: '32px 16px', color: 'var(--text-muted)', fontSize: '13px' }}>
             <div style={{ fontSize: '28px', marginBottom: '8px', opacity: 0.2 }}>⌨</div>
             Type to search across all files
+          </div>
+        )}
+
+        {!query && mode === 'semantic' && workspacePath && semanticStatus?.state === 'ready' && (
+          <div style={{ textAlign: 'center', padding: '32px 16px', color: 'var(--text-muted)', fontSize: '13px' }}>
+            Ask for code conceptually
           </div>
         )}
       </div>
@@ -310,6 +443,55 @@ function FileGroup({ file, matches, onResultClick }: {
   )
 }
 
+function SemanticResult({ match, onResultClick }: {
+  match: SemanticSearchMatch
+  onResultClick: (m: SemanticSearchMatch) => void
+}): React.JSX.Element {
+  const fileName = match.filePath.split(/[\\/]/).pop() || match.filePath
+  const dirPath = match.filePath.includes('/') ? match.filePath.slice(0, match.filePath.lastIndexOf('/')) : ''
+
+  return (
+    <button
+      onClick={() => onResultClick(match)}
+      style={{
+        width: '100%',
+        display: 'block',
+        padding: '8px 12px',
+        background: 'none',
+        border: 'none',
+        borderBottom: '1px solid var(--border)',
+        cursor: 'pointer',
+        textAlign: 'left',
+        color: 'var(--text-secondary)',
+        transition: 'background 0.15s'
+      }}
+      onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-secondary)')}
+      onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '5px' }}>
+        <span style={{ color: 'var(--accent-blue)', fontSize: '12px', fontWeight: 700 }}>{fileName}</span>
+        {dirPath && <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{dirPath}</span>}
+        <span style={{ marginLeft: 'auto', color: 'var(--text-muted)', fontSize: '10px', fontFamily: 'var(--font-mono)' }}>
+          {(match.score * 100).toFixed(0)}%
+        </span>
+      </div>
+      <div style={{
+        fontFamily: 'var(--font-mono)',
+        fontSize: '11.5px',
+        lineHeight: 1.45,
+        color: 'var(--text-secondary)',
+        display: '-webkit-box',
+        WebkitLineClamp: 4,
+        WebkitBoxOrient: 'vertical',
+        overflow: 'hidden',
+        whiteSpace: 'pre-wrap'
+      }}>
+        {match.content}
+      </div>
+    </button>
+  )
+}
+
 // ── Styles ──
 const toggleBtnStyle: React.CSSProperties = {
   width: '28px',
@@ -325,6 +507,19 @@ const toggleBtnStyle: React.CSSProperties = {
   fontFamily: 'var(--font-mono)',
   transition: 'all 0.15s',
   flexShrink: 0
+}
+
+const modeBtnStyle: React.CSSProperties = {
+  padding: '5px 8px',
+  minHeight: '26px',
+  border: '1px solid var(--border)',
+  borderRadius: '6px',
+  background: 'transparent',
+  color: 'var(--text-muted)',
+  cursor: 'pointer',
+  fontSize: '11px',
+  fontWeight: 700,
+  transition: 'all 0.15s'
 }
 
 const filterInputStyle: React.CSSProperties = {

@@ -29,6 +29,12 @@ vi.mock('electron', () => {
   }
 })
 
+vi.mock('../../providers/ProviderFactory', () => ({
+  ProviderFactory: {
+    create: vi.fn()
+  }
+}))
+
 import { initDatabase, closeDatabase, getDatabase } from '../../db/database'
 import { ContextManager } from '../ContextManager'
 import { userProfileManager } from '../UserProfileManager'
@@ -94,6 +100,11 @@ describe('ContextManager & Memory Injection Tests', () => {
   it('should inject compacted chat summaries when session summaries exist', () => {
     const db = getDatabase()
     const sessionId = 'compact-session'
+
+    db.prepare(`
+      INSERT OR REPLACE INTO sessions (id, title, provider, model)
+      VALUES (?, ?, ?, ?)
+    `).run(sessionId, 'Compact Session', 'openai', 'gpt-4o')
 
     // Add session summary block
     db.prepare(`

@@ -25,6 +25,9 @@ import type {
   EditDecision,
   SearchRequest,
   SearchResponse,
+  SemanticSearchRequest,
+  SemanticSearchResponse,
+  SemanticIndexStatus,
   GitStatusResult,
   DocumentSymbol,
   DefinitionResult
@@ -164,6 +167,11 @@ export interface ElectronAPI {
   }
   search: {
     files: (request: SearchRequest) => Promise<SearchResponse>
+  }
+  semantic: {
+    search: (request: SemanticSearchRequest) => Promise<SemanticSearchResponse>
+    index: (workspacePath: string, force?: boolean) => Promise<SemanticIndexStatus>
+    status: (workspacePath: string) => Promise<SemanticIndexStatus>
   }
   lsp: {
     getDocumentSymbols: (filePath: string) => Promise<DocumentSymbol[]>
@@ -379,6 +387,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // ── Search ──
   search: {
     files: (request: SearchRequest) => ipcRenderer.invoke(IPC.SEARCH_FILES, request)
+  },
+
+  semantic: {
+    search: (request: SemanticSearchRequest) => ipcRenderer.invoke(IPC.SEMANTIC_SEARCH, request),
+    index: (workspacePath: string, force?: boolean) => ipcRenderer.invoke(IPC.SEMANTIC_INDEX, { workspacePath, force }),
+    status: (workspacePath: string) => ipcRenderer.invoke(IPC.SEMANTIC_STATUS, workspacePath)
   },
 
   // ── LSP (Code Intelligence) ──

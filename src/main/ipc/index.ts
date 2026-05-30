@@ -20,6 +20,7 @@ import { registerFsHandlers } from './fsHandlers'
 import { registerTaskHandlers } from './taskHandlers'
 import { registerEditDecisionHandlers } from './editDecisionHandlers'
 import { registerSearchHandlers } from './searchHandlers'
+import { registerSemanticHandlers } from './semanticHandlers'
 import { registerGitHandlers } from './gitHandlers'
 import { registerCommandHandlers } from './commandHandlers'
 import { registerLspHandlers } from './lspHandlers'
@@ -43,6 +44,7 @@ export function registerAllHandlers(): void {
   registerTaskHandlers()
   registerEditDecisionHandlers()
   registerSearchHandlers()
+  registerSemanticHandlers()
   registerGitHandlers()
   registerCommandHandlers()
   registerLspHandlers()

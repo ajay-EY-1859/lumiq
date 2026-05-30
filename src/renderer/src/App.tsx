@@ -14,9 +14,10 @@ import { ErrorBoundary } from './components/ui/ErrorBoundary'
 import { useSettingsStore } from './store/settingsStore'
 import { useSessionStore } from './store/sessionStore'
 import { useProviderStore } from './store/providerStore'
+import { useSearchStore } from './store/searchStore'
 
 type Page = 'chat' | 'settings' | 'agents'
-type BottomPanel = 'tasks' | 'search' | 'git'
+type BottomPanel = 'tasks' | 'search' | 'git' | 'semantic'
 
 export default function App(): React.JSX.Element {
   const [currentPage, setCurrentPage] = useState<Page>('chat')
@@ -25,6 +26,7 @@ export default function App(): React.JSX.Element {
   const { loadSettings, loadWorkspaceSettings } = useSettingsStore()
   const { loadSessions, activeSessionId, sessions } = useSessionStore()
   const { loadProviders } = useProviderStore()
+  const searchMode = useSearchStore(s => s.mode)
 
   // Initialize app data
   useEffect(() => {
@@ -77,28 +79,45 @@ export default function App(): React.JSX.Element {
 
                   {/* Bottom panel tabs */}
                   <div style={{ display: 'flex', borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)', background: 'var(--bg-primary)', flexShrink: 0 }}>
-                    {(['tasks', 'search', 'git'] as BottomPanel[]).map(tab => (
-                      <button
-                        key={tab}
-                        onClick={() => setBottomPanel(tab)}
-                        style={{
-                          flex: 1,
-                          padding: '5px 0',
-                          fontSize: '11px',
-                          fontWeight: bottomPanel === tab ? 700 : 500,
-                          color: bottomPanel === tab ? 'var(--accent-blue)' : 'var(--text-muted)',
-                          background: 'none',
-                          border: 'none',
-                          borderBottom: bottomPanel === tab ? '2px solid var(--accent-blue)' : '2px solid transparent',
-                          cursor: 'pointer',
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.5px',
-                          transition: 'all 0.15s'
-                        }}
-                      >
-                        {tab === 'tasks' ? '⚡ Tasks' : tab === 'search' ? '🔍 Search' : '⎇ Git'}
-                      </button>
-                    ))}
+                    {(['tasks', 'search', 'git', 'semantic'] as BottomPanel[]).map(tab => {
+                      const isActive = 
+                        bottomPanel === tab || 
+                        (tab === 'search' && bottomPanel === 'search' && searchMode === 'text') ||
+                        (tab === 'semantic' && bottomPanel === 'search' && searchMode === 'semantic')
+
+                      return (
+                        <button
+                          key={tab}
+                          onClick={() => {
+                            if (tab === 'semantic') {
+                              setBottomPanel('search')
+                              useSearchStore.getState().setMode('semantic')
+                            } else {
+                              setBottomPanel(tab)
+                              if (tab === 'search') {
+                                useSearchStore.getState().setMode('text')
+                              }
+                            }
+                          }}
+                          style={{
+                            flex: 1,
+                            padding: '5px 0',
+                            fontSize: '11px',
+                            fontWeight: isActive ? 700 : 500,
+                            color: isActive ? 'var(--accent-blue)' : 'var(--text-muted)',
+                            background: 'none',
+                            border: 'none',
+                            borderBottom: isActive ? '2px solid var(--accent-blue)' : '2px solid transparent',
+                            cursor: 'pointer',
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.5px',
+                            transition: 'all 0.15s'
+                          }}
+                        >
+                          {tab === 'tasks' ? '⚡ Tasks' : tab === 'search' ? '🔍 Search' : tab === 'git' ? '⎇ Git' : '🧠 Semantic'}
+                        </button>
+                      )
+                    })}
                   </div>
 
                   {/* Bottom panel content */}
