@@ -6,6 +6,7 @@
 import { v4 as uuidv4 } from 'uuid'
 import { getDatabase } from './database'
 import type { Session } from '@shared/types'
+import { codebaseIndexer } from '../agent/CodebaseIndexer'
 
 /**
  * Creates a new session.
@@ -86,6 +87,11 @@ export function updateSessionWorkspace(sessionId: string, workspacePath: string 
     UPDATE sessions SET workspace_path = ?, updated_at = ? WHERE id = ?
   `)
   stmt.run(workspacePath, new Date().toISOString(), sessionId)
+
+  // Trigger background semantic indexing when a workspace path is bound
+  if (workspacePath) {
+    codebaseIndexer.indexWorkspace(workspacePath)
+  }
 }
 
 /**

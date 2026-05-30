@@ -5,6 +5,8 @@
 // ═══════════════════════════════════════════════════════════════════
 
 import type { Message } from '@shared/types'
+import { userProfileManager } from './UserProfileManager'
+import { contextCompactor } from './ContextCompactor'
 
 export class ContextManager {
   private maxMessages: number
@@ -21,13 +23,41 @@ export class ContextManager {
    * Uses an approximate token estimate so long-running IDE sessions can
    * preserve relevant history without exceeding provider limits.
    */
-  trimMessages(messages: Message[]): Message[] {
-    if (messages.length <= this.maxMessages && this.estimateTokens(messages) <= this.maxTokenEstimate) {
-      return messages
+  trimMessages(messages: Message[], sessionId?: string, ragSegment?: string): Message[] {
+    let systemMessages = messages.filter((m) => m.role === 'system')
+    const nonSystemMessages = messages.filter((m) => m.role !== 'system')
+
+    // Inject Long-term facts, history compaction summaries, and codebase RAG context into the system prompt
+    const factsSegment = userProfileManager.getProfilePromptSegment()
+    const summariesSegment = sessionId ? contextCompactor.getSummariesPromptSegment(sessionId) : ''
+    const extraSystemSegments = factsSegment + summariesSegment + (ragSegment || '')
+
+    if (extraSystemSegments) {
+      if (systemMessages.length > 0) {
+        const lastSystem = systemMessages[systemMessages.length - 1]
+        systemMessages = [
+          ...systemMessages.slice(0, -1),
+          {
+            ...lastSystem,
+            content: lastSystem.content + extraSystemSegments
+          }
+        ]
+      } else {
+        systemMessages = [
+          {
+            id: 'synth_system',
+            sessionId: sessionId || '',
+            role: 'system',
+            content: 'You are a highly capable agentic AI coding assistant.' + extraSystemSegments,
+            createdAt: new Date().toISOString()
+          } as any
+        ]
+      }
     }
 
-    const systemMessages = messages.filter((m) => m.role === 'system')
-    const nonSystemMessages = messages.filter((m) => m.role !== 'system')
+    if (messages.length <= this.maxMessages && this.estimateTokens([...systemMessages, ...nonSystemMessages]) <= this.maxTokenEstimate) {
+      return [...systemMessages, ...nonSystemMessages]
+    }
 
     const chunks: Message[][] = []
     let currentChunk: Message[] = []

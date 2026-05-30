@@ -413,6 +413,44 @@ function runMigrations(database: Database.Database): void {
     } catch {
       // Column already exists — ignore
     }
+
+    // ── Migration 13: Memory, Context summaries & Codebase Embeddings ──
+    database.exec(`
+      CREATE TABLE IF NOT EXISTS user_profile_knowledge (
+        id TEXT PRIMARY KEY,
+        category TEXT NOT NULL,
+        fact TEXT NOT NULL UNIQUE,
+        confidence_score REAL DEFAULT 1.0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS chat_summaries (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        start_message_id TEXT,
+        end_message_id TEXT,
+        summary_content TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS codebase_embeddings (
+        id TEXT PRIMARY KEY,
+        workspace_path TEXT NOT NULL,
+        file_path TEXT NOT NULL,
+        chunk_index INTEGER NOT NULL,
+        content TEXT NOT NULL,
+        embedding BLOB NOT NULL,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+    `)
+    try {
+      database.exec(`CREATE INDEX IF NOT EXISTS idx_chat_summaries_session ON chat_summaries(session_id);`)
+      database.exec(`CREATE INDEX IF NOT EXISTS idx_codebase_embeddings_path ON codebase_embeddings(workspace_path);`)
+    } catch {
+      // Ignore index errors if any
+    }
   })
 
   migrate()

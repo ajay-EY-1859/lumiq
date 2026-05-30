@@ -11,10 +11,13 @@ import type { Message, ProviderConfig, SendResult } from '@shared/types'
 import { ProviderFactory } from '../providers/ProviderFactory'
 import { ToolExecutor } from './ToolExecutor'
 import { ContextManager } from './ContextManager'
+import { getDatabase } from '../db/database'
 import { createMessage, updateMessageContent } from '../db/messages'
 import { touchSession } from '../db/sessions'
 import { listApiConfigs } from '../db/apiConfigs'
 import type { AIProvider } from '../providers/AIProvider'
+import { userProfileManager } from './UserProfileManager'
+import { contextCompactor } from './ContextCompactor'
 
 // Active request tracking for cancellation
 let activeAbortController: AbortController | null = null
@@ -127,8 +130,31 @@ export class AgentLoop {
       // Create provider client
       const provider: AIProvider = ProviderFactory.create(config)
 
+      // 1. Fetch workspace path of active session
+      let workspacePath: string | null = null
+      try {
+        const db = getDatabase()
+        const session = db.prepare('SELECT workspace_path as workspacePath FROM sessions WHERE id = ?').get(sessionId) as { workspacePath: string | null }
+        if (session) {
+          workspacePath = session.workspacePath
+        }
+      } catch (err) {
+        console.error('[AgentLoop] Failed to fetch session workspace path:', err)
+      }
+
+      // 2. Fetch codebase RAG context if a workspace path is configured
+      let ragSegment = ''
+      if (workspacePath && userMessage) {
+        try {
+          const { ragQueryEngine } = await import('./RAGQueryEngine')
+          ragSegment = await ragQueryEngine.getSemanticPromptSegment(workspacePath, userMessage)
+        } catch (err) {
+          console.error('[AgentLoop] RAG search failed:', err)
+        }
+      }
+
       // Trim context
-      const trimmedMessages = this.contextManager.trimMessages(messages)
+      const trimmedMessages = this.contextManager.trimMessages(messages, sessionId, ragSegment)
 
       // Reconstruct missing toolCalls on assistant messages from DB history
       const rehydratedMessages = this.reconstructToolCalls(trimmedMessages)
@@ -146,7 +172,7 @@ export class AgentLoop {
       ]
 
       // Run the agentic loop (may loop multiple times if tool calls happen)
-      await this.runLoop(provider, config, allMessages, sessionId, options, signal, window || undefined)
+      await this.runLoop(provider, config, allMessages, sessionId, userMessage, options, signal, window || undefined)
     } catch (error) {
       if ((error as Error).name === 'AbortError') {
         // User cancelled — not an error
@@ -245,6 +271,7 @@ export class AgentLoop {
     config: ProviderConfig,
     messages: Message[],
     sessionId: string,
+    userMessage: string,
     options: { model: string; systemPrompt?: string; callbacks?: AgentLoopCallbacks },
     signal: AbortSignal,
     window?: BrowserWindow
@@ -524,6 +551,12 @@ export class AgentLoop {
       }
 
       try { touchSession(sessionId) } catch { /* session may be gone */ }
+
+      // Trigger background user profile facts extraction
+      userProfileManager.extractFactsFromExchange(userMessage, result!.content, config, options.model)
+
+      // Trigger background context compaction check (>20 messages, keeping last 5 raw)
+      contextCompactor.checkAndCompactSession(sessionId, config, options.model)
 
       // Signal stream end
       options.callbacks?.onEnd?.(result!.content, result!.tokensUsed)
