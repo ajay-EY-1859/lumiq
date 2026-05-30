@@ -204,6 +204,25 @@ export function TaskPanel(): React.JSX.Element {
                         </button>
                       </div>
                     </div>
+                    {activeTask.selfHealSuggestion && (
+                      <div style={{ marginBottom: '12px', padding: '12px', borderRadius: '8px', background: '#161b22', border: '1px solid #30363D' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', marginBottom: '8px' }}>
+                          <div>
+                            <div style={{ fontSize: '13px', fontWeight: 600, color: '#58a6ff' }}>Self-Heal Recommendation</div>
+                            <div style={{ fontSize: '12px', color: '#8B949E' }}>{activeTask.selfHealSuggestion.summary}</div>
+                          </div>
+                          <Button size="sm" variant="outline" onClick={() => {
+                            const message = `The task \`${activeTask.name}\` failed. Please apply this suggested fix:\n\n${activeTask.selfHealSuggestion?.recommendation}`
+                            useChatStore.getState().setDraftMessage(message)
+                          }}>
+                            Ask Lumiq to Fix
+                          </Button>
+                        </div>
+                        <pre style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: '#C9D1D9', margin: 0, whiteSpace: 'pre-wrap', overflowX: 'auto' }}>
+                          {activeTask.selfHealSuggestion.recommendation}
+                        </pre>
+                      </div>
+                    )}
                     {activeTask.logs.map((log) => (
                       <span key={log.id} style={{
                         color: log.type === 'stderr' ? '#FF7B72' : log.type === 'system' ? '#79C0FF' : '#E6EDF3',

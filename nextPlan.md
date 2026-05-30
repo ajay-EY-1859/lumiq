@@ -43,20 +43,24 @@ Traditional regex search requires keyword matches. Milestone 8 introduces concep
 
 ---
 
-## ⬜ Milestone 9: Autonomous Self-Healing & Agent Debugging
+## ⬜ Milestone 9 (v2): Autonomous Self-Healing & Agent Debugging
 
-Bring true autonomy to local task execution. Lumiq will not just write code; it will monitor build states, analyze failures, and auto-correct itself.
+Bring true autonomy to local task execution with a production-ready self-healing layer. Lumiq will not just write code; it will monitor terminal diagnostics, capture failure context, and propose safe repairs with traceable execution.
 
-- [ ] **Self-Healing Code Watcher**
-  - Monitor terminal tasks (like `npm run dev`, `vitest`, or compilations).
-  - Upon detecting stdout/stderr exceptions or failed tests, auto-trigger a background **Fix Subagent** that reads the failing code and exception, generates a corrective diff, and presents the solution to the user with a single-click "Apply Fix" option.
-- [ ] **Step-by-Step Agent Execution Visualizer**
-  - A beautiful, node-based flowchart/timeline visualizer in the chat showing:
-    - *Thought process* (what the agent wants to do next).
-    - *Tool Selection* (input arguments and schema).
-    - *Manual Approval Gate* (step-through debugging).
-- [ ] **Sandboxed Shell execution**
-  - Option to spin up lightweight containerized environments or sandbox terminals for executing commands safely.
+- [ ] **Self-Healing Code Watcher (v2)**
+  - Monitor terminal tasks (like `npm run dev`, `vitest`, or compilations) and detect errors, stack traces, or failing test results.
+  - Auto-trigger a background **Fix Subagent** on failure, collect the relevant workspace snapshot, and surface a targeted corrective diff with a one-click "Apply Fix" option.
+- [ ] **Agent Execution Trace Visualizer (v2)**
+  - Render a step-by-step execution trace in the chat showing:
+    - *Thoughts* (planned actions and goals).
+    - *Tool Selection* (chosen tool, schema, and input arguments).
+    - *Diagnostics* (failure root cause, captured logs, and remediation suggestions).
+- [ ] **Secure Sandbox Runner**
+  - Execute repair commands in a lightweight sandboxed terminal environment.
+  - Keep unsafe actions gated behind explicit approval and preserve a versioned safety log for rollback.
+- [ ] **Debug Snapshot Store**
+  - Persist failure snapshots, tool inputs, and repair history as versioned artifacts.
+  - Use the snapshot history to avoid repeated fixes and to make the self-healing loop auditable.
 
 ---
 
@@ -97,7 +101,7 @@ Expand single-file diff acceptance into powerful project-wide refactoring workfl
 | **Message Retry & Clipboard Paste** | 100% | ✅ Complete | Maintained |
 | **Model Context Protocol (MCP)** | 100% | ✅ Complete | Milestone 7 |
 | **Codebase Semantic RAG** | 100% | ✅ Complete | Milestone 8 |
-| **Self-Healing Code Loops** | 0% | ⬜ Proposed | Milestone 9 |
+| **Self-Healing Code Loops** | 10% | 🚧 In progress | Milestone 9 (v2) |
 | **Multi-File Diff Explorer** | 20% | ⬜ Proposed | Milestone 10 |
 
 ---
@@ -106,4 +110,5 @@ Expand single-file diff acceptance into powerful project-wide refactoring workfl
 
 1. **MCP Server Bridge**: Establish basic IPC channels to invoke local command-line based MCP tools.
 2. [x] **Local Embedding Indexer**: Completed workspace scanning and hybrid embedding generation (MiniLM/Gemini).
-3. **Multi-File diff view**: Create the layout for side-by-side multi-file edits.
+3. **Self-Healing v2 Baseline**: Start the fault detection and repair workflow for terminal/runtime failures.
+4. **Multi-File diff view**: Create the layout for side-by-side multi-file edits.

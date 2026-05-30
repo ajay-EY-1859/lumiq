@@ -367,6 +367,7 @@ export const IPC = {
   TASK_STDIN: 'task:stdin',
   TASK_OUTPUT: 'task:output',
   TASK_EXIT: 'task:exit',
+  TASK_SELF_HEAL: 'task:self-heal',
 
   // Edit decisions
   EDIT_DECISION_RECORD: 'edit-decision:record',
@@ -430,6 +431,13 @@ export interface TaskProblem {
   severity: 'error' | 'warning'
 }
 
+export interface TaskSelfHealSuggestion {
+  taskId: string
+  recommendation: string
+  summary: string
+  errorLines: string[]
+}
+
 export interface TaskLog {
   id: string
   timestamp: number
@@ -446,6 +454,7 @@ export interface TaskState {
   status: 'running' | 'success' | 'error' | 'stopped'
   logs: TaskLog[]
   problems: TaskProblem[]
+  selfHealSuggestion?: TaskSelfHealSuggestion
 }
 
 // Type for IPC channel values

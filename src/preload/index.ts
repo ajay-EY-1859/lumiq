@@ -22,6 +22,7 @@ import type {
   GrpcStatus,
   ToolApprovalRequest,
   WorkspaceTaskDefinition,
+  TaskSelfHealSuggestion,
   EditDecision,
   SearchRequest,
   SearchResponse,
@@ -160,6 +161,7 @@ export interface ElectronAPI {
     deleteDefinition: (workspacePath: string, name: string) => Promise<boolean>
     onOutput: (callback: (taskId: string, data: string, type: 'stdout' | 'stderr' | 'system') => void) => () => void
     onExit: (callback: (taskId: string, code: number | null) => void) => () => void
+    onSelfHeal: (callback: (suggestion: TaskSelfHealSuggestion) => void) => () => void
   }
   editDecision: {
     record: (decision: Omit<EditDecision, 'id' | 'createdAt'>) => Promise<EditDecision>
@@ -375,7 +377,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke(IPC.TASK_SAVE_DEFINITION, definition),
     deleteDefinition: (workspacePath: string, name: string) => ipcRenderer.invoke(IPC.TASK_DELETE_DEFINITION, { workspacePath, name }),
     onOutput: (cb: (taskId: string, data: string, type: 'stdout' | 'stderr' | 'system') => void) => createListener(IPC.TASK_OUTPUT, cb),
-    onExit: (cb: (taskId: string, code: number | null) => void) => createListener(IPC.TASK_EXIT, cb)
+    onExit: (cb: (taskId: string, code: number | null) => void) => createListener(IPC.TASK_EXIT, cb),
+    onSelfHeal: (cb: (suggestion: TaskSelfHealSuggestion) => void) => createListener(IPC.TASK_SELF_HEAL, cb)
   },
 
   editDecision: {

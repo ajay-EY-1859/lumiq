@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { TaskState, TaskProblem, WorkspaceTaskDefinition } from '@shared/types'
+import { TaskState, TaskProblem, TaskSelfHealSuggestion, WorkspaceTaskDefinition } from '@shared/types'
 
 interface TaskStore {
   tasks: TaskState[]
@@ -21,6 +21,7 @@ interface TaskStore {
   // Callbacks for IPC
   _appendLog: (taskId: string, data: string, type: 'stdout' | 'stderr' | 'system') => void
   _setTaskExit: (taskId: string, code: number | null) => void
+  _handleSelfHeal: (suggestion: TaskSelfHealSuggestion) => void
 }
 
 function parseProblems(data: string, _filePrefix?: string): TaskProblem[] {
@@ -49,6 +50,9 @@ export const useTaskStore = create<TaskStore>((set, get) => {
   })
   window.electronAPI.task.onExit((taskId, code) => {
     get()._setTaskExit(taskId, code)
+  })
+  window.electronAPI.task.onSelfHeal((suggestion) => {
+    get()._handleSelfHeal(suggestion)
   })
 
   return {
@@ -149,6 +153,19 @@ export const useTaskStore = create<TaskStore>((set, get) => {
 
         const task = { ...tasks[taskIdx] }
         task.status = code === 0 ? 'success' : 'error'
+        tasks[taskIdx] = task
+        return { tasks }
+      })
+    },
+
+    _handleSelfHeal: (suggestion) => {
+      set((state) => {
+        const tasks = [...state.tasks]
+        const taskIdx = tasks.findIndex((t) => t.id === suggestion.taskId)
+        if (taskIdx === -1) return state
+
+        const task = { ...tasks[taskIdx] }
+        task.selfHealSuggestion = suggestion
         tasks[taskIdx] = task
         return { tasks }
       })

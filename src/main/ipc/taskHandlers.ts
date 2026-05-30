@@ -7,7 +7,7 @@ import { spawn, ChildProcessWithoutNullStreams } from 'child_process'
 import { basename, resolve } from 'path'
 import { v4 as uuidv4 } from 'uuid'
 import { IPC } from '@shared/types'
-import type { WorkspaceTaskDefinition } from '@shared/types'
+import type { WorkspaceTaskDefinition, TaskSelfHealSuggestion } from '@shared/types'
 import { getWorkspaceRoot, validatePathWithinWorkspace } from '../security/pathValidation'
 import {
   deleteWorkspaceTask,
@@ -21,6 +21,8 @@ const activeTasks = new Map<string, ChildProcessWithoutNullStreams>()
 
 const ALLOWED_TASK_COMMANDS = new Set(["npm", "npx", "node", "yarn", "pnpm", "git", "python", "python3", "go", "cargo"])
 
+const MAX_SELF_HEAL_LINES = 20
+
 function isAllowedTaskCommand(command: string, cwd: string): boolean {
   const commandName = basename(command).toLowerCase()
   if (ALLOWED_TASK_COMMANDS.has(commandName)) {
@@ -33,6 +35,33 @@ function isAllowedTaskCommand(command: string, cwd: string): boolean {
     return true
   } catch {
     return false
+  }
+}
+
+function createSelfHealSuggestion(taskId: string, code: number | null, stderrLines: string[]): TaskSelfHealSuggestion | null {
+  const errorText = stderrLines
+    .join('')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .slice(-MAX_SELF_HEAL_LINES)
+
+  if (code === 0 || errorText.length === 0) {
+    return null
+  }
+
+  return {
+    taskId,
+    recommendation: 'Lumiq detected a failing developer task and captured the most recent error output for a self-healing recommendation.',
+    summary: `Task exited with code ${code}. Review the latest stderr output and ask Lumiq to fix the broken code path.`,
+    errorLines: errorText
+  }
+}
+
+function emitSelfHealSuggestion(taskId: string, code: number | null, stderrLines: string[]): void {
+  const suggestion = createSelfHealSuggestion(taskId, code, stderrLines)
+  if (suggestion) {
+    BrowserWindow.getAllWindows()[0]?.webContents.send(IPC.TASK_SELF_HEAL, suggestion)
   }
 }
 
@@ -92,19 +121,29 @@ export function registerTaskHandlers(): void {
       BrowserWindow.getAllWindows()[0]?.webContents.send(IPC.TASK_OUTPUT, taskId, data.toString(), 'stdout')
     })
 
+    const stderrLines: string[] = []
+
     child.stderr.on('data', (data: Buffer) => {
-      BrowserWindow.getAllWindows()[0]?.webContents.send(IPC.TASK_OUTPUT, taskId, data.toString(), 'stderr')
+      const text = data.toString()
+      stderrLines.push(text)
+      if (stderrLines.length > MAX_SELF_HEAL_LINES) {
+        stderrLines.splice(0, stderrLines.length - MAX_SELF_HEAL_LINES)
+      }
+      BrowserWindow.getAllWindows()[0]?.webContents.send(IPC.TASK_OUTPUT, taskId, text, 'stderr')
     })
 
     child.on('error', (err: Error) => {
-      BrowserWindow.getAllWindows()[0]?.webContents.send(IPC.TASK_OUTPUT, taskId, `Error starting task: ${err.message}`, 'system')
+      const errorMessage = `Error starting task: ${err.message}`
+      BrowserWindow.getAllWindows()[0]?.webContents.send(IPC.TASK_OUTPUT, taskId, errorMessage, 'system')
       BrowserWindow.getAllWindows()[0]?.webContents.send(IPC.TASK_EXIT, taskId, 1)
+      emitSelfHealSuggestion(taskId, 1, [errorMessage])
       activeTasks.delete(taskId)
     })
 
     child.on('exit', (code: number | null) => {
       BrowserWindow.getAllWindows()[0]?.webContents.send(IPC.TASK_OUTPUT, taskId, `\n[Task exited with code ${code}]`, 'system')
       BrowserWindow.getAllWindows()[0]?.webContents.send(IPC.TASK_EXIT, taskId, code)
+      emitSelfHealSuggestion(taskId, code, stderrLines)
       activeTasks.delete(taskId)
     })
 
