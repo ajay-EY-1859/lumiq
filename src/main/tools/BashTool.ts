@@ -177,6 +177,16 @@ export class BashTool implements Tool {
           env: { ...process.env, TERM: 'dumb' }
         },
         (error, stdout, stderr) => {
+          const exitCode = error ? error.code ?? 1 : 0
+          const fullOutput = stdout + (stderr ? `\n\n[STDERR]\n${stderr}` : '')
+
+          // Trigger DiagnosticsWatcher to inspect output and self-heal if necessary
+          import('../services/diagnostics/DiagnosticsWatcher')
+            .then(({ DiagnosticsWatcher }) => {
+              DiagnosticsWatcher.handleCommandOutcome(command, exitCode, fullOutput, cwd)
+            })
+            .catch((err) => console.error('[BashTool] DiagnosticsWatcher trigger failed:', err))
+
           if (error) {
             if (error.killed) {
               resolve(`[TIMEOUT] Command timed out after ${timeout}ms`)

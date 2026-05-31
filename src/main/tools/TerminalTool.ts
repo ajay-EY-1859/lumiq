@@ -155,6 +155,14 @@ export class TerminalTool implements Tool {
         session.isRunning = false
         session.exitCode = code
         session.output.push(`\n[Process exited with code: ${code}]`)
+
+        // Trigger DiagnosticsWatcher to inspect output and self-heal if necessary
+        const fullOutput = session.output.join('')
+        import('../services/diagnostics/DiagnosticsWatcher')
+          .then(({ DiagnosticsWatcher }) => {
+            DiagnosticsWatcher.handleCommandOutcome(session.command, code, fullOutput, safeCwd)
+          })
+          .catch((err) => console.error('[TerminalTool] DiagnosticsWatcher trigger failed:', err))
       })
 
       SESSIONS.set(sessionId, session)

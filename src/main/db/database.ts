@@ -515,6 +515,27 @@ function runMigrations(database: Database.Database): void {
 
       CREATE INDEX IF NOT EXISTS idx_plugin_resources_plugin ON plugin_resources(plugin_id);
     `)
+
+    // ── Migration 16: Self-healing attempts & diagnostics ─────────
+    database.exec(`
+      CREATE TABLE IF NOT EXISTS self_healing_attempts (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        workspace_path TEXT NOT NULL,
+        command TEXT NOT NULL,
+        error_message TEXT,
+        stack_trace TEXT,
+        captured_snapshot TEXT,
+        proposed_diff TEXT,
+        status TEXT NOT NULL CHECK(status IN ('detected', 'analyzing', 'proposed', 'approved', 'applied', 'failed', 'rolled_back')),
+        execution_logs TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_self_healing_session ON self_healing_attempts(session_id);
+    `)
   })
 
   migrate()

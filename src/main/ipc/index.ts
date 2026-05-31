@@ -25,6 +25,7 @@ import { registerGitHandlers } from './gitHandlers'
 import { registerCommandHandlers } from './commandHandlers'
 import { registerLspHandlers } from './lspHandlers'
 import { registerPluginHandlers } from './pluginHandlers'
+import { registerSelfHealingHandlers } from './selfHealingHandlers'
 import { handleWithTimeout, IPC_TIMEOUT } from './handleWithTimeout'
 
 export function registerAllHandlers(): void {
@@ -50,6 +51,7 @@ export function registerAllHandlers(): void {
   registerCommandHandlers()
   registerLspHandlers()
   registerPluginHandlers()
+  registerSelfHealingHandlers()
 
   // ── Window Control Handlers (for custom titlebar) ──
   ipcMain.on('window:minimize', (event) => {

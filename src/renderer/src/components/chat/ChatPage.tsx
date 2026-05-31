@@ -11,6 +11,7 @@ import { MessageBubble } from './MessageBubble'
 import { MessageInput } from './MessageInput'
 import { TypingIndicator } from './TypingIndicator'
 import { ToolApprovalDialog } from './ToolApprovalDialog'
+import { SelfHealingPanel } from './SelfHealingPanel'
 import { Button } from '@renderer/components/ui/Button'
 import type { ToolApprovalRequest } from '@shared/types'
 
@@ -37,6 +38,7 @@ export function ChatPage(): React.JSX.Element {
   const { activeSessionId, createSession, sessions, setWorkspace, setActiveSession } = useSessionStore()
   const { activeProvider, activeModel } = useProviderStore()
   const [taskMode, setTaskMode] = useState<string | null>(null)
+  const [activeSelfHealingAttempt, setActiveSelfHealingAttempt] = useState<any>(null)
 
   const activeSession = sessions.find((s) => s.id === activeSessionId)
 
@@ -55,6 +57,11 @@ export function ChatPage(): React.JSX.Element {
   useEffect(() => {
     if (activeSessionId) {
       loadSession(activeSessionId)
+      window.electronAPI.selfHealing.getActive(activeSessionId)
+        .then((attempt) => setActiveSelfHealingAttempt(attempt))
+        .catch((err) => console.error('[ChatPage] Failed to fetch active self-healing:', err))
+    } else {
+      setActiveSelfHealingAttempt(null)
     }
   }, [activeSessionId, loadSession])
 
@@ -88,11 +95,25 @@ export function ChatPage(): React.JSX.Element {
       addPendingApproval(request as ToolApprovalRequest)
     })
 
+    const cleanupSelfHealingFailure = window.electronAPI.selfHealing.onFailureDetected((attempt) => {
+      if (attempt.sessionId === activeSessionId) {
+        setActiveSelfHealingAttempt(attempt)
+      }
+    })
+
+    const cleanupSelfHealingProposal = window.electronAPI.selfHealing.onProposalGenerated((attempt) => {
+      if (attempt.sessionId === activeSessionId) {
+        setActiveSelfHealingAttempt(attempt)
+      }
+    })
+
     return () => {
       cleanupChunk()
       cleanupEnd()
       cleanupError()
       cleanupApproval()
+      cleanupSelfHealingFailure()
+      cleanupSelfHealingProposal()
     }
   }, [activeSessionId, appendStreamChunk, resetStream, setError, setStreaming, addPendingApproval, addMessage, loadSession])
 
@@ -320,6 +341,13 @@ export function ChatPage(): React.JSX.Element {
 
       {/* Input */}
       <div className="p-6 pt-2 shrink-0 max-w-4xl mx-auto w-full">
+        {activeSelfHealingAttempt && (
+          <SelfHealingPanel
+            sessionId={activeSessionId || ''}
+            activeAttempt={activeSelfHealingAttempt}
+            onClearActive={() => setActiveSelfHealingAttempt(null)}
+          />
+        )}
         <MessageInput
           onSend={handleSend}
           onCancel={cancelStream}

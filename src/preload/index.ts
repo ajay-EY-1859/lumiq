@@ -33,7 +33,8 @@ import type {
   SemanticIndexStatus,
   GitStatusResult,
   DocumentSymbol,
-  DefinitionResult
+  DefinitionResult,
+  SelfHealingAttempt
 } from '../shared/types'
 
 // Type for the exposed API
@@ -173,6 +174,14 @@ export interface ElectronAPI {
     onOutput: (callback: (taskId: string, data: string, type: 'stdout' | 'stderr' | 'system') => void) => () => void
     onExit: (callback: (taskId: string, code: number | null) => void) => () => void
     onSelfHeal: (callback: (suggestion: TaskSelfHealSuggestion) => void) => () => void
+  }
+  selfHealing: {
+    getActive: (sessionId: string) => Promise<SelfHealingAttempt | null>
+    apply: (attemptId: string) => Promise<{ success: boolean; error?: string }>
+    decline: (attemptId: string) => Promise<void>
+    refine: (attemptId: string) => Promise<void>
+    onFailureDetected: (callback: (attempt: SelfHealingAttempt) => void) => () => void
+    onProposalGenerated: (callback: (attempt: SelfHealingAttempt) => void) => () => void
   }
   editDecision: {
     record: (decision: Omit<EditDecision, 'id' | 'createdAt'>) => Promise<EditDecision>
@@ -401,6 +410,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onOutput: (cb: (taskId: string, data: string, type: 'stdout' | 'stderr' | 'system') => void) => createListener(IPC.TASK_OUTPUT, cb),
     onExit: (cb: (taskId: string, code: number | null) => void) => createListener(IPC.TASK_EXIT, cb),
     onSelfHeal: (cb: (suggestion: TaskSelfHealSuggestion) => void) => createListener(IPC.TASK_SELF_HEAL, cb)
+  },
+
+  selfHealing: {
+    getActive: (sessionId: string) => ipcRenderer.invoke(IPC.SELF_HEALING_GET_ACTIVE, sessionId),
+    apply: (attemptId: string) => ipcRenderer.invoke(IPC.SELF_HEALING_APPLY, attemptId),
+    decline: (attemptId: string) => ipcRenderer.invoke(IPC.SELF_HEALING_DECLINE, attemptId),
+    refine: (attemptId: string) => ipcRenderer.invoke(IPC.SELF_HEALING_REFINE, attemptId),
+    onFailureDetected: (cb: (attempt: SelfHealingAttempt) => void) => createListener('self-healing:failure-detected', cb),
+    onProposalGenerated: (cb: (attempt: SelfHealingAttempt) => void) => createListener('self-healing:proposal-generated', cb)
   },
 
   editDecision: {

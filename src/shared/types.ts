@@ -460,6 +460,12 @@ export const IPC = {
   TRACES_LIST: 'traces:list',
   COSTS_SUMMARY: 'costs:summary',
 
+  // Self Healing
+  SELF_HEALING_GET_ACTIVE: 'self-healing:get-active',
+  SELF_HEALING_APPLY: 'self-healing:apply',
+  SELF_HEALING_DECLINE: 'self-healing:decline',
+  SELF_HEALING_REFINE: 'self-healing:refine',
+
   // Git
   GIT_STATUS: 'git:status',
   GIT_BRANCH: 'git:branch',
@@ -470,6 +476,22 @@ export const IPC = {
   GIT_COMMIT: 'git:commit',
   GIT_IGNORED: 'git:ignored'
 } as const
+
+// ─── Self Healing Types ─────────────────────────────────────────────
+export interface SelfHealingAttempt {
+  id: string
+  sessionId: string
+  workspacePath: string
+  command: string
+  errorMessage?: string
+  stackTrace?: string
+  capturedSnapshot?: string
+  proposedDiff?: string
+  status: 'detected' | 'analyzing' | 'proposed' | 'approved' | 'applied' | 'failed' | 'rolled_back'
+  executionLogs?: string
+  createdAt: string
+  updatedAt: string
+}
 
 // ─── Edit Decision Types ───────────────────────────────────────────
 export type EditDecisionType = 'accepted' | 'rejected' | 'applied'
