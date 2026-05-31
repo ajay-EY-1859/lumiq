@@ -21,8 +21,8 @@
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "test": "cross-env ELECTRON_RUN_AS_NODE=true electron node_modules/vitest/vitest.mjs run",
+    "test:watch": "cross-env ELECTRON_RUN_AS_NODE=true electron node_modules/vitest/vitest.mjs"
   },
   "dependencies": {
     "@anthropic-ai/bedrock-sdk": "^0.29.1",
@@ -62,6 +62,7 @@
     "@typescript-eslint/eslint-plugin": "^8.59.3",
     "@typescript-eslint/parser": "^8.59.3",
     "@vitejs/plugin-react": "^5.2.0",
+    "cross-env": "^10.1.0",
     "electron": "^41.5.1",
     "electron-builder": "^26.8.1",
     "electron-vite": "^5.0.0",
