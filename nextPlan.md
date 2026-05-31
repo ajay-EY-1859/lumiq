@@ -82,10 +82,10 @@ Expand single-file diff acceptance into powerful project-wide refactoring workfl
 
 ## 🏗 Architecture & Core Improvements
 
-- [ ] **Request/Response Trace Logging**: Export complete request/response payloads (including system prompts and raw tool outputs) for debugging and auditing.
-- [ ] **Offline-First Mode**: Automated configuration with local LLM providers (Ollama / Llama.cpp) and automatic model enumeration.
-- [ ] **Cost Analytics & Budget Caps**: A visual dashboard plotting model utilization, token costs, and letting users set daily/monthly budget warnings.
-- [ ] **Session Search & Archive**: Global search across all past chat sessions by date, provider, or content keywords.
+- [x] **Request/Response Trace Logging**: Export complete request/response payloads (including system prompts and raw tool outputs) for debugging and auditing.
+- [x] **Offline-First Mode**: Automated configuration with local LLM providers (Ollama / Llama.cpp) and automatic model enumeration.
+- [x] **Cost Analytics & Budget Caps**: A visual dashboard plotting model utilization, token costs, and letting users set daily/monthly budget warnings.
+- [x] **Session Search & Archive**: Global search across all past chat sessions by date, provider, or content keywords.
 
 ---
 
@@ -93,11 +93,11 @@ Expand single-file diff acceptance into powerful project-wide refactoring workfl
 
 | Module | Current Completeness | Status | Target Phase |
 | :--- | :--- | :--- | :--- |
-| **Agent Engine** | 95% | ✅ Strong | Maintained |
-| **Tool Execution** | 92% | ✅ Strong | Maintained |
-| **Monaco Editor Integration** | 95% | ✅ Complete | Maintained |
+| **Agent Engine** | 100% | ✅ Complete | Maintained |
+| **Tool Execution** | 100% | ✅ Complete | Maintained |
+| **Monaco Editor Integration** | 100% | ✅ Complete | Maintained |
 | **Code Intelligence (LSP)** | 100% | ✅ Complete | Maintained |
-| **Search & Version Control (Git)** | 90% | ✅ Complete | Maintained |
+| **Search & Version Control (Git)** | 100% | ✅ Complete | Maintained |
 | **Message Retry & Clipboard Paste** | 100% | ✅ Complete | Maintained |
 | **Model Context Protocol (MCP)** | 100% | ✅ Complete | Milestone 7 |
 | **Codebase Semantic RAG** | 100% | ✅ Complete | Milestone 8 |
@@ -108,7 +108,7 @@ Expand single-file diff acceptance into powerful project-wide refactoring workfl
 
 ## 🎯 Immediate Tactical Priorities
 
-1. **MCP Server Bridge**: Establish basic IPC channels to invoke local command-line based MCP tools.
+1. [x] **MCP Server Bridge**: Establish basic IPC channels to invoke local command-line based MCP tools.
 2. [x] **Local Embedding Indexer**: Completed workspace scanning and hybrid embedding generation (MiniLM/Gemini).
 3. **Self-Healing v2 Baseline**: Start the fault detection and repair workflow for terminal/runtime failures.
 4. **Multi-File diff view**: Create the layout for side-by-side multi-file edits.

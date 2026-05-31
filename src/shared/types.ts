@@ -164,6 +164,8 @@ export interface AppSettings {
   autoSave: boolean
   contextLimit: number
   firecrawlApiKey?: string
+  dailyBudgetCap?: string
+  monthlyBudgetCap?: string
 }
 
 export interface ToolSettings {
@@ -375,6 +377,7 @@ export const IPC = {
 
   // Search (Find in Files)
   SEARCH_FILES: 'search:files',
+  SEARCH_SESSIONS: 'search:sessions',
 
   // Semantic Search / Codebase RAG
   SEMANTIC_SEARCH: 'semantic:search',
@@ -385,6 +388,10 @@ export const IPC = {
   LSP_DOCUMENT_SYMBOLS: 'lsp:document-symbols',
   LSP_WORKSPACE_SYMBOLS: 'lsp:workspace-symbols',
   LSP_DEFINITION: 'lsp:definition',
+
+  // Traces
+  TRACES_LIST: 'traces:list',
+  COSTS_SUMMARY: 'costs:summary',
 
   // Git
   GIT_STATUS: 'git:status',

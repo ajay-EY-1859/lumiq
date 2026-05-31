@@ -18,6 +18,8 @@ import { listApiConfigs } from '../db/apiConfigs'
 import type { AIProvider } from '../providers/AIProvider'
 import { userProfileManager } from './UserProfileManager'
 import { contextCompactor } from './ContextCompactor'
+import { TraceLogger } from '../services/TraceLogger'
+import { CostManager } from '../services/CostManager'
 
 // Active request tracking for cancellation
 let activeAbortController: AbortController | null = null
@@ -385,6 +387,17 @@ export class AgentLoop {
               createdAt: new Date().toISOString()
             })
           }
+
+          // Log cost transaction (Offline-First and Budget Cap support)
+          try {
+            if (result && result.tokensUsed > 0) {
+              const estOutputTokens = Math.round(result.content.length / 4)
+              const estInputTokens = Math.max(0, result.tokensUsed - estOutputTokens)
+              CostManager.logTransaction(sessionId, currentConfig.provider, currentModel, estInputTokens, estOutputTokens)
+            }
+          } catch (err) {
+            console.error('[AgentLoop] Failed to log cost transaction:', err)
+          }
         } catch (err) {
           if (signal.aborted) throw err
 
@@ -557,6 +570,36 @@ export class AgentLoop {
 
       // Trigger background context compaction check (>20 messages, keeping last 5 raw)
       contextCompactor.checkAndCompactSession(sessionId, config, options.model)
+
+      // Log request/response audit trace
+      try {
+        TraceLogger.log({
+          timestamp: new Date().toISOString(),
+          sessionId,
+          provider: currentConfig.provider,
+          model: currentModel,
+          systemPrompt: options.systemPrompt,
+          messages: messages.map(m => ({
+            role: m.role,
+            content: m.content,
+            toolName: m.toolName,
+            toolCallId: m.toolCallId,
+            toolInput: m.toolInput,
+            toolResult: m.toolResult
+          })),
+          response: {
+            content: result!.content,
+            tokensUsed: result!.tokensUsed,
+            toolCalls: result!.toolCalls?.map(tc => ({
+              id: tc.id,
+              toolName: tc.toolName,
+              input: tc.input
+            }))
+          }
+        })
+      } catch (logErr) {
+        console.error('[AgentLoop] Trace logging failed:', logErr)
+      }
 
       // Signal stream end
       options.callbacks?.onEnd?.(result!.content, result!.tokensUsed)

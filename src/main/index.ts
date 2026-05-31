@@ -173,6 +173,13 @@ app.whenReady().then(() => {
 
   // Initialize database
   const db = initDatabase()
+
+  // Auto-discover local Ollama instance on startup (Offline-First Mode)
+  import('./providers/OllamaAutoDiscovery').then(({ OllamaAutoDiscovery }) => {
+    OllamaAutoDiscovery.discover()
+  }).catch(err => {
+    console.error('[OllamaAutoDiscovery] Failed to import auto-discovery service:', err)
+  })
   const toolSettings = db.prepare("SELECT value FROM settings WHERE key = 'toolSettings'").get() as { value: string } | undefined
   if (toolSettings?.value) {
     try {

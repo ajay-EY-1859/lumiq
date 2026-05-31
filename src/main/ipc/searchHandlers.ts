@@ -7,6 +7,7 @@ import { join, relative, extname } from 'path'
 import { IPC } from '@shared/types'
 import type { SearchMatch, SearchRequest, SearchResponse } from '@shared/types'
 import { handleWithTimeout, IPC_TIMEOUT } from './handleWithTimeout'
+import { getDatabase } from '../db/database'
 
 const MAX_RESULTS = 500
 const MAX_FILE_SIZE = 5 * 1024 * 1024 // 5 MB
@@ -58,6 +59,29 @@ export function registerSearchHandlers(): void {
       totalMatches: matches.length,
       truncated,
       elapsed
+    }
+  })
+
+  // ── Search past sessions ──
+  handleWithTimeout(IPC.SEARCH_SESSIONS, IPC_TIMEOUT.short, (_event, query: string): any[] => {
+    if (!query || !query.trim()) return []
+    try {
+      const db = getDatabase()
+      const keyword = `%${query.trim()}%`
+      const stmt = db.prepare(`
+        SELECT s.id, s.title, s.provider, s.model, s.updated_at as updatedAt, 
+               m.content as matchedContent, m.created_at as matchedAt
+        FROM sessions s
+        JOIN messages m ON s.id = m.session_id
+        WHERE m.content LIKE ? OR s.title LIKE ?
+        GROUP BY s.id
+        ORDER BY s.updated_at DESC
+        LIMIT 50
+      `)
+      return stmt.all(keyword, keyword)
+    } catch (err) {
+      console.error('[searchHandlers] Failed to search sessions:', err)
+      return []
     }
   })
 }

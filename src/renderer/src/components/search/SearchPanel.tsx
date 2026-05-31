@@ -1,6 +1,7 @@
 // ═══════════════════════════════════════════════════════════════════
-// Lumiq — SearchPanel (Find in Files)
-// Premium search UI with regex, case-sensitivity, include/exclude
+// Lumiq — SearchPanel (Find in Files, Semantic Search, and Chat Archive)
+// Premium search UI with regex, case-sensitivity, semantic codebase search,
+// and full-text past session indexing.
 // ═══════════════════════════════════════════════════════════════════
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -20,24 +21,71 @@ export function SearchPanel(): React.JSX.Element {
     search, semanticSearch, loadSemanticStatus, indexWorkspace, clearResults
   } = useSearchStore()
 
+  const { setActiveSession } = useSessionStore()
   const workspacePath = useSessionStore(s => s.sessions.find(s2 => s2.id === s.activeSessionId)?.workspacePath)
   const openFile = useEditorStore(s => s.openFile)
   const inputRef = useRef<HTMLInputElement>(null)
+  
+  const [localMode, setLocalMode] = useState<'text' | 'semantic' | 'sessions'>('text')
   const [showFilters, setShowFilters] = useState(false)
+
+  // Session search states
+  const [sessionQuery, setSessionQuery] = useState('')
+  const [sessionResults, setSessionResults] = useState<any[]>([])
+  const [isSessionSearching, setIsSessionSearching] = useState(false)
+
+  // Sync localMode with global store mode
+  useEffect(() => {
+    if (mode === 'text' || mode === 'semantic') {
+      setLocalMode(mode)
+    }
+  }, [mode])
+
+  // Sync global store mode when localMode toggles
+  useEffect(() => {
+    if (localMode === 'text' || localMode === 'semantic') {
+      setMode(localMode)
+    }
+  }, [localMode, setMode])
 
   // Debounced search
   const debounceTimer = useRef<NodeJS.Timeout | null>(null)
+  
   const triggerSearch = useCallback(() => {
+    if (localMode === 'sessions') {
+      if (debounceTimer.current) clearTimeout(debounceTimer.current)
+      debounceTimer.current = setTimeout(() => {
+        runSessionSearch(sessionQuery)
+      }, 300)
+      return
+    }
+
     if (!workspacePath) return
     if (debounceTimer.current) clearTimeout(debounceTimer.current)
     debounceTimer.current = setTimeout(() => {
-      if (mode === 'semantic') {
+      if (localMode === 'semantic') {
         semanticSearch(workspacePath)
       } else {
         search(workspacePath)
       }
     }, 300)
-  }, [workspacePath, mode, search, semanticSearch])
+  }, [workspacePath, localMode, sessionQuery, search, semanticSearch])
+
+  const runSessionSearch = async (q: string): Promise<void> => {
+    if (!q.trim()) {
+      setSessionResults([])
+      return
+    }
+    setIsSessionSearching(true)
+    try {
+      const matched = await window.electronAPI.search.sessions(q)
+      setSessionResults(matched)
+    } catch (err) {
+      console.error('[SearchPanel] Session search failed:', err)
+    } finally {
+      setIsSessionSearching(false)
+    }
+  }
 
   useEffect(() => {
     return () => {
@@ -71,15 +119,21 @@ export function SearchPanel(): React.JSX.Element {
   }, [])
 
   const handleQueryChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
-    setQuery(e.target.value)
+    if (localMode === 'sessions') {
+      setSessionQuery(e.target.value)
+    } else {
+      setQuery(e.target.value)
+    }
     triggerSearch()
   }
 
   const handleKeyDown = (e: React.KeyboardEvent): void => {
     if (e.key === 'Enter') {
       if (debounceTimer.current) clearTimeout(debounceTimer.current)
-      if (workspacePath) {
-        if (mode === 'semantic') {
+      if (localMode === 'sessions') {
+        runSessionSearch(sessionQuery)
+      } else if (workspacePath) {
+        if (localMode === 'semantic') {
           semanticSearch(workspacePath)
         } else {
           search(workspacePath)
@@ -87,8 +141,13 @@ export function SearchPanel(): React.JSX.Element {
       }
     }
     if (e.key === 'Escape') {
-      clearResults()
-      setQuery('')
+      if (localMode === 'sessions') {
+        setSessionQuery('')
+        setSessionResults([])
+      } else {
+        clearResults()
+        setQuery('')
+      }
     }
   }
 
@@ -106,6 +165,10 @@ export function SearchPanel(): React.JSX.Element {
     openFile(fullPath, fileName)
   }
 
+  const handleSessionClick = (sessionId: string): void => {
+    setActiveSession(sessionId)
+  }
+
   // Group results by file
   const groupedResults = useMemo(() => {
     const groups: Record<string, SearchMatch[]> = {}
@@ -118,9 +181,11 @@ export function SearchPanel(): React.JSX.Element {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--bg-primary)' }}>
-      {/* Search Input */}
+      
+      {/* Search Input Box */}
       <div style={{ padding: '12px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
         <div style={{ position: 'relative', display: 'flex', gap: '4px', alignItems: 'center' }}>
+          
           {/* Search icon */}
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
             style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}>
@@ -131,8 +196,8 @@ export function SearchPanel(): React.JSX.Element {
             ref={inputRef}
             id="input-search-files"
             type="text"
-            placeholder="Search in files… (Ctrl+Shift+F)"
-            value={query}
+            placeholder={localMode === 'sessions' ? 'Search past chats…' : 'Search in files… (Ctrl+Shift+F)'}
+            value={localMode === 'sessions' ? sessionQuery : query}
             onChange={handleQueryChange}
             onKeyDown={handleKeyDown}
             style={{
@@ -148,8 +213,8 @@ export function SearchPanel(): React.JSX.Element {
             }}
           />
 
-          {/* Toggle buttons */}
-          {mode === 'text' && (
+          {/* Toggle filter buttons */}
+          {localMode === 'text' && (
             <>
               <button
                 title="Match Case"
@@ -177,33 +242,34 @@ export function SearchPanel(): React.JSX.Element {
           )}
           <button
             title="Toggle Filters"
-            disabled={mode === 'semantic'}
+            disabled={localMode !== 'text'}
             onClick={() => setShowFilters(!showFilters)}
             style={{
               ...toggleBtnStyle,
-              opacity: mode === 'semantic' ? 0.4 : 1,
-              background: showFilters && mode === 'text' ? 'var(--accent-blue)' : 'transparent',
-              color: showFilters && mode === 'text' ? '#fff' : 'var(--text-muted)'
+              opacity: localMode !== 'text' ? 0.4 : 1,
+              background: showFilters && localMode === 'text' ? 'var(--accent-blue)' : 'transparent',
+              color: showFilters && localMode === 'text' ? '#fff' : 'var(--text-muted)'
             }}
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" /></svg>
           </button>
         </div>
 
+        {/* Search Mode Tab Buttons */}
         <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
           <button
-            onClick={() => setMode('text')}
+            onClick={() => setLocalMode('text')}
             style={{
               ...modeBtnStyle,
-              background: mode === 'text' ? 'var(--accent-blue)' : 'transparent',
-              color: mode === 'text' ? '#fff' : 'var(--text-muted)'
+              background: localMode === 'text' ? 'var(--accent-blue)' : 'transparent',
+              color: localMode === 'text' ? '#fff' : 'var(--text-muted)'
             }}
           >
             Text
           </button>
           <button
             onClick={() => {
-              setMode('semantic')
+              setLocalMode('semantic')
               if (workspacePath) {
                 loadSemanticStatus(workspacePath)
                 if (query.trim()) semanticSearch(workspacePath)
@@ -211,13 +277,24 @@ export function SearchPanel(): React.JSX.Element {
             }}
             style={{
               ...modeBtnStyle,
-              background: mode === 'semantic' ? 'var(--accent-blue)' : 'transparent',
-              color: mode === 'semantic' ? '#fff' : 'var(--text-muted)'
+              background: localMode === 'semantic' ? 'var(--accent-blue)' : 'transparent',
+              color: localMode === 'semantic' ? '#fff' : 'var(--text-muted)'
             }}
           >
             Semantic
           </button>
-          {mode === 'semantic' && (
+          <button
+            onClick={() => setLocalMode('sessions')}
+            style={{
+              ...modeBtnStyle,
+              background: localMode === 'sessions' ? 'var(--accent-blue)' : 'transparent',
+              color: localMode === 'sessions' ? '#fff' : 'var(--text-muted)'
+            }}
+          >
+            Chats Archive
+          </button>
+          
+          {localMode === 'semantic' && (
             <button
               disabled={!workspacePath || isIndexing}
               onClick={() => workspacePath && indexWorkspace(workspacePath, semanticStatus?.state === 'ready')}
@@ -233,7 +310,7 @@ export function SearchPanel(): React.JSX.Element {
         </div>
 
         {/* Filters row */}
-        {showFilters && mode === 'text' && (
+        {showFilters && localMode === 'text' && (
           <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
             <input
               placeholder="Include (e.g. *.ts,*.tsx)"
@@ -250,8 +327,8 @@ export function SearchPanel(): React.JSX.Element {
           </div>
         )}
 
-        {/* Status line */}
-        {mode === 'text' && (totalMatches > 0 || isSearching || error) && (
+        {/* Status Line */}
+        {localMode === 'text' && (totalMatches > 0 || isSearching || error) && (
           <div style={{ marginTop: '8px', fontSize: '11px', color: 'var(--text-muted)', display: 'flex', gap: '8px', alignItems: 'center' }}>
             {isSearching && (
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
@@ -271,7 +348,7 @@ export function SearchPanel(): React.JSX.Element {
           </div>
         )}
 
-        {mode === 'semantic' && (
+        {localMode === 'semantic' && (
           <div style={{ marginTop: '8px', fontSize: '11px', color: 'var(--text-muted)', display: 'flex', gap: '8px', alignItems: 'center', minHeight: '16px' }}>
             {(isSemanticSearching || isIndexing) && (
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
@@ -294,53 +371,120 @@ export function SearchPanel(): React.JSX.Element {
             {semanticError && <span style={{ color: 'var(--accent-red, #ef4444)' }}>{semanticError}</span>}
           </div>
         )}
+
+        {localMode === 'sessions' && (isSessionSearching || sessionResults.length > 0) && (
+          <div style={{ marginTop: '8px', fontSize: '11px', color: 'var(--text-muted)', display: 'flex', gap: '8px', alignItems: 'center' }}>
+            {isSessionSearching ? (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                <span style={{ width: '10px', height: '10px', border: '2px solid var(--accent-blue)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.6s linear infinite', display: 'inline-block' }} />
+                Searching archives…
+              </span>
+            ) : (
+              <span>Found <strong style={{ color: 'var(--text-primary)' }}>{sessionResults.length}</strong> matching chats</span>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* Results */}
+      {/* Results Viewport */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '4px 0' }} className="custom-scrollbar">
-        {mode === 'text' && groupedResults.map(([file, matches]) => (
-            <FileGroup key={file} file={file} matches={matches} onResultClick={handleResultClick} />
-          ))}
+        {localMode === 'text' && groupedResults.map(([file, matches]) => (
+          <FileGroup key={file} file={file} matches={matches} onResultClick={handleResultClick} />
+        ))}
 
-        {mode === 'semantic' && semanticResults.map(match => (
+        {localMode === 'semantic' && semanticResults.map(match => (
           <SemanticResult key={`${match.filePath}-${match.chunkIndex}`} match={match} onResultClick={handleSemanticResultClick} />
         ))}
 
-        {mode === 'text' && !isSearching && results.length === 0 && query && (
+        {localMode === 'sessions' && sessionResults.map(res => (
+          <button
+            key={res.id}
+            onClick={() => handleSessionClick(res.id)}
+            style={{
+              width: '100%',
+              display: 'block',
+              padding: '10px 14px',
+              background: 'none',
+              border: 'none',
+              borderBottom: '1px solid var(--border)',
+              cursor: 'pointer',
+              textAlign: 'left',
+              color: 'var(--text-secondary)',
+              transition: 'background 0.15s'
+            }}
+            onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-secondary)')}
+            onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+              <span style={{ color: 'var(--accent-blue)', fontSize: '12px', fontWeight: 700 }}>
+                💬 {res.title}
+              </span>
+              <span style={{ marginLeft: 'auto', fontSize: '9px', padding: '2px 5px', borderRadius: '4px', background: 'var(--bg-tertiary)', color: 'var(--text-muted)' }}>
+                {res.provider}
+              </span>
+            </div>
+            <div style={{
+              fontSize: '11px',
+              color: 'var(--text-muted)',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              lineHeight: 1.4
+            }}>
+              {res.matchedContent}
+            </div>
+          </button>
+        ))}
+
+        {/* Empty States */}
+        {localMode === 'text' && !isSearching && results.length === 0 && query && (
           <div style={{ textAlign: 'center', padding: '32px 16px', color: 'var(--text-muted)', fontSize: '13px' }}>
             <div style={{ fontSize: '28px', marginBottom: '8px', opacity: 0.3 }}>🔍</div>
             No results found
           </div>
         )}
 
-        {mode === 'semantic' && !workspacePath && (
+        {localMode === 'semantic' && !workspacePath && (
           <div style={{ textAlign: 'center', padding: '32px 16px', color: 'var(--text-muted)', fontSize: '13px' }}>
             Select a workspace to use semantic search
           </div>
         )}
 
-        {mode === 'semantic' && workspacePath && semanticStatus?.state !== 'ready' && !isIndexing && (
+        {localMode === 'semantic' && workspacePath && semanticStatus?.state !== 'ready' && !isIndexing && (
           <div style={{ textAlign: 'center', padding: '32px 16px', color: 'var(--text-muted)', fontSize: '13px' }}>
             Build a semantic index for this workspace
           </div>
         )}
 
-        {mode === 'semantic' && workspacePath && semanticStatus?.state === 'ready' && !isSemanticSearching && semanticResults.length === 0 && query && (
+        {localMode === 'semantic' && workspacePath && semanticStatus?.state === 'ready' && !isSemanticSearching && semanticResults.length === 0 && query && (
           <div style={{ textAlign: 'center', padding: '32px 16px', color: 'var(--text-muted)', fontSize: '13px' }}>
             No semantic matches found
           </div>
         )}
 
-        {!query && mode === 'text' && (
+        {localMode === 'sessions' && !isSessionSearching && sessionResults.length === 0 && sessionQuery && (
+          <div style={{ textAlign: 'center', padding: '32px 16px', color: 'var(--text-muted)', fontSize: '13px' }}>
+            No matching chat archives found
+          </div>
+        )}
+
+        {!query && localMode === 'text' && (
           <div style={{ textAlign: 'center', padding: '32px 16px', color: 'var(--text-muted)', fontSize: '13px' }}>
             <div style={{ fontSize: '28px', marginBottom: '8px', opacity: 0.2 }}>⌨</div>
             Type to search across all files
           </div>
         )}
 
-        {!query && mode === 'semantic' && workspacePath && semanticStatus?.state === 'ready' && (
+        {!query && localMode === 'semantic' && workspacePath && semanticStatus?.state === 'ready' && (
           <div style={{ textAlign: 'center', padding: '32px 16px', color: 'var(--text-muted)', fontSize: '13px' }}>
             Ask for code conceptually
+          </div>
+        )}
+
+        {!sessionQuery && localMode === 'sessions' && (
+          <div style={{ textAlign: 'center', padding: '32px 16px', color: 'var(--text-muted)', fontSize: '13px' }}>
+            <div style={{ fontSize: '28px', marginBottom: '8px', opacity: 0.2 }}>💬</div>
+            Search past chat session archives
           </div>
         )}
       </div>

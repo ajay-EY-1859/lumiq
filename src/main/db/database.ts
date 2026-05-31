@@ -464,6 +464,30 @@ function runMigrations(database: Database.Database): void {
     } catch {
       // Ignore index errors if any
     }
+
+    // ── Migration 14: Token Cost Transactions & Budget Caps ──────
+    database.exec(`
+      CREATE TABLE IF NOT EXISTS token_transactions (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        model TEXT NOT NULL,
+        input_tokens INTEGER DEFAULT 0,
+        output_tokens INTEGER DEFAULT 0,
+        estimated_cost REAL DEFAULT 0.0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_token_transactions_created ON token_transactions(created_at);
+    `)
+
+    // Insert budget cap defaults if not exists
+    const insertBudgetSetting = database.prepare(`
+      INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)
+    `)
+    insertBudgetSetting.run('dailyBudgetCap', '5.00')
+    insertBudgetSetting.run('monthlyBudgetCap', '50.00')
   })
 
   migrate()

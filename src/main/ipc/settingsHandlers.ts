@@ -21,7 +21,9 @@ const SETTINGS_KEYS = new Set([
   'sidebarVisible',
   'autoSave',
   'contextLimit',
-  'firecrawlApiKey'
+  'firecrawlApiKey',
+  'dailyBudgetCap',
+  'monthlyBudgetCap'
 ])
 
 function normalizeSettingValue(key: string, value: unknown): string {
@@ -45,6 +47,10 @@ function normalizeSettingValue(key: string, value: unknown): string {
       return raw.replace(/[^\w:./-]/g, '').slice(0, 200)
     case 'defaultProvider':
       return raw.replace(/[^\w-]/g, '').slice(0, 50)
+    case 'dailyBudgetCap':
+    case 'monthlyBudgetCap':
+      const parsedVal = parseFloat(raw)
+      return isNaN(parsedVal) ? '0.00' : parsedVal.toFixed(2)
     default:
       throw new Error(`Unsupported setting: ${key}`)
   }
@@ -70,8 +76,10 @@ export function registerSettingsHandlers(): void {
       sidebarVisible: settings.sidebarVisible !== 'false',
       autoSave: settings.autoSave !== 'false',
       contextLimit: parseInt(settings.contextLimit || '150', 10),
-      firecrawlApiKey: settings.firecrawlApiKey || ''
-    }
+      firecrawlApiKey: settings.firecrawlApiKey || '',
+      dailyBudgetCap: parseFloat(settings.dailyBudgetCap || '5.00'),
+      monthlyBudgetCap: parseFloat(settings.monthlyBudgetCap || '50.00')
+    } as any
   })
 
   // ── Set a setting ──
@@ -174,5 +182,17 @@ export function registerSettingsHandlers(): void {
     const db = getDatabase()
     db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('permissionMode', ?)").run(mode)
     agentLoop.getToolExecutor().setPermissionMode(mode)
+  })
+
+  // ── Get all request/response audit traces ──
+  handleWithTimeout(IPC.TRACES_LIST, IPC_TIMEOUT.short, (): Array<{ name: string; sizeBytes: number; createdAt: string }> => {
+    const { TraceLogger } = require('../services/TraceLogger')
+    return TraceLogger.listTraces()
+  })
+
+  // ── Get token costs summary for settings dashboard ──
+  handleWithTimeout(IPC.COSTS_SUMMARY, IPC_TIMEOUT.short, (): any => {
+    const { CostManager } = require('../services/CostManager')
+    return CostManager.getCostSummary()
   })
 }

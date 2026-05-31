@@ -13,8 +13,9 @@ import { ShortcutsTab } from './tabs/ShortcutsTab'
 import { CommandsTab } from './tabs/CommandsTab'
 import { PluginsTab } from './tabs/PluginsTab'
 import styles from './SettingsPage.module.css'
+import { AnalyticsTab } from './tabs/AnalyticsTab'
 
-type SettingsTab = 'providers' | 'appearance' | 'tools' | 'permissions' | 'mcp' | 'routing' | 'skills' | 'commands' | 'plugins' | 'developer' | 'shortcuts'
+type SettingsTab = 'providers' | 'appearance' | 'tools' | 'permissions' | 'mcp' | 'routing' | 'skills' | 'commands' | 'plugins' | 'developer' | 'shortcuts' | 'analytics'
 
 interface SettingsPageProps {
   onNavigate?: (page: 'chat' | 'settings' | 'agents') => void
@@ -33,7 +34,8 @@ export function SettingsPage({ onNavigate }: SettingsPageProps): React.JSX.Eleme
     { id: 'commands', label: 'Commands', emoji: '⚡' },
     { id: 'plugins', label: 'Plugins', emoji: '📦' },
     { id: 'developer', label: 'Developer Server', emoji: '🖥️' },
-    { id: 'shortcuts', label: 'Shortcuts', emoji: '⌨️' }
+    { id: 'shortcuts', label: 'Shortcuts', emoji: '⌨️' },
+    { id: 'analytics', label: 'Analytics & Costs', emoji: '📊' }
   ]
 
   return (
@@ -69,6 +71,7 @@ export function SettingsPage({ onNavigate }: SettingsPageProps): React.JSX.Eleme
         { activeTab === 'plugins' && <PluginsTab /> }
         { activeTab === 'developer' && <DeveloperServerTab /> }
         {activeTab === 'shortcuts' && <ShortcutsTab />}
+        {activeTab === 'analytics' && <AnalyticsTab />}
       </div>
     </div>
   )

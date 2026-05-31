@@ -76,6 +76,8 @@ export interface ElectronAPI {
     setTool: (settings: ToolSettings[]) => Promise<void>
     getPermissionMode: () => Promise<string>
     setPermissionMode: (mode: string) => Promise<void>
+    listTraces: () => Promise<Array<{ name: string; sizeBytes: number; createdAt: string }>>
+    getCostsSummary: () => Promise<any>
   }
   agent: {
     list: () => Promise<Agent[]>
@@ -169,6 +171,7 @@ export interface ElectronAPI {
   }
   search: {
     files: (request: SearchRequest) => Promise<SearchResponse>
+    sessions: (query: string) => Promise<any[]>
   }
   semantic: {
     search: (request: SemanticSearchRequest) => Promise<SemanticSearchResponse>
@@ -270,7 +273,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getTool: () => ipcRenderer.invoke(IPC.SETTINGS_GET_TOOL),
     setTool: (settings: ToolSettings[]) => ipcRenderer.invoke(IPC.SETTINGS_SET_TOOL, settings),
     getPermissionMode: () => ipcRenderer.invoke(IPC.PERMISSION_MODE_GET),
-    setPermissionMode: (mode: string) => ipcRenderer.invoke(IPC.PERMISSION_MODE_SET, mode)
+    setPermissionMode: (mode: string) => ipcRenderer.invoke(IPC.PERMISSION_MODE_SET, mode),
+    listTraces: () => ipcRenderer.invoke(IPC.TRACES_LIST),
+    getCostsSummary: () => ipcRenderer.invoke(IPC.COSTS_SUMMARY)
   },
 
   // ── Agents ──
@@ -389,7 +394,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // ── Search ──
   search: {
-    files: (request: SearchRequest) => ipcRenderer.invoke(IPC.SEARCH_FILES, request)
+    files: (request: SearchRequest) => ipcRenderer.invoke(IPC.SEARCH_FILES, request),
+    sessions: (query: string) => ipcRenderer.invoke(IPC.SEARCH_SESSIONS, query)
   },
 
   semantic: {
