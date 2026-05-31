@@ -10,6 +10,8 @@ import { agentLoop } from '../agent/AgentLoop'
 import type { PermissionMode } from '../security/permissions'
 import { DEFAULT_TOOL_SETTINGS, mergeToolSettings } from '../tools/defaultToolSettings'
 import { handleWithTimeout, IPC_TIMEOUT } from './handleWithTimeout'
+import { TraceLogger } from '../services/TraceLogger'
+import { CostManager } from '../services/CostManager'
 import { join } from 'path'
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
 
@@ -48,9 +50,10 @@ function normalizeSettingValue(key: string, value: unknown): string {
     case 'defaultProvider':
       return raw.replace(/[^\w-]/g, '').slice(0, 50)
     case 'dailyBudgetCap':
-    case 'monthlyBudgetCap':
+    case 'monthlyBudgetCap': {
       const parsedVal = parseFloat(raw)
       return isNaN(parsedVal) ? '0.00' : parsedVal.toFixed(2)
+    }
     default:
       throw new Error(`Unsupported setting: ${key}`)
   }
@@ -186,13 +189,11 @@ export function registerSettingsHandlers(): void {
 
   // ── Get all request/response audit traces ──
   handleWithTimeout(IPC.TRACES_LIST, IPC_TIMEOUT.short, (): Array<{ name: string; sizeBytes: number; createdAt: string }> => {
-    const { TraceLogger } = require('../services/TraceLogger')
     return TraceLogger.listTraces()
   })
 
   // ── Get token costs summary for settings dashboard ──
   handleWithTimeout(IPC.COSTS_SUMMARY, IPC_TIMEOUT.short, (): any => {
-    const { CostManager } = require('../services/CostManager')
     return CostManager.getCostSummary()
   })
 }

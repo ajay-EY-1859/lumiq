@@ -243,6 +243,66 @@ export interface GrpcStatus {
   port: number
 }
 
+// ─── Plugins & Marketplace ────────────────────────────────────────
+export type PluginCategory = 'skill' | 'command' | 'mcp' | 'bundle'
+export type PluginResourceType = 'skill' | 'command' | 'mcp'
+
+export interface PluginSkillResource {
+  name: string
+  description?: string
+  promptTemplate: string
+  allowedTools?: string[]
+}
+
+export interface PluginCommandResource {
+  name: string
+  description?: string
+  command: string
+  type?: 'shell' | 'prompt'
+  args?: string[]
+}
+
+export interface PluginMcpResource {
+  name: string
+  command: string
+  args?: string[]
+  env?: Record<string, string>
+}
+
+export interface PluginManifest {
+  id: string
+  name: string
+  version: string
+  category: PluginCategory
+  author: string
+  description: string
+  resources: {
+    skills?: PluginSkillResource[]
+    commands?: PluginCommandResource[]
+    mcpServers?: PluginMcpResource[]
+  }
+}
+
+export interface PluginMarketplaceItem extends PluginManifest {
+  installed: boolean
+}
+
+export interface InstalledPlugin {
+  id: string
+  name: string
+  version: string
+  category: PluginCategory
+  author: string
+  description: string
+  source: 'marketplace' | 'local'
+  installedAt: string
+  resources: Array<{
+    type: PluginResourceType
+    resourceId: string
+    name: string
+  }>
+}
+
 // ─── IPC Channels ───────────────────────────────────────────────────
 // SECURITY: All channels are whitelisted. Only these channels
 // can be used via contextBridge. Adding a new channel requires
@@ -339,6 +399,13 @@ export const IPC = {
   COMMAND_SAVE: 'command:save',
   COMMAND_DELETE: 'command:delete',
   COMMAND_IMPORT_FOLDER: 'command:import-folder',
+
+  // Plugins & marketplace
+  PLUGIN_MARKETPLACE_LIST: 'plugin:marketplace-list',
+  PLUGIN_INSTALLED_LIST: 'plugin:installed-list',
+  PLUGIN_INSTALL: 'plugin:install',
+  PLUGIN_UNINSTALL: 'plugin:uninstall',
+  PLUGIN_IMPORT: 'plugin:import',
 
   // Local developer server
   GRPC_START: 'grpc:start',

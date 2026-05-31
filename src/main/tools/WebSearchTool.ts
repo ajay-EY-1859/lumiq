@@ -6,7 +6,6 @@
 
 import { net } from 'electron'
 import type { Tool } from './Tool'
-import { getDatabase } from '../db/database'
 
 const DDG_API = 'https://api.duckduckgo.com/?format=json&no_redirect=1&no_html=1&q='
 const DDG_HTML = 'https://html.duckduckgo.com/html/?q='
@@ -117,30 +116,6 @@ async function searchDDGHtml(query: string): Promise<SearchResult[]> {
   return results
 }
 
-async function searchFirecrawl(query: string, maxResults: number): Promise<SearchResult[]> {
-  const row = getDatabase().prepare("SELECT value FROM settings WHERE key = 'firecrawlApiKey'").get() as { value: string } | undefined
-  const apiKey = row?.value?.trim()
-  if (!apiKey) return []
-  const response = await fetch('https://api.firecrawl.dev/v1/search', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`
-    },
-    body: JSON.stringify({ query, limit: maxResults })
-  })
-  if (!response.ok) throw new Error(`Firecrawl HTTP ${response.status}`)
-  const payload = await response.json() as { data?: Array<{ title?: string; url?: string; description?: string; markdown?: string }> }
-  return (payload.data || [])
-    .filter((item) => item.url)
-    .slice(0, maxResults)
-    .map((item) => ({
-      title: item.title || item.url || query,
-      url: item.url || '',
-      snippet: item.description || item.markdown?.slice(0, 240) || ''
-    }))
-}
-
 export class WebSearchTool implements Tool {
   name = 'WebSearchTool'
   description = 'Search the web for information using DuckDuckGo'
@@ -162,21 +137,8 @@ export class WebSearchTool implements Tool {
     if (!query) return '[ERROR] Search query cannot be empty'
 
     try {
-      let results: SearchResult[] = []
-      try {
-        results = await searchFirecrawl(query, maxResults)
-      } catch {
-        results = []
-      }
-      if (results.length > 0) {
-        const lines = results.map((r, i) =>
-          `${i + 1}. **${r.title}**\n   ${r.url}\n   ${r.snippet}`
-        )
-        return `Search results for "${query}" via Firecrawl:\n\n${lines.join('\n\n')}`
-      }
-
       // Try Instant Answer API first
-      results = await searchDDGApi(query)
+      let results = await searchDDGApi(query)
 
       // Fall back to HTML scraping if API returns nothing useful
       if (results.length === 0) {
@@ -191,7 +153,7 @@ export class WebSearchTool implements Tool {
         `${i + 1}. **${r.title}**\n   ${r.url}\n   ${r.snippet}`
       )
 
-      return `Search results for "${query}":\n\n${lines.join('\n\n')}`
+      return `Search results for "${query}" via DuckDuckGo:\n\n${lines.join('\n\n')}`
     } catch (error) {
       return `[ERROR] Search failed: ${(error as Error).message}`
     }

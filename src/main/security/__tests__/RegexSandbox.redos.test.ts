@@ -15,7 +15,9 @@ describe('RegexSandbox - ReDoS & Timeout Protection', () => {
   afterAll(() => {
     try {
       rmSync(tempDir, { recursive: true, force: true })
-    } catch {}
+    } catch {
+      // ignore
+    }
   })
 
   it('should successfully complete a normal regex search quickly', async () => {

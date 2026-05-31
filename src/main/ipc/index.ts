@@ -24,6 +24,7 @@ import { registerSemanticHandlers } from './semanticHandlers'
 import { registerGitHandlers } from './gitHandlers'
 import { registerCommandHandlers } from './commandHandlers'
 import { registerLspHandlers } from './lspHandlers'
+import { registerPluginHandlers } from './pluginHandlers'
 import { handleWithTimeout, IPC_TIMEOUT } from './handleWithTimeout'
 
 export function registerAllHandlers(): void {
@@ -48,6 +49,7 @@ export function registerAllHandlers(): void {
   registerGitHandlers()
   registerCommandHandlers()
   registerLspHandlers()
+  registerPluginHandlers()
 
   // ── Window Control Handlers (for custom titlebar) ──
   ipcMain.on('window:minimize', (event) => {

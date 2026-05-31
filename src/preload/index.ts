@@ -19,6 +19,8 @@ import type {
   AgentRoute, 
   CustomSkill, 
   CustomCommand,
+  InstalledPlugin,
+  PluginMarketplaceItem,
   GrpcStatus,
   ToolApprovalRequest,
   WorkspaceTaskDefinition,
@@ -112,6 +114,13 @@ export interface ElectronAPI {
     save: (cmd: Partial<CustomCommand> & Pick<CustomCommand, 'name' | 'command'>) => Promise<CustomCommand>
     delete: (id: string) => Promise<boolean>
     importFolder: (folderPath: string) => Promise<number>
+  }
+  plugin: {
+    marketplace: () => Promise<PluginMarketplaceItem[]>
+    installed: () => Promise<InstalledPlugin[]>
+    install: (pluginId: string) => Promise<InstalledPlugin>
+    uninstall: (pluginId: string) => Promise<boolean>
+    import: (folderPath: string) => Promise<InstalledPlugin>
   }
   grpc: {
     start: (port?: number) => Promise<GrpcStatus>
@@ -316,6 +325,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke(IPC.COMMAND_SAVE, cmd),
     delete: (id: string) => ipcRenderer.invoke(IPC.COMMAND_DELETE, id),
     importFolder: (folderPath: string) => ipcRenderer.invoke(IPC.COMMAND_IMPORT_FOLDER, folderPath)
+  },
+
+  plugin: {
+    marketplace: () => ipcRenderer.invoke(IPC.PLUGIN_MARKETPLACE_LIST),
+    installed: () => ipcRenderer.invoke(IPC.PLUGIN_INSTALLED_LIST),
+    install: (pluginId: string) => ipcRenderer.invoke(IPC.PLUGIN_INSTALL, pluginId),
+    uninstall: (pluginId: string) => ipcRenderer.invoke(IPC.PLUGIN_UNINSTALL, pluginId),
+    import: (folderPath: string) => ipcRenderer.invoke(IPC.PLUGIN_IMPORT, folderPath)
   },
 
   grpc: {

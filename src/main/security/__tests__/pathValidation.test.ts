@@ -33,7 +33,9 @@ describe('pathValidation - Extra Allowed Paths (Attachments)', () => {
     setAllowedExtraPaths([])
     try {
       rmSync(testRoot, { recursive: true, force: true })
-    } catch {}
+    } catch {
+      // ignore
+    }
   })
 
   it('should validate paths within the workspace successfully by default', () => {

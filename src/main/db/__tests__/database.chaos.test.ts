@@ -30,10 +30,14 @@ describe('Database Chaos - Self-Healing & Redundant Backup Recovery', () => {
   afterAll(() => {
     try {
       closeDatabase()
-    } catch {}
+    } catch {
+      // ignore
+    }
     try {
       rmSync(tempUserDataPath, { recursive: true, force: true })
-    } catch {}
+    } catch {
+      // ignore
+    }
   })
 
   it('should run integrity check, detect byte corruption, and recover from backup', () => {

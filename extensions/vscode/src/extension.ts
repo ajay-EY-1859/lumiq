@@ -3,10 +3,27 @@ import * as vscode from 'vscode'
 import * as grpc from '@grpc/grpc-js'
 import * as protoLoader from '@grpc/proto-loader'
 
-type ChatChunk = { content?: string; done?: boolean; error?: string }
+type ContextFile = {
+  path: string
+  language: string
+  content: string
+  selectionStartLine: number
+  selectionEndLine: number
+}
+type ChatRequest = {
+  prompt: string
+  sessionId?: string
+  workspacePath?: string
+  contextFiles?: ContextFile[]
+}
+type ChatChunk = { content?: string; done?: boolean; error?: string; sessionId?: string; eventType?: string; metadataJson?: string }
 type LumiqClient = grpc.Client & {
-  streamChat(request: { prompt: string }, metadata?: grpc.Metadata): NodeJS.ReadableStream
-  ping(request: Record<string, never>, callback: (error: grpc.ServiceError | null, response: { ok: boolean; version: string }) => void): void
+  streamChat(request: ChatRequest, metadata?: grpc.Metadata): NodeJS.ReadableStream
+  ping(
+    request: Record<string, never>,
+    metadata: grpc.Metadata,
+    callback: (error: grpc.ServiceError | null, response: { ok: boolean; version: string }) => void
+  ): void
 }
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -35,7 +52,7 @@ export function activate(context: vscode.ExtensionContext): void {
       if (token) {
         metadata.set('authorization', `Bearer ${token}`)
       }
-      const stream = client.streamChat({ prompt: selected }, metadata)
+      const stream = client.streamChat(buildChatRequest(selected), metadata)
       stream.on('data', (chunk: ChatChunk) => {
         if (chunk.error) output.appendLine(`Error: ${chunk.error}`)
         if (chunk.content) output.append(chunk.content)
@@ -83,6 +100,8 @@ function createClientUri(extensionUri: vscode.Uri, port: number): LumiqClient {
 }
 
 class SidebarProvider implements vscode.WebviewViewProvider {
+  private sessionId: string | undefined
+
   constructor(private readonly _extensionUri: vscode.Uri) {}
 
   public resolveWebviewView(
@@ -111,10 +130,8 @@ class SidebarProvider implements vscode.WebviewViewProvider {
         }
         case 'reconnect': {
           const port = vscode.workspace.getConfiguration('lumiq').get<number>('grpcPort', 43187)
-          // We need a context here, but we can't easily pass it without storing it in the class.
-          // Wait, createClient needs extensionPath!
           const client = createClientUri(this._extensionUri, port)
-          client.ping({}, (err, res) => {
+          client.ping({}, createMetadata(), (err, res) => {
             if (err || !res?.ok) {
               webviewView.webview.postMessage({ type: 'status', connected: false })
             } else {
@@ -130,9 +147,10 @@ class SidebarProvider implements vscode.WebviewViewProvider {
           const token = vscode.workspace.getConfiguration('lumiq').get<string>('grpcAuthToken') || ''
           if (token) metadata.set('authorization', `Bearer ${token}`)
           
-          const stream = client.streamChat({ prompt: data.text }, metadata)
+          const stream = client.streamChat({ ...buildChatRequest(data.text), sessionId: this.sessionId }, metadata)
           
           stream.on('data', (chunk: ChatChunk) => {
+            if (chunk.sessionId) this.sessionId = chunk.sessionId
             if (chunk.error) {
               webviewView.webview.postMessage({ type: 'chat_error', error: chunk.error })
             } else if (chunk.content) {
@@ -346,5 +364,35 @@ class SidebarProvider implements vscode.WebviewViewProvider {
         </script>
       </body>
       </html>`
+  }
+}
+
+function createMetadata(): grpc.Metadata {
+  const metadata = new grpc.Metadata()
+  const token = vscode.workspace.getConfiguration('lumiq').get<string>('grpcAuthToken') || ''
+  if (token) metadata.set('authorization', `Bearer ${token}`)
+  return metadata
+}
+
+function buildChatRequest(prompt: string): ChatRequest {
+  const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
+  const editor = vscode.window.activeTextEditor
+  const contextFiles: ContextFile[] = []
+  if (editor) {
+    const selection = editor.selection
+    const selectedText = editor.document.getText(selection)
+    const content = selectedText.trim() ? selectedText : editor.document.getText()
+    contextFiles.push({
+      path: editor.document.uri.fsPath,
+      language: editor.document.languageId,
+      content,
+      selectionStartLine: selection.start.line + 1,
+      selectionEndLine: selection.end.line + 1
+    })
+  }
+  return {
+    prompt,
+    workspacePath,
+    contextFiles
   }
 }

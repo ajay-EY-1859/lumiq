@@ -51,6 +51,22 @@ export function SearchPanel(): React.JSX.Element {
   // Debounced search
   const debounceTimer = useRef<NodeJS.Timeout | null>(null)
   
+  const runSessionSearch = useCallback(async (q: string): Promise<void> => {
+    if (!q.trim()) {
+      setSessionResults([])
+      return
+    }
+    setIsSessionSearching(true)
+    try {
+      const matched = await window.electronAPI.search.sessions(q)
+      setSessionResults(matched)
+    } catch (err) {
+      console.error('[SearchPanel] Session search failed:', err)
+    } finally {
+      setIsSessionSearching(false)
+    }
+  }, [])
+
   const triggerSearch = useCallback(() => {
     if (localMode === 'sessions') {
       if (debounceTimer.current) clearTimeout(debounceTimer.current)
@@ -69,23 +85,7 @@ export function SearchPanel(): React.JSX.Element {
         search(workspacePath)
       }
     }, 300)
-  }, [workspacePath, localMode, sessionQuery, search, semanticSearch])
-
-  const runSessionSearch = async (q: string): Promise<void> => {
-    if (!q.trim()) {
-      setSessionResults([])
-      return
-    }
-    setIsSessionSearching(true)
-    try {
-      const matched = await window.electronAPI.search.sessions(q)
-      setSessionResults(matched)
-    } catch (err) {
-      console.error('[SearchPanel] Session search failed:', err)
-    } finally {
-      setIsSessionSearching(false)
-    }
-  }
+  }, [workspacePath, localMode, sessionQuery, search, semanticSearch, runSessionSearch])
 
   useEffect(() => {
     return () => {

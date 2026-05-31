@@ -5,18 +5,35 @@ package lumiq;
 service LumiqDeveloper {
   rpc StreamChat (ChatRequest) returns (stream ChatChunk);
   rpc Ping (PingRequest) returns (PingResponse);
+  rpc GetStatus (StatusRequest) returns (StatusResponse);
+  rpc ListSessions (ListSessionsRequest) returns (ListSessionsResponse);
+  rpc GetSessionMessages (SessionMessagesRequest) returns (SessionMessagesResponse);
 }
 
 message ChatRequest {
   string prompt = 1;
   string provider = 2;
   string model = 3;
+  string session_id = 4;
+  string workspace_path = 5;
+  repeated ContextFile context_files = 6;
+}
+
+message ContextFile {
+  string path = 1;
+  string language = 2;
+  string content = 3;
+  int32 selection_start_line = 4;
+  int32 selection_end_line = 5;
 }
 
 message ChatChunk {
   string content = 1;
   bool done = 2;
   string error = 3;
+  string session_id = 4;
+  string event_type = 5;
+  string metadata_json = 6;
 }
 
 message PingRequest {
@@ -25,4 +42,46 @@ message PingRequest {
 message PingResponse {
   bool ok = 1;
   string version = 2;
+}
+
+message StatusRequest {
+}
+
+message StatusResponse {
+  bool running = 1;
+  string host = 2;
+  int32 port = 3;
+  string version = 4;
+}
+
+message ListSessionsRequest {
+  int32 limit = 1;
+}
+
+message SessionSummary {
+  string id = 1;
+  string title = 2;
+  string provider = 3;
+  string model = 4;
+  string workspace_path = 5;
+  string updated_at = 6;
+}
+
+message ListSessionsResponse {
+  repeated SessionSummary sessions = 1;
+}
+
+message SessionMessagesRequest {
+  string session_id = 1;
+}
+
+message MessageSummary {
+  string id = 1;
+  string role = 2;
+  string content = 3;
+  string created_at = 4;
+}
+
+message SessionMessagesResponse {
+  repeated MessageSummary messages = 1;
 }

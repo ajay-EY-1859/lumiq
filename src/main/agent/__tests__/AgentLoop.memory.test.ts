@@ -43,10 +43,14 @@ describe('AgentLoop - Memory Leak Stress Test', () => {
   afterAll(() => {
     try {
       closeDatabase()
-    } catch {}
+    } catch {
+      // ignore
+    }
     try {
       rmSync(tempUserDataPath, { recursive: true, force: true })
-    } catch {}
+    } catch {
+      // ignore
+    }
   })
 
   it('should run 1000 chat loop simulations without leaking memory (> 15MB heap growth)', async () => {

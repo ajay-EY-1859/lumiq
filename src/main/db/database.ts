@@ -488,6 +488,33 @@ function runMigrations(database: Database.Database): void {
     `)
     insertBudgetSetting.run('dailyBudgetCap', '5.00')
     insertBudgetSetting.run('monthlyBudgetCap', '50.00')
+
+    // ── Migration 15: Plugin marketplace installs ─────────────────
+    database.exec(`
+      CREATE TABLE IF NOT EXISTS installed_plugins (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        version TEXT NOT NULL,
+        category TEXT NOT NULL,
+        author TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        source TEXT NOT NULL CHECK(source IN ('marketplace','local')),
+        manifest_json TEXT NOT NULL,
+        installed_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS plugin_resources (
+        id TEXT PRIMARY KEY,
+        plugin_id TEXT NOT NULL,
+        resource_type TEXT NOT NULL CHECK(resource_type IN ('skill','command','mcp')),
+        resource_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (plugin_id) REFERENCES installed_plugins(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_plugin_resources_plugin ON plugin_resources(plugin_id);
+    `)
   })
 
   migrate()

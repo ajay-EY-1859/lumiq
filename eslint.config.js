@@ -39,7 +39,9 @@ module.exports = [
       'graphify-out/**',
       'extensions/vscode/dist/**',
       'extensions/vscode/out/**',
-      '**/*.d.ts'
+      '**/*.d.ts',
+      'vitest.config.ts',
+      'electron.vite.config.ts'
     ]
   },
   js.configs.recommended,

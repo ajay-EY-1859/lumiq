@@ -86,10 +86,14 @@ describe('AgentLoop Cascade Failover & Stream Stitching', () => {
   afterAll(() => {
     try {
       closeDatabase()
-    } catch {}
+    } catch {
+      // ignore
+    }
     try {
       rmSync(tempUserDataPath, { recursive: true, force: true })
-    } catch {}
+    } catch {
+      // ignore
+    }
     vi.restoreAllMocks()
   })
 

@@ -8,18 +8,33 @@ import { IPC, type GrpcStatus } from '@shared/types'
 import { getApiConfig } from '../../db/apiConfigs'
 import { getDatabase } from '../../db/database'
 import { agentLoop } from '../../agent/AgentLoop'
-import { createSession, getSession, updateSessionTitle } from '../../db/sessions'
+import { createSession, getSession, listSessions, updateSessionTitle, updateSessionWorkspace } from '../../db/sessions'
 import { getSessionMessages } from '../../db/messages'
 
 type StreamCall = grpc.ServerWritableStream<
-  { prompt?: string; provider?: string; model?: string },
-  { content?: string; done?: boolean; error?: string }
+  {
+    prompt?: string
+    provider?: string
+    model?: string
+    sessionId?: string
+    workspacePath?: string
+    contextFiles?: Array<{
+      path?: string
+      language?: string
+      content?: string
+      selectionStartLine?: number
+      selectionEndLine?: number
+    }>
+  },
+  { content?: string; done?: boolean; error?: string; sessionId?: string; eventType?: string; metadataJson?: string }
 >
 
 type PingCall = grpc.ServerUnaryCall<
   Record<string, never>,
   { ok: boolean; version: string }
 >
+
+type UnaryCall<Request, Response> = grpc.ServerUnaryCall<Request, Response>
 
 class DeveloperGrpcServer {
   private server: grpc.Server | null = null
@@ -61,7 +76,63 @@ class DeveloperGrpcServer {
         void this.handleStreamChat(_call)
       },
       ping: (_call: PingCall, callback: grpc.sendUnaryData<{ ok: boolean; version: string }>) => {
+        if (!this.isAuthorized(_call.metadata)) {
+          callback(this.unauthorizedError(), null)
+          return
+        }
         callback(null, { ok: true, version: '0.1.0' })
+      },
+      getStatus: (
+        call: UnaryCall<Record<string, never>, { running: boolean; host: string; port: number; version: string }>,
+        callback: grpc.sendUnaryData<{ running: boolean; host: string; port: number; version: string }>
+      ) => {
+        if (!this.isAuthorized(call.metadata)) {
+          callback(this.unauthorizedError(), null)
+          return
+        }
+        callback(null, { ...this.status(), version: '0.1.0' })
+      },
+      listSessions: (
+        call: UnaryCall<{ limit?: number }, { sessions: Array<Record<string, string>> }>,
+        callback: grpc.sendUnaryData<{ sessions: Array<Record<string, string>> }>
+      ) => {
+        if (!this.isAuthorized(call.metadata)) {
+          callback(this.unauthorizedError(), null)
+          return
+        }
+        const limit = Math.max(1, Math.min(call.request.limit || 25, 100))
+        callback(null, {
+          sessions: listSessions().slice(0, limit).map((session) => ({
+            id: session.id,
+            title: session.title,
+            provider: session.provider,
+            model: session.model,
+            workspacePath: session.workspacePath || '',
+            updatedAt: session.updatedAt
+          }))
+        })
+      },
+      getSessionMessages: (
+        call: UnaryCall<{ sessionId?: string }, { messages: Array<Record<string, string>> }>,
+        callback: grpc.sendUnaryData<{ messages: Array<Record<string, string>> }>
+      ) => {
+        if (!this.isAuthorized(call.metadata)) {
+          callback(this.unauthorizedError(), null)
+          return
+        }
+        const sessionId = call.request.sessionId?.trim()
+        if (!sessionId || !getSession(sessionId)) {
+          callback(this.invalidArgumentError('Valid session_id is required'), null)
+          return
+        }
+        callback(null, {
+          messages: getSessionMessages(sessionId).map((message) => ({
+            id: message.id,
+            role: message.role,
+            content: message.content,
+            createdAt: message.createdAt
+          }))
+        })
       }
     })
 
@@ -93,9 +164,8 @@ class DeveloperGrpcServer {
   }
 
   private async handleStreamChat(call: StreamCall): Promise<void> {
-    const authHeader = call.metadata.get('authorization')[0] as string | undefined
-    if (!authHeader || authHeader !== `Bearer ${this.authToken}`) {
-      call.write({ error: 'Unauthorized: missing or invalid authorization token', done: true })
+    if (!this.isAuthorized(call.metadata)) {
+      call.write({ error: 'Unauthorized: missing or invalid authorization token', done: true, eventType: 'error' })
       call.end()
       return
     }
@@ -103,7 +173,7 @@ class DeveloperGrpcServer {
     this.broadcast(IPC.GRPC_CLIENT_CONNECTED, this.status())
     const prompt = call.request.prompt?.trim()
     if (!prompt) {
-      call.write({ error: 'Prompt is required', done: true })
+      call.write({ error: 'Prompt is required', done: true, eventType: 'error' })
       call.end()
       return
     }
@@ -113,42 +183,102 @@ class DeveloperGrpcServer {
     const model = call.request.model || defaults.model
     const config = getApiConfig(providerName)
     if (!config) {
-      call.write({ error: `Provider "${providerName}" is not configured`, done: true })
+      call.write({ error: `Provider "${providerName}" is not configured`, done: true, eventType: 'error' })
       call.end()
       return
     }
 
     try {
-      const session = createSession(providerName, model)
-      updateSessionTitle(session.id, `gRPC ${new Date().toLocaleString()}`)
+      const requestedSession = call.request.sessionId?.trim()
+      const session = requestedSession ? getSession(requestedSession) : createSession(providerName, model)
+      if (!session) {
+        throw new Error(`Session "${requestedSession}" not found`)
+      }
+      if (!requestedSession) {
+        updateSessionTitle(session.id, `gRPC ${new Date().toLocaleString()}`)
+      }
+      if (call.request.workspacePath?.trim()) {
+        updateSessionWorkspace(session.id, call.request.workspacePath.trim())
+      }
       const persistedSession = getSession(session.id)
       if (!persistedSession) {
         throw new Error('Failed to create gRPC session')
       }
+      agentLoop.getToolExecutor().setWorkspacePath(persistedSession.workspacePath || null)
 
       call.on('cancelled', () => agentLoop.cancel())
 
-      await agentLoop.processMessage(prompt, session.id, getSessionMessages(session.id), config, {
+      call.write({
+        content: '',
+        done: false,
+        sessionId: session.id,
+        eventType: 'session',
+        metadataJson: JSON.stringify({ sessionId: session.id, workspacePath: persistedSession.workspacePath || null })
+      })
+
+      await agentLoop.processMessage(this.buildPrompt(prompt, call.request.contextFiles || []), session.id, getSessionMessages(session.id), config, {
         model,
         callbacks: {
-          onChunk: (content) => call.write({ content, done: false }),
+          onChunk: (content) => call.write({ content, done: false, sessionId: session.id, eventType: 'content' }),
           onToolResult: (toolName, result) => {
-            call.write({ content: `\n[tool:${toolName}]\n${result}\n`, done: false })
+            call.write({
+              content: `\n[tool:${toolName}]\n${result}\n`,
+              done: false,
+              sessionId: session.id,
+              eventType: 'tool',
+              metadataJson: JSON.stringify({ toolName })
+            })
           },
           onEnd: () => {
-            call.write({ done: true })
+            call.write({ done: true, sessionId: session.id, eventType: 'done' })
             call.end()
           },
           onError: (message) => {
-            call.write({ error: message, done: true })
+            call.write({ error: message, done: true, sessionId: session.id, eventType: 'error' })
             call.end()
           }
         }
       })
     } catch (error) {
-      call.write({ error: (error as Error).message, done: true })
+      call.write({ error: (error as Error).message, done: true, eventType: 'error' })
       call.end()
     }
+  }
+
+  private buildPrompt(
+    prompt: string,
+    contextFiles: Array<{ path?: string; language?: string; content?: string; selectionStartLine?: number; selectionEndLine?: number }>
+  ): string {
+    const usefulFiles = contextFiles.filter((file) => file.path?.trim() && file.content?.trim()).slice(0, 5)
+    if (usefulFiles.length === 0) return prompt
+    const context = usefulFiles.map((file) => {
+      const lineInfo = file.selectionStartLine && file.selectionEndLine
+        ? ` lines ${file.selectionStartLine}-${file.selectionEndLine}`
+        : ''
+      return `File: ${file.path}${lineInfo}\nLanguage: ${file.language || 'text'}\n\n${file.content}`
+    }).join('\n\n---\n\n')
+    return `IDE context:\n\n${context}\n\nUser request:\n${prompt}`
+  }
+
+  private isAuthorized(metadata: grpc.Metadata): boolean {
+    const authHeader = metadata.get('authorization')[0] as string | undefined
+    return Boolean(authHeader && authHeader === `Bearer ${this.authToken}`)
+  }
+
+  private unauthorizedError(): grpc.ServiceError {
+    return {
+      name: 'Unauthorized',
+      message: 'Unauthorized: missing or invalid authorization token',
+      code: grpc.status.UNAUTHENTICATED
+    } as grpc.ServiceError
+  }
+
+  private invalidArgumentError(message: string): grpc.ServiceError {
+    return {
+      name: 'InvalidArgument',
+      message,
+      code: grpc.status.INVALID_ARGUMENT
+    } as grpc.ServiceError
   }
 
   private getDefaults(): { provider: string; model: string } {

@@ -117,7 +117,7 @@ export class EmbeddingManager {
    */
   private generatePseudoEmbedding(text: string): number[] {
     const vector = new Array(384).fill(0)
-    const words = text.toLowerCase().split(/[\s,.;:!?()\[\]{}""'']+/) // Split on standard whitespace and punctuation
+    const words = text.toLowerCase().split(/[\s,.;:!?()[\]{}""'']+/) // Split on standard whitespace and punctuation
     
     words.forEach((word) => {
       if (word.length < 3) return // Ignore short filler words
