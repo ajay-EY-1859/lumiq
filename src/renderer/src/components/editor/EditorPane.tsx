@@ -17,6 +17,7 @@ import React, { useEffect, useState, useCallback, useRef, useId } from 'react'
 import Editor, { OnMount, useMonaco } from '@monaco-editor/react'
 import { useEditorStore } from '@renderer/store/editorStore'
 import { useChatStore } from '@renderer/store/chatStore'
+import { useProviderStore } from '@renderer/store/providerStore'
 import { DocumentSymbol, SymbolKind } from '@shared/types'
 
 // ── Language detection ────────────────────────────────────────────────
@@ -171,6 +172,7 @@ export function EditorPane(): React.JSX.Element | null {
 
   const [wordWrap, setWordWrap]   = useState<'off' | 'on'>('off')
   const [minimap, setMinimap]     = useState(true)
+  const [autocompleteEnabled, setAutocompleteEnabled] = useState(true)
 
   // Stable IDs for ARIA relationships
   const uid        = useId()
@@ -214,8 +216,75 @@ export function EditorPane(): React.JSX.Element | null {
         } catch { return null }
       }
     })
-    return () => { symProv.dispose(); defProv.dispose() }
-  }, [monaco])
+
+    // ── Autocomplete / Ghost-Text Inline Completions Provider ──
+    let lastQueryTime = 0
+    const inlineProv = monaco.languages.registerInlineCompletionsProvider('*', {
+      provideInlineCompletions: async (model, position, _context, token) => {
+        // 1. Guard: Check if autocomplete is enabled
+        if (!autocompleteEnabled) return { items: [] }
+
+        // 2. Guard: Get active provider and model
+        const providerName = useProviderStore.getState().activeProvider
+        const modelName = useProviderStore.getState().activeModel
+        if (!providerName || !modelName) return { items: [] }
+
+        // 3. Debounce: Wait 200ms for typing pause to minimize API requests and lag
+        const now = Date.now()
+        lastQueryTime = now
+        await new Promise((resolve) => setTimeout(resolve, 200))
+        if (lastQueryTime !== now || token.isCancellationRequested) {
+          return { items: [] }
+        }
+
+        // Get context around cursor position
+        const text = model.getValue()
+        const offset = model.getOffsetAt(position)
+        const prefix = text.slice(0, offset)
+        const suffix = text.slice(offset)
+
+        // Only query if we have prefix content
+        if (!prefix.trim()) return { items: [] }
+
+        try {
+          const prediction = await window.electronAPI.autocomplete.predict(
+            prefix,
+            suffix,
+            providerName,
+            modelName
+          )
+
+          if (!prediction || token.isCancellationRequested) {
+            return { items: [] }
+          }
+
+          return {
+            items: [
+              {
+                insertText: prediction,
+                range: new monaco.Range(
+                  position.lineNumber,
+                  position.column,
+                  position.lineNumber,
+                  position.column
+                )
+              }
+            ]
+          }
+        } catch (err) {
+          console.error('[Autocomplete] Failed to fetch prediction:', err)
+          return { items: [] }
+        }
+      },
+      disposeInlineCompletions: () => {}
+    })
+
+    return () => {
+      symProv.dispose()
+      defProv.dispose()
+      inlineProv.dispose()
+    }
+  }, [monaco, autocompleteEnabled])
 
   // ── Close tab (with dirty check) ─────────────────────────────────
   const handleCloseTab = useCallback((id: string, e: React.MouseEvent | React.KeyboardEvent) => {
@@ -515,6 +584,17 @@ export function EditorPane(): React.JSX.Element | null {
             style={{ display: 'flex', alignItems: 'center', gap: '10px' }}
           >
             <CursorInfo editorRef={editorRef} />
+
+            <button
+              aria-pressed={autocompleteEnabled}
+              aria-label={autocompleteEnabled ? 'AI Autocomplete on — click to turn off' : 'AI Autocomplete off — click to turn on'}
+              onClick={() => setAutocompleteEnabled((prev) => !prev)}
+              style={{ background: autocompleteEnabled ? 'rgba(37,99,235,0.15)' : 'none', border: '1px solid transparent', cursor: 'pointer', color: autocompleteEnabled ? 'var(--accent-blue)' : 'var(--text-muted)', fontSize: '11px', padding: '1px 6px', borderRadius: '3px' }}
+              onFocus={(e)  => e.currentTarget.style.outline = '2px solid var(--accent-blue)'}
+              onBlur={(e)   => e.currentTarget.style.outline = 'none'}
+            >
+              {autocompleteEnabled ? '🤖 Auto: On' : '🤖 Auto: Off'}
+            </button>
 
             <button
               aria-pressed={wordWrap === 'on'}

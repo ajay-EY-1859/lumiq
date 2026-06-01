@@ -8,7 +8,7 @@ import { BrowserWindow } from 'electron'
 import { v4 as uuidv4 } from 'uuid'
 import { IPC } from '@shared/types'
 import type { ToolApprovalRequest, ToolApprovalResponse, ToolSettings } from '@shared/types'
-import type { Tool } from '../tools/Tool'
+import type { Tool, ToolResult } from '../tools/Tool'
 
 // Import all tools
 import { BashTool } from '../tools/BashTool'
@@ -217,14 +217,14 @@ export class ToolExecutor {
                 }
               }
               const res = await this.executeTool(call.toolName, call.input, signal)
-              if (res.startsWith('Tool execution denied by user') || res.startsWith('Error: Tool')) {
+              if (res.isError) {
                 circuitBroken = true
               }
               return {
                 id: call.id,
                 toolName: call.toolName,
                 input: call.input,
-                result: res
+                result: res.output
               }
             })
           )
@@ -243,54 +243,54 @@ export class ToolExecutor {
             continue
           }
           const res = await this.executeTool(call.toolName, call.input, signal)
-          if (res.startsWith('Tool execution denied by user') || res.startsWith('Error: Tool')) {
+          if (res.isError) {
             circuitBroken = true
           }
           results.push({
             id: call.id,
             toolName: call.toolName,
             input: call.input,
-            result: res
+            result: res.output
           })
         }
       }
     }
-    return results
+    return results;
   }
 
   /**
-   * Executes a tool, potentially requesting user approval first.
+   * Executes a tool, returning a structured ToolResult.
    */
   async executeTool(
     toolName: string,
     toolInput: Record<string, unknown>,
     signal?: AbortSignal
-  ): Promise<string> {
+  ): Promise<ToolResult> {
     const tool = this.tools.get(toolName)
     if (!tool && toolName.startsWith('MCP_')) {
       this.refreshMcpTools()
     }
     const refreshedTool = this.tools.get(toolName)
     if (!refreshedTool) {
-      return `Error: Unknown tool "${toolName}"`
+      return { output: `Error: Unknown tool "${toolName}"`, isError: true, errorCode: 'UNKNOWN_TOOL' }
     }
 
     // Check if tool is enabled
     const settings = this.toolSettings.get(toolName)
     if (settings && !settings.enabled) {
       if (settings.permission === 'always-deny') {
-        return `Error: Tool "${toolName}" execution is denied by settings`
+        return { output: `Error: Tool "${toolName}" execution is denied by settings`, isError: true, errorCode: 'DISABLED' }
       }
       const approved = await this.requestApproval(refreshedTool, toolInput)
       if (!approved) {
-        return `Tool execution denied by user: ${toolName}`
+        return { output: `Tool execution denied by user: ${toolName}`, isError: true, errorCode: 'DENIED' }
       }
     }
 
     const toolPermission = settings?.permission || (refreshedTool.requiresApproval ? 'always-ask' : 'always-allow')
 
     if (toolPermission === 'always-deny') {
-      return `Error: Tool "${toolName}" execution is denied by settings`
+      return { output: `Error: Tool "${toolName}" execution is denied by settings`, isError: true, errorCode: 'DISABLED' }
     }
 
     // Evaluate using permission mode + per-tool override
@@ -298,13 +298,11 @@ export class ToolExecutor {
     if (!decision.autoApprove && !this.alwaysAllowed.has(toolName)) {
       const approved = await this.requestApproval(refreshedTool, toolInput)
       if (!approved) {
-        return `Tool execution denied by user: ${toolName}`
+        return { output: `Tool execution denied by user: ${toolName}`, isError: true, errorCode: 'DENIED' }
       }
     }
 
     // Inject workspace path as default cwd/path if the tool accepts it
-    // and the AI didn't explicitly provide one. This prevents tools from
-    // falling back to process.cwd() (Electron's install directory).
     const enrichedInput = { ...toolInput }
     if (this.workspacePath) {
       if (CWD_TOOLS.has(toolName) && !enrichedInput.cwd) {
@@ -317,9 +315,15 @@ export class ToolExecutor {
 
     // Execute the tool
     try {
-      return await refreshedTool.execute(enrichedInput, signal)
+      const output = await refreshedTool.execute(enrichedInput, signal)
+      const isError = output.startsWith('[ERROR]') || output.startsWith('[SECURITY BLOCKED]') || output.startsWith('[BLOCKED]')
+      return { output, isError, errorCode: isError ? 'EXECUTION_ERROR' : undefined }
     } catch (error) {
-      return `Error executing tool "${toolName}": ${(error as Error).message}`
+      return {
+        output: `Error executing tool "${toolName}": ${(error as Error).message}`,
+        isError: true,
+        errorCode: 'EXECUTION_ERROR'
+      }
     }
   }
 

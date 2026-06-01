@@ -252,16 +252,16 @@ export class AgentLoop {
       .join('|')
   }
 
-  private getFallbackConfigs(triedProviders: string[]): ProviderConfig[] {
-    const allConfigs = listApiConfigs().filter(c => c.isActive && !triedProviders.includes(c.provider));
-    const priorityOrder = ['openai', 'anthropic', 'gemini', 'bedrock', 'ollama'];
+  private getFallbackConfigs(triedProviderIds: string[]): ProviderConfig[] {
+    // Fix: filter by config.id (not config.provider) so multiple configs
+    // for the same provider type are all considered as fallback candidates.
+    const allConfigs = listApiConfigs().filter(c => c.isActive && !triedProviderIds.includes(c.id))
+    const priorityOrder = ['openai', 'anthropic', 'gemini', 'bedrock', 'ollama']
     return allConfigs.sort((a, b) => {
-      const idxA = priorityOrder.indexOf(a.provider);
-      const idxB = priorityOrder.indexOf(b.provider);
-      const valA = idxA === -1 ? 99 : idxA;
-      const valB = idxB === -1 ? 99 : idxB;
-      return valA - valB;
-    });
+      const idxA = priorityOrder.indexOf(a.provider)
+      const idxB = priorityOrder.indexOf(b.provider)
+      return (idxA === -1 ? 99 : idxA) - (idxB === -1 ? 99 : idxB)
+    })
   }
 
   /**
@@ -308,7 +308,7 @@ export class AgentLoop {
       let streamSucceeded = false
       let currentStreamedContent = ''
       let assistantMessageId: string | null = null
-      const triedProviders: string[] = [currentConfig.provider]
+      const triedProviders: string[] = [currentConfig.id]
 
       while (!streamSucceeded) {
         try {
@@ -423,7 +423,7 @@ export class AgentLoop {
             }
           }
 
-          triedProviders.push(currentConfig.provider)
+          triedProviders.push(currentConfig.id)
           const fallbacks = this.getFallbackConfigs(triedProviders)
           if (fallbacks.length === 0) {
             throw err

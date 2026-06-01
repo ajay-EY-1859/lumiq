@@ -46,6 +46,9 @@ export interface ElectronAPI {
     onEnd: (callback: (data: { content: string; tokensUsed: number }) => void) => () => void
     onError: (callback: (error: string) => void) => () => void
   }
+  autocomplete: {
+    predict: (prefix: string, suffix: string, provider: string, model: string) => Promise<string>
+  }
   tool: {
     onApprovalRequest: (callback: (request: ToolApprovalRequest) => void) => () => void
     respond: (requestId: string, approved: boolean, alwaysAllow: boolean) => Promise<void>
@@ -240,6 +243,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onChunk: (cb: (chunk: string) => void) => createListener(IPC.CHAT_STREAM_CHUNK, cb),
     onEnd: (cb: (data: { content: string; tokensUsed: number }) => void) => createListener(IPC.CHAT_STREAM_END, cb),
     onError: (cb: (error: string) => void) => createListener(IPC.CHAT_ERROR, cb)
+  },
+
+  // ── Autocomplete ──
+  autocomplete: {
+    predict: (prefix: string, suffix: string, provider: string, model: string) =>
+      ipcRenderer.invoke(IPC.AUTOCOMPLETE_PREDICT, { prefix, suffix, provider, model })
   },
 
   // ── Tool Approval ──

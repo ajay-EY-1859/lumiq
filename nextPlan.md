@@ -1,114 +1,148 @@
 # Lumiq — Advanced Vision & Next Phase Roadmap
 
-**Last Updated:** 2026-05-22  
-**Current Status:** 🚀 **100% Complete** (All Milestones Fully Completed & Verified!)
+**Last Updated:** 2026-06-01  
+**Current Status:** 🚀 **Phase 2 Fully Complete & Shipped!** Entering **Phase 3 & Phase 4: Ultimate AI-First IDE Horizon**
 
 ---
 
 ## 📈 Executive Summary
 
-Lumiq has matured from a multi-provider chat wrapper into a **highly robust, desktop-first AI IDE companion**. With the successful completion of **Monaco Editor integration**, **Find in Files with Regex**, **Git Version Control integration**, **Code Intelligence (LSP, outline, definition routing)**, **Message Retry/Regenerate capabilities**, and **Clipboard file paste attachments**, Lumiq is ready to leap into the next frontier of agentic software engineering.
+Lumiq has evolved from a multi-provider chat interface into a highly capable local AI development environment. With the completion of **Milestones 1 through 10** (including MCP integration, semantic search/RAG, autonomous self-healing diagnostics, and multi-file side-by-side diff review), the core agent engine is solid and production-ready.
 
-The next phases will focus on **Advanced Agentic Ecosystems (MCP)**, **Codebase RAG & Semantic Context**, **Autonomous Diagnostics (Self-Healing Loops)**, and **Multi-File Refactoring Suites**.
-
----
-
-## ✅ Milestone 7: Model Context Protocol (MCP) & Advanced Tooling
-
-Lumiq will serve as a central controller for agentic microservices using Anthropic's **Model Context Protocol (MCP)**, enabling models to interact with custom databases, browser instances, and custom enterprise tools.
-
-- [x] **MCP Hub Console**
-  - A beautiful settings hub to register, spin up, and manage standard MCP servers (e.g. SQLite, Postgres, Puppeteer, GitHub, Brave Search).
-  - Status indicators (Connected / Idle / Error) with real-time logs for tool invocations.
-- [x] **Dynamic Tool Binding**
-  - Dynamically discover and parse schema definitions of active MCP servers.
-  - Automatically populate custom tool descriptions and list them dynamically in slash commands (`/mcp-postgres`, `/mcp-brave`).
-- [x] **Custom Script Tool Creator**
-  - Enable users to paste lightweight Node.js/Python scripts inside Lumiq Settings to spin up dynamic local tools instantly without hosting external servers.
+To transition Lumiq into a **next-generation, complete AI IDE** (bridging the capabilities seen in VS Code, Zed, and Cursor), the next phases of development will focus on deep editor immersion, interactive terminal bindings, static symbol dependency modeling, multi-agent orchestrations, and interactive live runtime debugging.
 
 ---
 
-## ✅ Milestone 8: Semantic Search (RAG) & Smart Context Engineering
+## 🟢 Shipped & Verified Milestones (Phase 1 & 2)
 
-Traditional regex search requires keyword matches. Milestone 8 introduces conceptual indexing of workspaces using local vector databases.
-
-- [x] **Local Codebase Semantic Indexing (RAG)**
-  - Local background indexing using **Transformers.js** (for offline-first embedding generation) or remote API embeddings (Gemini/OpenAI/Cohere).
-  - Lightweight vector store (e.g., SQLite-vec or in-memory index) to store codebase chunks.
-- [x] **Smart Context Window Optimizer**
-  - Automatic pruning of redundant context: dynamic sliding windows that auto-summarize long tool/agent execution blocks once they exceed 80% of context limits.
-  - Interactive **Token Budget Visualizer** in the message input area showing estimated context usage and cost before sending.
-- [x] **Natural Language Symbol Explorer**
-  - Search code conceptually through a new "Semantic Search" panel tab: e.g., *"Find where we handle OAuth token expiration"* matches conceptually without requiring specific keywords.
+- [x] **Milestone 7: Model Context Protocol (MCP) & Dynamic Tooling**
+  - Dynamic tool discovery and binding from local/remote MCP servers (SQLite, Brave Search, etc.).
+- [x] **Milestone 8: Semantic Search (RAG) & Context Compaction**
+  - Offline embedding generation with Transformers.js and smart context token budget visualizer.
+- [x] **Milestone 9: Autonomous Self-Healing & Diagnostics**
+  - Terminal-monitoring loop with diagnostic error capturing, background Fix Subagents, and safe sandbox dry-runs.
+- [x] **Milestone 10: Multi-File Diff Explorer & Refactoring Suite**
+  - Interactive multi-file side-by-side diff review workspace and folder-level bulk refactorings.
 
 ---
 
-## ✅ Milestone 9 (v2): Autonomous Self-Healing & Agent Debugging
+## 🚀 Phase 3: The AI-First Complete IDE Horizon (Milestones 11 - 15)
 
-Bring true autonomy to local task execution with a production-ready self-healing layer. Lumiq will not just write code; it will monitor terminal diagnostics, capture failure context, and propose safe repairs with traceable execution.
+In this phase, we design and build the premium, immersive developer workflow inspired by advanced modern IDE architectures (like VS Code, Cursor, and Zed), ensuring offline-first execution, strict user control, and maximum speed.
 
-- [x] **Self-Healing Code Watcher (v2)**
-  - Monitor terminal tasks (like `npm run dev`, `vitest`, or compilations) and detect errors, stack traces, or failing test results.
-  - Auto-trigger a background **Fix Subagent** on failure, collect the relevant workspace snapshot, and surface a targeted corrective diff with a one-click "Apply Fix" option.
-- [x] **Agent Execution Trace Visualizer (v2)**
-  - Render a step-by-step execution trace in the chat showing:
-    - *Thoughts* (planned actions and goals).
-    - *Tool Selection* (chosen tool, schema, and input arguments).
-    - *Diagnostics* (failure root cause, captured logs, and remediation suggestions).
-- [x] **Secure Sandbox Runner**
-  - Execute repair commands in a lightweight sandboxed terminal environment.
-  - Keep unsafe actions gated behind explicit approval and preserve a versioned safety log for rollback.
-- [x] **Debug Snapshot Store**
-  - Persist failure snapshots, tool inputs, and repair history as versioned artifacts.
-  - Use the snapshot history to avoid repeated fixes and to make the self-healing loop auditable.
+### Milestone 11: Real-Time Inline Autocomplete & Local Ghost-Text (FIM Engine)
+Bring instantaneous, context-aware code predictions to the Monaco Editor.
+- **Monaco Ghost-Text Extension**: Render inline gray suggestions directly in the active editor pane as the user types (similar to VS Code Copilot/Cursor Tab).
+- **Fill-in-the-Middle (FIM) Engine**: Leverage ultra-fast, local, lightweight LLMs (e.g., DeepSeek-Coder 1.5B/7B, Qwen2.5-Coder 1.5B, or StarCoder2) via Ollama/Llama.cpp or local Transformers.js.
+- **Smart Triggering & Debouncing**: Intelligent trigger points (whitespace, brackets, cursor pauses) and debouncing algorithms to keep typing latency at ~0ms.
+- **Cache-Ahead & Prefetching**: Prefetch context lines around the cursor to deliver suggestions with sub-50ms latency.
 
----
+### Milestone 12: Immersive Interactive AI Terminal (Lumiq-Term xterm.js)
+Bridge the gap between file editing and terminal command execution.
+- **Embedded xterm.js Panel**: Embed a fully interactive, GPU-accelerated terminal panel in the bottom dock of the Lumiq GUI.
+- **Terminal Inline helper (Ctrl+K)**: Allow users to open an inline chat overlay directly in the terminal to explain commands, auto-generate complex scripts, or ask the AI to perform commands.
+- **Visual Command Streaming**: Let the AI stream commands directly into the terminal, visually showing command outputs, with single-click human authorization before execution.
+- **Fail-Safe Diagnostics Interceptor**: Intercept compiler, build, and test exceptions in the terminal stream, prompting the user with an instant *"Auto-Fix with Lumiq"* diagnostic button.
 
-## ✅ Milestone 10: Multi-File Diffing & Code Refactoring Suites
+### Milestone 13: AST Symbol Graph & Semantic Indexer (Code Intelligence)
+Move beyond regex search to a structural, graph-based understanding of the user's codebase.
+- **Tree-Sitter AST Parsing**: Integrate a background worker that parses code files into Abstract Syntax Trees (AST) using `tree-sitter`.
+- **Global Dependency Symbol Table**: Build a high-fidelity graph database (using SQLite as storage) index mapping classes, interfaces, variables, functions, and import paths.
+- **Symbol Routing Queries**: Provide structural context tools for the AI agent to ask:
+  - *"Where is this interface defined?"*
+  - *"What are the dependencies or callers of this function?"*
+  - *"Find all files implementing this specific class."*
+- **Incremental Index updates**: Efficient file system watchers (`chokidar`) that update the AST graph incrementally on file saves.
 
-Expand single-file diff acceptance into powerful project-wide refactoring workflows.
+### Milestone 14: Composer Mode & Collaborative Multi-Agent Swarm
+Orchestrate high-level, complex coding goals across parallel specialized AI agents.
+- **Dedicated Composer Workspace**: A visual, widescreen interface designed for project-scale changes (e.g., *"Refactor our entire auth layer to use Clerk"*).
+- **Specialized Multi-Agent Swarm**: Spawn specialized background subagents:
+  - **The Architect**: Analyzes import graphs and plans file creations/deletions.
+  - **The Coder**: Generates modifications using multi-file edit pools.
+  - **The Tester**: Writes unit tests and executes them in parallel.
+  - **The Reviewer**: Audits changed code for security risks, memory leaks, and performance bottlenecks.
+- **Visual Agent Orchestration Tree**: A premium, real-time node graph showing agent statuses, thought blocks, active file locks, and data flows.
 
-- [x] **Multi-File Interactive Diff Review**
-  - Visual side-by-side or split diffing interface displaying changes across multiple files concurrently.
-  - Bulk actions: "Accept all changes in `/src/components`", "Reject all changes in tests".
-- [x] **Tree-Context Menu Refactorings**
-  - Right-click folders or files in the explorer tree to trigger automated bulk refactoring workflows:
-    - `Convert JavaScript to TypeScript`
-    - `Generate Unit Tests`
-    - `Optimize Performance & Memoization`
-    - `Write JSDoc / Documentation comments`
-
----
-
-## 🏗 Architecture & Core Improvements
-
-- [x] **Request/Response Trace Logging**: Export complete request/response payloads (including system prompts and raw tool outputs) for debugging and auditing.
-- [x] **Offline-First Mode**: Automated configuration with local LLM providers (Ollama / Llama.cpp) and automatic model enumeration.
-- [x] **Cost Analytics & Budget Caps**: A visual dashboard plotting model utilization, token costs, and letting users set daily/monthly budget warnings.
-- [x] **Session Search & Archive**: Global search across all past chat sessions by date, provider, or content keywords.
-
----
-
-## 📊 Roadmap Timeline & Completeness
-
-| Module | Current Completeness | Status | Target Phase |
-| :--- | :--- | :--- | :--- |
-| **Agent Engine** | 100% | ✅ Complete | Maintained |
-| **Tool Execution** | 100% | ✅ Complete | Maintained |
-| **Monaco Editor Integration** | 100% | ✅ Complete | Maintained |
-| **Code Intelligence (LSP)** | 100% | ✅ Complete | Maintained |
-| **Search & Version Control (Git)** | 100% | ✅ Complete | Maintained |
-| **Message Retry & Clipboard Paste** | 100% | ✅ Complete | Maintained |
-| **Model Context Protocol (MCP)** | 100% | ✅ Complete | Milestone 7 |
-| **Codebase Semantic RAG** | 100% | ✅ Complete | Milestone 8 |
-| **Self-Healing Code Loops** | 100% | ✅ Complete | Milestone 9 (v2) |
-| **Multi-File Diff Explorer** | 100% | ✅ Complete | Milestone 10 |
+### Milestone 15: DAP Integration & Live Runtime Debugger Binding
+Connect the AI directly to execution state for unparalleled debugging capabilities.
+- **Debug Adapter Protocol (DAP) Client**: Implement a DAP-compliant client in the main process to connect to language-specific debuggers (Node inspector, Python debugpy, Go Delve).
+- **Automatic Call-Stack Capture**: On uncaught exceptions or failed test assertions, automatically extract:
+  - Complete stack trace.
+  - Local variables, parameters, and global states.
+  - Recent console stderr outputs.
+- **State-Aware Interactive Explainer**: Let the user inspect runtime variables in the sidebar, with the AI agent providing a step-by-step explanation of the state mutation that led to the bug, along with a validated repair diff.
 
 ---
 
-## 🎯 Immediate Tactical Priorities
+## 🔮 Phase 4: The Ultimate AI-First IDE Horizon (Milestones 16 - 25)
 
-1. [x] **MCP Server Bridge**: Establish basic IPC channels to invoke local command-line based MCP tools.
-2. [x] **Local Embedding Indexer**: Completed workspace scanning and hybrid embedding generation (MiniLM/Gemini).
-3. [x] **Self-Healing v2 Baseline**: Start the fault detection and repair workflow for terminal/runtime failures.
-4. **Multi-File diff view**: Create the layout for side-by-side multi-file edits.
+Moving beyond traditional coding utilities, Phase 4 expands Lumiq into an advanced, all-in-one software engineering workstation incorporating visual builders, live performance telemetry, isolated sandboxes, unified databases, and peer-to-peer collaboration.
+
+### Milestone 16: Semantic Codebase Refactoring & Code Smell Sweeper
+Establish an autonomous sweeping system to refactor legacy code patterns.
+- **AST Refactoring Engine**: Enable agent to sweep directories to upgrade code structures (e.g. converting JavaScript to type-safe TypeScript, or old class-based components into React functional hooks).
+- **Automated Anti-Pattern Detection**: Proactively identify dead code, duplicate utility methods, memory leaks in EventListeners, and promise-handling gaps.
+- **Architectural Decomposition**: Automatically split monolithic code files into cleanly separated, tree-shaken ESM exports with generated documentation.
+
+### Milestone 17: Interactive Visual Canvas Mode & UI Code Generator
+Bridge the gap between design mockups and frontend code implementation.
+- **Integrated Preview Canvas**: A visual drag-and-drop workspace builder where users can select UI blocks or paste external mockups (PNG/SVG).
+- **AI UI-to-Code Compiler**: Automatically compile designs into pixel-perfect React/Tailwind code with clean component layouts.
+- **Interactive Component Tree**: Let users click on any component in the visual preview to instantly jump to the corresponding code line in Monaco.
+
+### Milestone 18: Live Performance Telemetry & Profiling Companion
+Provide the AI agent with direct visibility into application runtime performance.
+- **Telemetry Server Bridge**: Connect to Node.js V8 Profiler, Chrome DevTools Protocol, or Python cProfile.
+- **AI-Driven Performance Bottleneck Alerter**: Track function call latency, database query bottlenecks, and component render cycles in real-time.
+- **O(1) Optimization Suite**: Let the AI automatically suggest and write O(1) replacements for inefficient, resource-heavy O(N^2) search and iteration loops.
+
+### Milestone 19: Isolated Web Sandbox & Runtime Preview Engine
+Enable zero-config, immediate application previewing inside the Lumiq desktop app.
+- **Integrated Browser Canvas**: Embed a Chromium Webview panel with HMR support.
+- **In-App Sandbox Server**: Leverage in-memory node execution or WebContainers to execute, run, and preview complete Next.js, Vite, or Node backends without spawning external terminals.
+- **Interactive Live Inspector**: Click elements inside the sandbox preview to inspect CSS variables and auto-generate style tweaks through the AI chat.
+
+### Milestone 20: Zero-Config Cloud Deployment & Infrastructure-as-Code (IaC)
+Bring deployments, serverless configurations, and database provisioning directly into the IDE.
+- **One-Click Deploy Bridge**: Direct integrations with Vercel, Netlify, Cloudflare Workers, and Fly.io.
+- **Agentic Infrastructure Architect**: AI automatically writes Dockerfiles, Terraforms, or Serverless configuration files based on workspace analysis.
+- **Live Deployment Logs & Rollbacks**: View building logs in real-time in the sidebar, with one-click deployment rollback and hotfixes.
+
+### Milestone 21: Autonomous Test Case Generation & TDD Orchestrator
+Ensure robust software quality through automated continuous testing loops.
+- **QA Test Suite Generator**: Agentic loop that scans modified files and automatically writes Vitest, Jest, or Playwright unit/integration tests.
+- **Interactive Test Execution Dock**: Run tests natively within Lumiq's UI with a clean visual grid of passes, failures, and coverage metrics.
+- **Autonomous Test repair loop**: Auto-trigger background fix loops to rewrite broken code blocks when tests fail, until test suites pass with >90% coverage.
+
+### Milestone 22: Universal Database Schema Explorer & SQL Agent
+Unify database management and AI generation into a single explorer window.
+- **Visual DB Explorer Panel**: Support connections to SQLite, PostgreSQL, MySQL, and MongoDB.
+- **Schema-Aware Query Generator**: AI auto-generates complex, optimized SQL queries or Prisma/Drizzle schemas based on database inspection.
+- **Mock Data Engine & Schema Migrations**: Proactively generate migration paths and populate tables with high-fidelity, schema-compliant mock datasets.
+
+### Milestone 23: VS Code / Cursor Workspace Mirroring Bridge
+Bridge the user's active editor context with external development workflows.
+- **Bidirectional Sync Client**: Mirror open editor tabs, cursor selection lines, and active workspaces between Lumiq and VS Code / Cursor.
+- **Breakpoint & Diagnostic Sync**: Sync breakpoints, build issues, and console stack traces between editors.
+- **Seamless Transfer Switch**: One-click button to transfer the active agent context into VS Code for rapid local debugging.
+
+### Milestone 24: Codebase Architect Wiki & Mermaid diagrammer
+Maintain self-updating, high-level documentation of complex software architectures.
+- **Self-Updating Codebase Wiki**: Background worker that scans commits and keeps onboarding wikis, APIs, and folder architecture guidelines up to date.
+- **Visual Mermaid.js Flow diagrammer**: Draw dependency architectures, state machines, and API data flows dynamically using Mermaid diagrams.
+- **New Developer Onboarding Assistant**: Provide an interactive agent designed to guide new team members through the codebase architecture, design system, and setup steps.
+
+### Milestone 25: P2P Multi-User Collaboration & Secure TeamSpaces
+Unleash the power of real-time collaborative development with humans and AI swarms.
+- **P2P Live Share Tunneling**: End-to-end encrypted connection between developers to co-edit files, share active terminals, and launch live voice calls.
+- **Encrypted TeamSpaces**: Dedicated secure shared rooms where multiple developers can delegate parts of a task to a joint pool of autonomous AI agents.
+- **Agent Hand-off & Collaboration Timeline**: View an interactive timeline showing which agent worked on which module, code revisions, and pull-request approvals.
+
+---
+
+## 🎯 Immediate Tactical Priorities (Next Sprint)
+
+1. **Monaco Ghost-Text Scaffold**: Implement the frontend ghost-text editor extension in Monaco and connect it to a mock local prediction stream.
+2. **xterm.js Integration**: Integrate the terminal shell inside the bottom dock of the Electron workspace.
+3. **AST Parser Hook**: Set up the parser worker using `tree-sitter` for TypeScript/JavaScript files.
