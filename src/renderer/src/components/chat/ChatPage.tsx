@@ -164,10 +164,13 @@ export function ChatPage(): React.JSX.Element {
         createdAt: new Date().toISOString()
       })
 
+      const currentProvider = activeSession?.provider || activeProvider
+      const currentModel = activeSession?.model || activeModel
+
       // Send via IPC
-      await sendMessage(message, sessionId, activeProvider, activeModel, undefined, taskMode || undefined)
+      await sendMessage(message, sessionId, currentProvider, currentModel, undefined, taskMode || undefined)
     },
-    [activeSessionId, activeProvider, activeModel, sendMessage, createSession, addMessage, taskMode, setActiveSession, setError]
+    [activeSessionId, activeSession, activeProvider, activeModel, sendMessage, createSession, addMessage, taskMode, setActiveSession, setError]
   )
 
   const handleRetry = useCallback(
@@ -189,11 +192,14 @@ export function ChatPage(): React.JSX.Element {
         createdAt: new Date().toISOString()
       })
 
+      const currentProvider = activeSession?.provider || activeProvider
+      const currentModel = activeSession?.model || activeModel
+
       await sendMessage(
         msg.content,
         activeSessionId!,
-        activeProvider,
-        activeModel || 'default',
+        currentProvider,
+        currentModel || 'default',
         undefined,
         taskMode || undefined
       )
@@ -204,6 +210,7 @@ export function ChatPage(): React.JSX.Element {
       cancelStream,
       deleteMessagesFrom,
       activeSessionId,
+      activeSession,
       addMessage,
       sendMessage,
       activeProvider,

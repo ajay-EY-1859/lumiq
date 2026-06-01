@@ -1,6 +1,6 @@
 // Lumiq — Settings: Providers Tab
 // Contains: ProvidersTab, ProviderSetupPanel, ModelSelector, ConnectedAccountsSection, OAuthAccountCard
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { useProviderStore } from '@renderer/store/providerStore'
 import { Button } from '@renderer/components/ui/Button'
 import { Input } from '@renderer/components/ui/Input'
@@ -28,7 +28,7 @@ type OAuthStatusState = { isLoggedIn: boolean; email?: string; expiresAt?: numbe
 
 // ── Main Providers Tab ──
 export function ProvidersTab(): React.JSX.Element {
-  const { providers, loadProviders, saveProvider, deleteProvider, testProvider } = useProviderStore()
+  const { providers, activeProvider, setActiveProvider, loadProviders, saveProvider, deleteProvider, testProvider } = useProviderStore()
   const [testing, setTesting] = useState<string | null>(null)
   const [selectedProvider, setSelectedProvider] = useState<ProviderType | null>(null)
   useEffect(() => { loadProviders() }, [loadProviders])
@@ -59,7 +59,9 @@ export function ProvidersTab(): React.JSX.Element {
                 <div key={info.id} className={`${styles.configuredRow} ${isActive ? styles.configuredRowActive : ''}`} onClick={() => setSelectedProvider(isActive ? null : info.id)} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setSelectedProvider(isActive ? null : info.id) }}>
                   <span className={styles.configuredRowEmoji}>{info.emoji}</span>
                   <div className={styles.configuredRowInfo}><div className={styles.configuredRowName}>{info.name}</div><div className={styles.configuredRowModel}>{existing?.defaultModel || 'default'}</div></div>
-                  <span className={styles.configuredRowBadge}>Active</span>
+                  {activeProvider === info.id && (
+                    <span className={styles.configuredRowBadge}>Active</span>
+                  )}
                   <span className={styles.configuredRowChevron}>›</span>
                 </div>
               )
@@ -68,7 +70,23 @@ export function ProvidersTab(): React.JSX.Element {
         )}
       </div>
       {activeInfo && configuredProviders.some((p) => p.id === selectedProvider) && (
-        <ProviderSetupPanel key={selectedProvider} info={activeInfo} existing={activeExisting} onSave={saveProvider} onTest={(config) => handleTest(activeInfo.id, config)} onDelete={() => handleDelete(activeInfo.id)} onClose={() => setSelectedProvider(null)} onSaveComplete={handleSaveComplete} isTesting={testing === activeInfo.id} isAlreadyConfigured />
+        <ProviderSetupPanel
+          key={selectedProvider}
+          info={activeInfo}
+          existing={activeExisting}
+          onSave={saveProvider}
+          onTest={(config) => handleTest(activeInfo.id, config)}
+          onDelete={() => handleDelete(activeInfo.id)}
+          onClose={() => setSelectedProvider(null)}
+          onSaveComplete={handleSaveComplete}
+          isTesting={testing === activeInfo.id}
+          isAlreadyConfigured
+          isGloballyActive={activeProvider === activeInfo.id}
+          onActivate={() => {
+            setActiveProvider(activeInfo.id)
+            showToast('info', 'Active Provider', `${activeInfo.name} is now active.`)
+          }}
+        />
       )}
       {unconfiguredProviders.length > 0 && (
         <div>
@@ -91,13 +109,14 @@ export function ProvidersTab(): React.JSX.Element {
 }
 
 // ── Provider Setup Panel ──
-function ProviderSetupPanel({ info, existing, onSave, onTest, onDelete, onClose, onSaveComplete, isTesting, isAlreadyConfigured }: {
+function ProviderSetupPanel({ info, existing, onSave, onTest, onDelete, onClose, onSaveComplete, isTesting, isAlreadyConfigured, isGloballyActive, onActivate }: {
   info: { id: ProviderType; name: string; emoji: string; needsKey: boolean }
   existing?: any
   onSave: (config: Omit<ProviderConfig, 'id'> & Partial<Pick<ProviderConfig, 'id'>>) => Promise<void>
   onTest: (config: Omit<ProviderConfig, 'id'> & Partial<Pick<ProviderConfig, 'id'>>) => void
   onDelete: () => void; onClose: () => void; onSaveComplete: () => void
   isTesting: boolean; isAlreadyConfigured: boolean
+  isGloballyActive?: boolean; onActivate?: () => void
 }): React.JSX.Element {
   const [apiKey, setApiKey] = useState('')
   const [awsAccessKeyId, setAwsAccessKeyId] = useState('')
@@ -106,21 +125,126 @@ function ProviderSetupPanel({ info, existing, onSave, onTest, onDelete, onClose,
   const [baseUrl, setBaseUrl] = useState(existing?.baseUrl || '')
   const [defaultModel, setDefaultModel] = useState(existing?.defaultModel || PROVIDER_MODELS[info.id]?.[0]?.id || '')
   const [authMethod, setAuthMethod] = useState<ProviderConfig['authMethod']>(existing?.authMethod || 'apikey')
+  
+  const [validationStatus, setValidationStatus] = useState<'idle' | 'validating' | 'success' | 'error'>('idle')
+  const [validationError, setValidationError] = useState<string | null>(null)
+  const [dynamicModels, setDynamicModels] = useState<{ id: string; label: string }[]>([])
+  const [isValidating, setIsValidating] = useState(false)
+
   const consoleUrl = PROVIDER_CONSOLE_URLS[info.id]
   const supportsOAuth = info.id === 'gemini' || info.id === 'github'
   const isBedrock = info.id === 'bedrock'
   const isLocalProvider = info.id === 'ollama' || info.id === 'custom'
 
-  useEffect(() => { setAuthMethod(existing?.authMethod || 'apikey'); setDefaultModel(existing?.defaultModel || PROVIDER_MODELS[info.id]?.[0]?.id || ''); setAwsRegion(existing?.awsRegion || 'us-east-1'); setBaseUrl(existing?.baseUrl || '') }, [existing, info.id])
+  const getTempConfig = (overrides: Partial<ProviderConfig> = {}) => {
+    return {
+      provider: info.id,
+      apiKey: overrides.apiKey !== undefined ? overrides.apiKey : (apiKey || undefined),
+      awsAccessKeyId: overrides.awsAccessKeyId !== undefined ? overrides.awsAccessKeyId : (awsAccessKeyId || undefined),
+      awsSecretAccessKey: overrides.awsSecretAccessKey !== undefined ? overrides.awsSecretAccessKey : (awsSecretAccessKey || undefined),
+      awsRegion: overrides.awsRegion !== undefined ? overrides.awsRegion : awsRegion,
+      baseUrl: overrides.baseUrl !== undefined ? overrides.baseUrl : baseUrl,
+      defaultModel,
+      isActive: true,
+      authMethod
+    }
+  }
+
+  const validateAndFetchModels = async (tempConfig: any): Promise<void> => {
+    if (info.needsKey && tempConfig.authMethod !== 'oauth' && info.id !== 'ollama') {
+      if (info.id === 'bedrock') {
+        const hasKeys = (tempConfig.awsAccessKeyId && tempConfig.awsSecretAccessKey) || existing?.hasAwsKeys
+        if (!hasKeys) return
+      } else {
+        const hasKey = tempConfig.apiKey || existing?.hasApiKey
+        if (!hasKey) return
+      }
+    }
+
+    setValidationStatus('validating')
+    setValidationError(null)
+    setIsValidating(true)
+
+    try {
+      const testResult = await window.electronAPI.provider.test(info.id, tempConfig)
+      if (!testResult.success) {
+        setValidationStatus('error')
+        setValidationError(testResult.error || 'Connection failed')
+        setIsValidating(false)
+        return
+      }
+
+      const modelsList = await window.electronAPI.provider.models(info.id, tempConfig)
+      const staticModels = PROVIDER_MODELS[info.id] || []
+      const mapped = modelsList.map((model: any) => {
+        const modelId = typeof model === 'string' ? model : (model.id || '')
+        const modelLabel = typeof model === 'string' ? model : (model.label || modelId)
+        return {
+          id: modelId,
+          label: staticModels.find((m) => m.id === modelId)?.label || modelLabel
+        }
+      })
+
+      setDynamicModels(mapped)
+      setValidationStatus('success')
+
+      if (mapped.length > 0) {
+        const hasExistingModel = mapped.some(m => m.id === defaultModel)
+        if (!hasExistingModel) {
+          setDefaultModel(mapped[0].id)
+        }
+      }
+    } catch (err) {
+      setValidationStatus('error')
+      setValidationError((err as Error).message)
+    } finally {
+      setIsValidating(false)
+    }
+  }
+
+  useEffect(() => {
+    setAuthMethod(existing?.authMethod || 'apikey')
+    setDefaultModel(existing?.defaultModel || PROVIDER_MODELS[info.id]?.[0]?.id || '')
+    setAwsRegion(existing?.awsRegion || 'us-east-1')
+    setBaseUrl(existing?.baseUrl || '')
+    
+    if (isAlreadyConfigured) {
+      validateAndFetchModels({
+        provider: info.id,
+        awsRegion: existing?.awsRegion || 'us-east-1',
+        baseUrl: existing?.baseUrl || '',
+        defaultModel: existing?.defaultModel || '',
+        isActive: true,
+        authMethod: existing?.authMethod || 'apikey'
+      })
+    } else {
+      setValidationStatus('idle')
+      setValidationError(null)
+      setDynamicModels([])
+    }
+  }, [existing, info.id, isAlreadyConfigured])
+
+  const handleBlur = () => {
+    validateAndFetchModels(getTempConfig())
+  }
 
   const handleSave = async (): Promise<void> => {
-    await onSave({ provider: info.id, apiKey: apiKey || undefined, awsAccessKeyId: awsAccessKeyId || undefined, awsSecretAccessKey: awsSecretAccessKey || undefined, awsRegion: awsRegion || undefined, baseUrl: baseUrl || undefined, defaultModel, isActive: true, authMethod })
-    setApiKey(''); setAwsAccessKeyId(''); setAwsSecretAccessKey('')
-    showToast('success', 'Saved', `${info.name} configured successfully!`); onSaveComplete()
+    try {
+      await onSave({ provider: info.id, apiKey: apiKey || undefined, awsAccessKeyId: awsAccessKeyId || undefined, awsSecretAccessKey: awsSecretAccessKey || undefined, awsRegion: awsRegion || undefined, baseUrl: baseUrl || undefined, defaultModel, isActive: true, authMethod })
+      setApiKey(''); setAwsAccessKeyId(''); setAwsSecretAccessKey('')
+      showToast('success', 'Saved', `${info.name} configured successfully!`); onSaveComplete()
+    } catch (err) {
+      showToast('error', 'Save Failed', (err as Error).message)
+    }
   }
 
   return (
     <div className={styles.setupPanel}>
+      <style dangerouslySetInnerHTML={{ __html: `
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+      `}} />
       <div className={styles.setupPanelHeader}>
         <span className={styles.setupPanelEmoji}>{info.emoji}</span>
         <span className={styles.setupPanelTitle}>{isAlreadyConfigured ? `Manage ${info.name}` : `Setup ${info.name}`}</span>
@@ -128,9 +252,9 @@ function ProviderSetupPanel({ info, existing, onSave, onTest, onDelete, onClose,
       </div>
       <div className={styles.setupPanelBody}>
         {isBedrock && (<>
-          <Input label="AWS Access Key ID" placeholder={isAlreadyConfigured ? 'Enter new Access Key to update...' : 'AKIA...'} value={awsAccessKeyId} onChange={(e) => setAwsAccessKeyId(e.target.value)} />
-          <Input label="AWS Secret Access Key" type="password" placeholder={isAlreadyConfigured ? 'Enter new Secret Key to update...' : 'Secret key...'} value={awsSecretAccessKey} onChange={(e) => setAwsSecretAccessKey(e.target.value)} />
-          <Input label="AWS Region" placeholder="us-east-1" value={awsRegion} onChange={(e) => setAwsRegion(e.target.value)} />
+          <Input label="AWS Access Key ID" placeholder={isAlreadyConfigured ? 'Enter new Access Key to update...' : 'AKIA...'} value={awsAccessKeyId} onChange={(e) => setAwsAccessKeyId(e.target.value)} onBlur={handleBlur} />
+          <Input label="AWS Secret Access Key" type="password" placeholder={isAlreadyConfigured ? 'Enter new Secret Key to update...' : 'Secret key...'} value={awsSecretAccessKey} onChange={(e) => setAwsSecretAccessKey(e.target.value)} onBlur={handleBlur} />
+          <Input label="AWS Region" placeholder="us-east-1" value={awsRegion} onChange={(e) => setAwsRegion(e.target.value)} onBlur={handleBlur} />
           {consoleUrl && (
             <div className={styles.bedrickLinkText} style={{ marginTop: '-4px', marginBottom: '8px' }}>
               Need credentials? Obtain them from the{' '}
@@ -140,7 +264,7 @@ function ProviderSetupPanel({ info, existing, onSave, onTest, onDelete, onClose,
             </div>
           )}
         </>)}
-        {isLocalProvider && <Input label="Base URL" placeholder={info.id === 'ollama' ? 'http://localhost:11434' : 'https://your-endpoint.com/v1'} value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} />}
+        {isLocalProvider && <Input label="Base URL" placeholder={info.id === 'ollama' ? 'http://localhost:11434' : 'https://your-endpoint.com/v1'} value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} onBlur={handleBlur} />}
         {supportsOAuth && (
           <div className={styles.authMethodContainer}>
             <label className={styles.authMethodLabel}>Auth method</label>
@@ -152,7 +276,7 @@ function ProviderSetupPanel({ info, existing, onSave, onTest, onDelete, onClose,
         )}
         {info.needsKey && authMethod !== 'oauth' && !isBedrock && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <Input label="API Key" type="password" placeholder={isAlreadyConfigured ? 'Enter new key to update...' : 'Paste your API key here...'} value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
+            <Input label="API Key" type="password" placeholder={isAlreadyConfigured ? 'Enter new key to update...' : 'Paste your API key here...'} value={apiKey} onChange={(e) => setApiKey(e.target.value)} onBlur={handleBlur} />
             {consoleUrl && (
               <div className={styles.bedrickLinkText} style={{ marginTop: '-2px', marginBottom: '4px' }}>
                 Don't have an API key? Get it from{' '}
@@ -163,21 +287,67 @@ function ProviderSetupPanel({ info, existing, onSave, onTest, onDelete, onClose,
             )}
           </div>
         )}
-        <ModelSelector providerId={info.id} value={defaultModel} onChange={setDefaultModel} />
+        <ModelSelector providerId={info.id} value={defaultModel} onChange={setDefaultModel} availableModels={dynamicModels.length > 0 ? dynamicModels : undefined} isFetching={isValidating} />
+        
+        {/* Live validation feedback card */}
+        {validationStatus !== 'idle' && (
+          <div style={{
+            padding: '12px',
+            borderRadius: '8px',
+            fontSize: '13px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            marginTop: '8px',
+            background: validationStatus === 'validating' ? 'rgba(59, 130, 246, 0.05)' :
+                        validationStatus === 'success' ? 'rgba(16, 185, 129, 0.05)' : 'rgba(239, 68, 68, 0.05)',
+            border: `1px solid ${
+              validationStatus === 'validating' ? 'rgba(59, 130, 246, 0.2)' :
+              validationStatus === 'success' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)'
+            }`,
+            color: validationStatus === 'validating' ? 'var(--accent-blue)' :
+                   validationStatus === 'success' ? 'var(--accent-green, #10b981)' : 'var(--accent-red, #ef4444)'
+          }}>
+            {validationStatus === 'validating' && (
+              <>
+                <span className={styles.spinner} style={{
+                  width: '14px',
+                  height: '14px',
+                  border: '2px solid currentColor',
+                  borderTopColor: 'transparent',
+                  borderRadius: '50%',
+                  display: 'inline-block',
+                  animation: 'spin 0.8s linear infinite'
+                }} />
+                <span>Validating credentials and fetching models...</span>
+              </>
+            )}
+            {validationStatus === 'success' && (
+              <>
+                <span>✅</span>
+                <span>Credentials verified! Found <strong>{dynamicModels.length}</strong> available models.</span>
+              </>
+            )}
+            {validationStatus === 'error' && (
+              <>
+                <span>⚠️</span>
+                <span style={{ flex: 1 }}>{validationError || 'Invalid credentials or connection failed.'}</span>
+              </>
+            )}
+          </div>
+        )}
+
         <div className={styles.setupPanelDivider} />
         <div className={styles.setupPanelActions}>
           {isAlreadyConfigured && <Button variant="danger" size="sm" onClick={onDelete} title="Delete credentials">🗑️ Remove</Button>}
-          <Button variant="outline" size="sm" onClick={() => onTest({
-            provider: info.id,
-            apiKey: apiKey || undefined,
-            awsAccessKeyId: awsAccessKeyId || undefined,
-            awsSecretAccessKey: awsSecretAccessKey || undefined,
-            awsRegion: awsRegion || undefined,
-            baseUrl: baseUrl || undefined,
-            defaultModel,
-            isActive: true,
-            authMethod
-          })} isLoading={isTesting} title="Test connection">🔗 Test</Button>
+          {isAlreadyConfigured && !isGloballyActive && onActivate && (
+            <Button variant="outline" size="sm" onClick={onActivate} title="Set as Active Provider">⭐ Set Active</Button>
+          )}
+          <Button variant="outline" size="sm" onClick={() => {
+            const config = getTempConfig();
+            onTest(config);
+            validateAndFetchModels(config);
+          }} isLoading={isTesting || isValidating} title="Test connection">🔗 Test</Button>
           <Button size="sm" onClick={handleSave} title="Save and connect">{isAlreadyConfigured ? '💾 Update' : '🚀 Connect'}</Button>
         </div>
       </div>
@@ -186,7 +356,13 @@ function ProviderSetupPanel({ info, existing, onSave, onTest, onDelete, onClose,
 }
 
 // ── Model Selector ──
-function ModelSelector({ providerId, value, onChange }: { providerId: ProviderType; value: string; onChange: (v: string) => void }): React.JSX.Element {
+function ModelSelector({ providerId, value, onChange, availableModels: propModels, isFetching: propFetching }: { 
+  providerId: ProviderType; 
+  value: string; 
+  onChange: (v: string) => void;
+  availableModels?: { id: string; label: string }[];
+  isFetching?: boolean;
+}): React.JSX.Element {
   const staticModels = useMemo(() => PROVIDER_MODELS[providerId] || [], [providerId])
   const [remoteModels, setRemoteModels] = useState<{ id: string; label: string }[]>([])
   const [isFetchingModels, setIsFetchingModels] = useState(false)
@@ -194,28 +370,45 @@ function ModelSelector({ providerId, value, onChange }: { providerId: ProviderTy
   const [useCustom, setUseCustom] = useState<boolean>(shouldDefaultCustom)
   const [customModel, setCustomModel] = useState(value)
   const isBedrock = providerId === 'bedrock'
+  const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => { setCustomModel(value) }, [value])
+
   useEffect(() => {
+    if (useCustom && inputRef.current) {
+      setTimeout(() => {
+        inputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      }, 50)
+    }
+  }, [useCustom])
+
+  useEffect(() => {
+    if (propModels !== undefined) return
+
     let mounted = true
     const fetchModels = async (): Promise<void> => {
       setIsFetchingModels(true)
       try {
         const models = await window.electronAPI.provider.models(providerId)
         if (!mounted) return
-        setRemoteModels(models.map((model) => ({
-          id: model.id,
-          label: staticModels.find((m) => m.id === model.id)?.label || model.label || model.id
-        })))
+        setRemoteModels(models.map((model) => {
+          const modelId = typeof model === 'string' ? model : (model.id || '')
+          const modelLabel = typeof model === 'string' ? model : (model.label || modelId)
+          return {
+            id: modelId,
+            label: staticModels.find((m) => m.id === modelId)?.label || modelLabel
+          }
+        }))
       }
       catch { if (mounted) setRemoteModels([]) }
       finally { if (mounted) setIsFetchingModels(false) }
     }
     fetchModels()
     return () => { mounted = false }
-  }, [providerId, staticModels])
+  }, [providerId, staticModels, propModels])
 
-  const availableModels = remoteModels.length > 0 ? remoteModels : staticModels
+  const availableModels = propModels !== undefined ? propModels : (remoteModels.length > 0 ? remoteModels : staticModels)
+  const isFetching = propFetching !== undefined ? propFetching : isFetchingModels
   const hasModelList = availableModels.length > 0
   const isKnownModel = availableModels.some((m) => m.id === value)
 
@@ -238,16 +431,25 @@ function ModelSelector({ providerId, value, onChange }: { providerId: ProviderTy
         </button>
       </div>
       {useCustom || !hasModelList ? (<>
-        <input type="text" value={customModel} onChange={(e) => setCustomModel(e.target.value)} onBlur={() => commitCustomModel(customModel)} onKeyDown={(e) => { if (e.key === 'Enter') { commitCustomModel(customModel); e.currentTarget.blur() } }}
-          placeholder={isBedrock ? 'anthropic.claude-sonnet-4-20250514-v1:0' : 'Enter model ID...'}
+        <input type="text" value={customModel}
+          ref={inputRef}
+          autoFocus
+          onChange={(e) => {
+            const val = e.target.value
+            setCustomModel(val)
+            onChange(val)
+          }}
+          onBlur={() => commitCustomModel(customModel)}
+          onKeyDown={(e) => { if (e.key === 'Enter') { commitCustomModel(customModel); e.currentTarget.blur() } }}
+          placeholder={isBedrock ? 'us.anthropic.claude-opus-4-1-20250805-v1:0' : 'Enter model ID...'}
           style={{ width: '100%', padding: '8px 12px', background: 'var(--bg-tertiary)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '13px', fontFamily: 'var(--font-mono)', boxSizing: 'border-box' }} />
-        {isFetchingModels && <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Fetching available models…</span>}
+        {isFetching && <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Fetching available models…</span>}
         {isBedrock && <span style={{ fontSize: '11px', color: 'var(--text-muted)', lineHeight: 1.4 }}>Copy the model ID from{' '}<button type="button" onClick={() => window.electronAPI.shell.openExternal('https://console.aws.amazon.com/bedrock/')} style={{ background: 'none', border: 'none', color: 'var(--accent-blue)', cursor: 'pointer', textDecoration: 'underline', fontSize: '11px', padding: 0, fontFamily: 'inherit' }}>AWS Bedrock</button>.</span>}
       </>) : (<>
         <select value={isKnownModel ? value : availableModels[0]?.id || ''} onChange={(e) => onChange(e.target.value)} style={{ width: '100%', padding: '8px 12px', background: 'var(--bg-tertiary)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '13px', fontFamily: 'var(--font-sans)' }}>
           {availableModels.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
         </select>
-        {isFetchingModels && <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Refreshing model list…</span>}
+        {isFetching && <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Refreshing model list…</span>}
       </>)}
     </div>
   )

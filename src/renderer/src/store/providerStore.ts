@@ -63,7 +63,8 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
   saveProvider: async (config) => {
     await window.electronAPI.provider.save(config)
     await get().loadProviders()
-    if (config.provider === get().activeProvider && config.defaultModel) {
+    get().setActiveProvider(config.provider)
+    if (config.defaultModel) {
       set({ activeModel: config.defaultModel })
     }
   },

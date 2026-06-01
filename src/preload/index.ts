@@ -68,7 +68,7 @@ export interface ElectronAPI {
     save: (config: Omit<ProviderConfig, 'id'> & Partial<Pick<ProviderConfig, 'id'>>) => Promise<void>
     delete: (provider: string) => Promise<boolean>
     test: (provider: string, config?: any) => Promise<{ success: boolean; error?: string }>
-    models: (provider: string) => Promise<{ id: string; label: string }[]>
+    models: (provider: string, config?: any) => Promise<{ id: string; label: string }[]>
   }
   settings: {
     get: () => Promise<AppSettings>
@@ -279,7 +279,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     save: (config: Omit<ProviderConfig, 'id'> & Partial<Pick<ProviderConfig, 'id'>>) => ipcRenderer.invoke(IPC.PROVIDER_SAVE, config),
     delete: (provider: string) => ipcRenderer.invoke(IPC.PROVIDER_DELETE, provider),
     test: (provider: string, config?: any) => ipcRenderer.invoke(IPC.PROVIDER_TEST, provider, config),
-    models: (provider: string) => ipcRenderer.invoke(IPC.PROVIDER_MODELS, provider)
+    models: (provider: string, config?: any) => ipcRenderer.invoke(IPC.PROVIDER_MODELS, provider, config)
   },
 
   // ── Settings ──

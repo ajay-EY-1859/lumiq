@@ -44,7 +44,7 @@ export function saveApiConfig(config: ProviderConfig): void {
     config.provider,
     encryptedApiKey,
     config.baseUrl || null,
-    config.defaultModel,
+    config.defaultModel || '',
     config.isActive ? 1 : 0,
     encryptedAwsAccessKey,
     encryptedAwsSecretKey,

@@ -539,4 +539,27 @@ function runMigrations(database: Database.Database): void {
   })
 
   migrate()
+
+  // ── Database self-healing: transition Bedrock defaults to us.anthropic.claude-opus-4-1-20250805-v1:0 ──
+  try {
+    database.prepare(`
+      UPDATE api_configs 
+      SET default_model = 'us.anthropic.claude-opus-4-1-20250805-v1:0' 
+      WHERE provider = 'bedrock' AND (default_model = 'anthropic.claude-sonnet-4-20250514-v1:0' OR default_model = '')
+    `).run()
+
+    database.prepare(`
+      UPDATE sessions 
+      SET model = 'us.anthropic.claude-opus-4-1-20250805-v1:0' 
+      WHERE provider = 'bedrock' AND (model = 'anthropic.claude-sonnet-4-20250514-v1:0' OR model = '')
+    `).run()
+
+    database.prepare(`
+      UPDATE settings 
+      SET value = 'us.anthropic.claude-opus-4-1-20250805-v1:0' 
+      WHERE key = 'defaultModel' AND value = 'claude-sonnet-4-20250514'
+    `).run()
+  } catch (err) {
+    console.error('[Database] Failed to execute Bedrock EOL auto-repair:', err)
+  }
 }

@@ -2,6 +2,15 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { useSessionStore } from '@renderer/store/sessionStore'
 import { useEditorStore } from '@renderer/store/editorStore'
 
+const normalizePath = (p: string): string => {
+  let normalized = p.replace(/\\/g, '/')
+  // Normalize Windows drive letter to lowercase
+  if (normalized.match(/^[a-zA-Z]:/)) {
+    normalized = normalized[0].toLowerCase() + normalized.slice(1)
+  }
+  return normalized
+}
+
 interface FileNode {
   name: string
   isDirectory: boolean
@@ -89,18 +98,19 @@ export function ProjectExplorer(): React.JSX.Element {
 
   const loadDir = useCallback(async (dirPath: string, ignores: Set<string> = ignoredPaths): Promise<FileNode[]> => {
     try {
-      const entries = await window.electronAPI.fs.listDir(dirPath)
+      const normalizedDirPath = normalizePath(dirPath)
+      const entries = await window.electronAPI.fs.listDir(normalizedDirPath)
       const nodes = entries.map((e: { name: string, isDirectory: boolean }) => ({
         name: e.name,
         isDirectory: e.isDirectory,
-        path: `${dirPath}/${e.name}`.replace(/\\/g, '/'), // basic normalization
+        path: normalizePath(`${normalizedDirPath}/${e.name}`),
       }))
 
       // Filter ignored
       const workspacePath = activeSession?.workspacePath
       if (!workspacePath) return nodes
 
-      const normalizedWorkspacePath = workspacePath.replace(/\\/g, '/')
+      const normalizedWorkspacePath = normalizePath(workspacePath)
       
       return nodes.filter(node => {
         // compute relative path
@@ -130,6 +140,7 @@ export function ProjectExplorer(): React.JSX.Element {
   useEffect(() => {
     const workspacePath = activeSession?.workspacePath
     if (workspacePath) {
+      const normalizedWorkspacePath = normalizePath(workspacePath)
       // First fetch ignored files
       window.electronAPI.git.getIgnored(workspacePath)
         .then(ignored => {
@@ -138,7 +149,7 @@ export function ProjectExplorer(): React.JSX.Element {
           // Hardcode .git as ignored
           ignoreSet.add('.git')
           setIgnoredPaths(ignoreSet)
-          return loadDir(workspacePath, ignoreSet)
+          return loadDir(normalizedWorkspacePath, ignoreSet)
         })
         .then(setRootNodes)
         .catch(() => setRootNodes([]))
@@ -188,12 +199,13 @@ export function ProjectExplorer(): React.JSX.Element {
   const reloadWorkspace = () => {
     const workspacePath = activeSession?.workspacePath
     if (workspacePath) {
+      const normalizedWorkspacePath = normalizePath(workspacePath)
       window.electronAPI.git.getIgnored(workspacePath)
         .then(ignored => {
           const ignoreSet = new Set(ignored.map(p => p.replace(/\/$/, '')))
           ignoreSet.add('.git')
           setIgnoredPaths(ignoreSet)
-          return loadDir(workspacePath, ignoreSet)
+          return loadDir(normalizedWorkspacePath, ignoreSet)
         })
         .then(setRootNodes)
     }

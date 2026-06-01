@@ -39,6 +39,7 @@ const MODEL_PRICING_REGISTRY: Record<string, ModelPricing> = {
   'gemma2-9b-it': { inputPerMillion: 0.2, outputPerMillion: 0.2 },
 
   // Bedrock
+  'us.anthropic.claude-opus-4-1-20250805-v1:0': { inputPerMillion: 15.0, outputPerMillion: 75.0 },
   'anthropic.claude-sonnet-4-20250514-v1:0': { inputPerMillion: 3.0, outputPerMillion: 15.0 },
   'anthropic.claude-haiku-4-20250506-v1:0': { inputPerMillion: 0.25, outputPerMillion: 1.25 },
   'amazon.titan-text-express-v1': { inputPerMillion: 0.8, outputPerMillion: 1.6 }

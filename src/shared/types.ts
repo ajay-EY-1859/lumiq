@@ -717,6 +717,7 @@ export const PROVIDER_MODELS: Record<ProviderType, { id: string; label: string }
     { id: 'deepseek-coder', label: 'DeepSeek Coder' }
   ],
   bedrock: [
+    { id: 'us.anthropic.claude-opus-4-1-20250805-v1:0', label: 'Claude Opus 4.1 (Bedrock)' },
     { id: 'anthropic.claude-sonnet-4-20250514-v1:0', label: 'Claude Sonnet 4 (Bedrock)' },
     { id: 'anthropic.claude-haiku-4-20250506-v1:0', label: 'Claude Haiku 4 (Bedrock)' },
     { id: 'amazon.titan-text-express-v1', label: 'Titan Text Express' }

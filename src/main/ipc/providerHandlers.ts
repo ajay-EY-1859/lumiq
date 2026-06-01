@@ -114,9 +114,29 @@ export function registerProviderHandlers(): void {
   })
 
   // ── List models for a provider ──
-  handleWithTimeout(IPC.PROVIDER_MODELS, IPC_TIMEOUT.long, async (_event, provider: string) => {
+  handleWithTimeout(IPC.PROVIDER_MODELS, IPC_TIMEOUT.long, async (_event, provider: string, customConfig?: any) => {
     assertProvider(provider)
-    const config = getApiConfig(provider)
+    const existing = getApiConfig(provider)
+    let config: ProviderConfig | null = null
+
+    if (customConfig) {
+      config = {
+        id: customConfig.id || (existing ? existing.id : provider),
+        provider: provider as ProviderType,
+        apiKey: customConfig.apiKey || (existing ? existing.apiKey : undefined),
+        baseUrl: customConfig.baseUrl || (existing ? existing.baseUrl : undefined),
+        defaultModel: customConfig.defaultModel || (existing ? existing.defaultModel : ''),
+        isActive: customConfig.isActive ?? (existing ? existing.isActive : true),
+        authMethod: customConfig.authMethod || (existing ? existing.authMethod : 'apikey'),
+        awsAccessKeyId: customConfig.awsAccessKeyId || (existing ? existing.awsAccessKeyId : undefined),
+        awsSecretAccessKey: customConfig.awsSecretAccessKey || (existing ? existing.awsSecretAccessKey : undefined),
+        awsSessionToken: customConfig.awsSessionToken || (existing ? existing.awsSessionToken : undefined),
+        awsRegion: customConfig.awsRegion || (existing ? existing.awsRegion : 'us-east-1')
+      }
+    } else {
+      config = existing
+    }
+
     if (!config) return []
     try {
       const client = ProviderFactory.create(config)
