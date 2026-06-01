@@ -2,16 +2,19 @@
 // Lumiq — WebFetchTool
 // SECURITY: Only HTTPS URLs allowed (HTTP blocked).
 // Response size limited. No credential forwarding.
+//
+// Scraping strategy (no API key required):
+//   1. Jina AI Reader  — r.jina.ai/<url>  (free, returns clean markdown)
+//   2. Direct HTTP fetch + HTML strip     (fallback)
 // ═══════════════════════════════════════════════════════════════════
 
 import axios from 'axios'
 import { lookup } from 'dns'
 import { promisify } from 'util'
 import type { Tool } from './Tool'
-import { getDatabase } from '../db/database'
 
 const MAX_RESPONSE_SIZE = 5 * 1024 * 1024 // 5MB
-const TIMEOUT = 15000 // 15 seconds
+const TIMEOUT = 20000 // 20 seconds — Jina can be slightly slower
 
 export class WebFetchTool implements Tool {
   name = 'WebFetchTool'
@@ -51,34 +54,39 @@ export class WebFetchTool implements Tool {
         return '[ERROR] Cannot fetch private/internal URLs for security reasons.'
       }
     } catch {
-      // DNS lookup failed, allow the request to continue only if hostname is clearly safe
+      // DNS lookup failed — block the request to be safe (fail-closed).
+      return '[ERROR] DNS resolution failed. Cannot verify the target is a public host.'
     }
 
+    // ── Strategy 1: Jina AI Reader (free, no API key needed) ──────
+    // Prepend r.jina.ai/ to get a clean markdown version of any page.
     try {
-      const firecrawlApiKey = getFirecrawlApiKey()
-      if (firecrawlApiKey) {
-        try {
-          const firecrawl = await axios.post(
-            'https://api.firecrawl.dev/v1/scrape',
-            { url, formats: ['markdown'] },
-            {
-              timeout: TIMEOUT,
-              signal,
-              headers: {
-                Authorization: `Bearer ${firecrawlApiKey}`,
-                'Content-Type': 'application/json'
-              }
-            }
-          )
-          const markdown = firecrawl.data?.data?.markdown || firecrawl.data?.markdown
-          if (typeof markdown === 'string' && markdown.trim()) {
-            return markdown.slice(0, 50000)
-          }
-        } catch {
-          // Fall through to the direct HTTP fetch path when Firecrawl is unavailable.
+      const jinaUrl = `https://r.jina.ai/${url}`
+      const jinaResponse = await axios.get(jinaUrl, {
+        timeout: TIMEOUT,
+        signal,
+        maxContentLength: MAX_RESPONSE_SIZE,
+        maxRedirects: 3,
+        headers: {
+          'User-Agent': 'Lumiq/1.0 (Desktop AI Client)',
+          // Ask Jina for plain text markdown output
+          Accept: 'text/plain, text/markdown, */*'
         }
-      }
+      })
+      const text =
+        typeof jinaResponse.data === 'string'
+          ? jinaResponse.data.trim()
+          : JSON.stringify(jinaResponse.data)
 
+      if (text && text.length > 100) {
+        return text.slice(0, 50000)
+      }
+    } catch {
+      // Jina unavailable or rate-limited — fall through to direct fetch.
+    }
+
+    // ── Strategy 2: Direct HTTP fetch + HTML strip (fallback) ─────
+    try {
       const response = await axios.get(url, {
         timeout: TIMEOUT,
         maxContentLength: MAX_RESPONSE_SIZE,
@@ -87,7 +95,6 @@ export class WebFetchTool implements Tool {
           'User-Agent': 'Lumiq/1.0 (Desktop AI Client)',
           Accept: 'text/html,text/plain,application/json'
         },
-        // Don't follow too many redirects
         maxRedirects: 3
       })
 
@@ -95,9 +102,8 @@ export class WebFetchTool implements Tool {
       const body =
         typeof response.data === 'string' ? response.data : JSON.stringify(response.data, null, 2)
 
-      // Strip HTML tags for readability
       if (String(contentType).includes('text/html')) {
-        return stripHtml(body).slice(0, 50000) // Limit output size
+        return stripHtml(body).slice(0, 50000)
       }
 
       return body.slice(0, 50000)
@@ -112,27 +118,22 @@ export class WebFetchTool implements Tool {
 
 const lookupAsync = promisify(lookup)
 
-function getFirecrawlApiKey(): string {
-  const row = getDatabase().prepare("SELECT value FROM settings WHERE key = 'firecrawlApiKey'").get() as { value: string } | undefined
-  return row?.value?.trim() || ''
-}
-
 function isPrivateIP(hostname: string): boolean {
   // Block common private IP ranges (SSRF prevention)
-  const privatePatterns = [
-    /^10\./,
-    /^172\.(1[6-9]|2\d|3[01])\./,
-    /^192\.168\./,
-    /^127\./,
-    /^0\./,
-    /^169\.254\./, // link-local
-    /^localhost$/i,
-    /^::1$/,
-    /^fc/i,
-    /^fd/i,
-    /^fe80/i
-  ]
-  return privatePatterns.some((p) => p.test(hostname))
+  const h = hostname.toLowerCase()
+  if (h === 'localhost' || h === '::1') return true
+  if (/^127\./.test(h)) return true
+  if (/^0\./.test(h)) return true
+  if (/^10\./.test(h)) return true
+  // 172.16.0.0/12 (172.16.x.x – 172.31.x.x)
+  const m = h.match(/^172\.(\d+)\./)
+  if (m && parseInt(m[1], 10) >= 16 && parseInt(m[1], 10) <= 31) return true
+  if (/^192\.168\./.test(h)) return true
+  if (/^169\.254\./.test(h)) return true // link-local
+  if (/^fc[0-9a-f]{2}:/i.test(h)) return true
+  if (/^fd[0-9a-f]{2}:/i.test(h)) return true
+  if (/^fe80/i.test(h)) return true
+  return false
 }
 
 function stripHtml(html: string): string {

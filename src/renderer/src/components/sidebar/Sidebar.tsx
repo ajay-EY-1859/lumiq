@@ -152,7 +152,7 @@ export function Sidebar({ isVisible, onNavigate, currentPage }: SidebarProps): R
           </div>
         ) : (
           <div className="flex-1 overflow-hidden bg-white/30 dark:bg-black/20">
-            <ProjectExplorer />
+            <ProjectExplorer onNavigate={onNavigate} onSelectTab={setActiveTab} />
           </div>
         )}
 

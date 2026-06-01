@@ -135,6 +135,9 @@ function createMenu(): void {
           }
         },
         { type: 'separator' },
+        { role: 'reload' },
+        { role: 'forceReload' },
+        { type: 'separator' },
         { role: 'toggleDevTools' },
         { type: 'separator' },
         { role: 'resetZoom' },

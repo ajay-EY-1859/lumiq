@@ -185,22 +185,25 @@ Headers:
       const parsed = new URL(url)
       const hostname = parsed.hostname.toLowerCase()
 
-      // Block localhost
+      // Block localhost variants
       if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') {
         return true
       }
 
-      // Block private IP ranges
-      if (
-        hostname.startsWith('192.168.') ||
-        hostname.startsWith('10.') ||
-        hostname.startsWith('172.1') ||
-        hostname.startsWith('169.254.') ||
-        hostname.startsWith('fc00:') ||
-        hostname.startsWith('fe80:')
-      ) {
-        return true
-      }
+      // Block private IP ranges (RFC 1918 + link-local + loopback)
+      // 10.0.0.0/8
+      if (/^10\./.test(hostname)) return true
+      // 172.16.0.0/12  (172.16.x.x – 172.31.x.x)
+      const m = hostname.match(/^172\.(\d+)\./)
+      if (m && parseInt(m[1], 10) >= 16 && parseInt(m[1], 10) <= 31) return true
+      // 192.168.0.0/16
+      if (/^192\.168\./.test(hostname)) return true
+      // 169.254.0.0/16 link-local
+      if (/^169\.254\./.test(hostname)) return true
+      // IPv6 private
+      if (/^fc[0-9a-f]{2}:/i.test(hostname)) return true
+      if (/^fd[0-9a-f]{2}:/i.test(hostname)) return true
+      if (/^fe80:/i.test(hostname)) return true
 
       return false
     } catch {

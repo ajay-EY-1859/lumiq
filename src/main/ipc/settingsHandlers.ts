@@ -12,8 +12,8 @@ import { DEFAULT_TOOL_SETTINGS, mergeToolSettings } from '../tools/defaultToolSe
 import { handleWithTimeout, IPC_TIMEOUT } from './handleWithTimeout'
 import { TraceLogger } from '../services/TraceLogger'
 import { CostManager } from '../services/CostManager'
-import { join } from 'path'
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
+import { join, resolve, relative } from 'path'
+import { existsSync, readFileSync, writeFileSync, mkdirSync, realpathSync } from 'fs'
 
 const SETTINGS_KEYS = new Set([
   'theme',
@@ -57,6 +57,28 @@ function normalizeSettingValue(key: string, value: unknown): string {
     default:
       throw new Error(`Unsupported setting: ${key}`)
   }
+}
+
+// ─── Workspace path safety helper ─────────────────────────────────
+// Ensures the settings file we read/write is strictly inside the
+// declared workspace directory (prevents path-traversal attacks).
+function safeWorkspaceSettingsPath(workspacePath: string): string {
+  if (typeof workspacePath !== 'string' || workspacePath.includes('\0')) {
+    throw new Error('Invalid workspace path')
+  }
+  const resolvedWorkspace = resolve(workspacePath)
+  const settingsPath = join(resolvedWorkspace, '.lumiq', 'settings.json')
+  const resolvedSettings = resolve(settingsPath)
+
+  // Resolve symlinks if the directory already exists
+  let realWorkspace = resolvedWorkspace
+  try { realWorkspace = realpathSync(resolvedWorkspace) } catch { /* not yet created */ }
+
+  const rel = relative(realWorkspace, resolvedSettings)
+  if (rel.startsWith('..') || rel.includes('..\\') || rel.includes('../')) {
+    throw new Error('Path traversal detected in workspace settings path')
+  }
+  return resolvedSettings
 }
 
 export function registerSettingsHandlers(): void {
@@ -104,7 +126,7 @@ export function registerSettingsHandlers(): void {
   handleWithTimeout(IPC.SETTINGS_WORKSPACE_GET, IPC_TIMEOUT.short, (_event, workspacePath: string): Partial<AppSettings> => {
     if (!workspacePath) return {}
     try {
-      const settingsPath = join(workspacePath, '.lumiq', 'settings.json')
+      const settingsPath = safeWorkspaceSettingsPath(workspacePath)
       if (existsSync(settingsPath)) {
         const content = readFileSync(settingsPath, 'utf-8')
         return JSON.parse(content)
@@ -119,12 +141,11 @@ export function registerSettingsHandlers(): void {
   handleWithTimeout(IPC.SETTINGS_WORKSPACE_SET, IPC_TIMEOUT.short, (_event, data: { workspacePath: string, settings: Partial<AppSettings> }) => {
     if (!data.workspacePath) return
     try {
-      const lumiqDir = join(data.workspacePath, '.lumiq')
+      const settingsPath = safeWorkspaceSettingsPath(data.workspacePath)
+      const lumiqDir = join(resolve(data.workspacePath), '.lumiq')
       if (!existsSync(lumiqDir)) {
         mkdirSync(lumiqDir, { recursive: true })
       }
-      
-      const settingsPath = join(lumiqDir, 'settings.json')
       
       let currentSettings = {}
       if (existsSync(settingsPath)) {

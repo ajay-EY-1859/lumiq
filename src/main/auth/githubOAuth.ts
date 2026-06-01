@@ -190,7 +190,13 @@ async function exchangeCodeForTokens(
 
   return {
     accessToken: data.access_token,
-    expiresAt: Date.now() + 365 * 24 * 60 * 60 * 1000,
+    // GitHub classic tokens do not carry an expiry in the token-exchange response.
+    // Fine-grained tokens do (data.expires_in seconds).  Use the server-provided
+    // value when available; otherwise treat the token as valid for 1 year so the
+    // stored record is not immediately considered expired.
+    expiresAt: data.expires_in
+      ? Date.now() + data.expires_in * 1000
+      : Date.now() + 365 * 24 * 60 * 60 * 1000,
     tokenType: data.token_type || 'Bearer',
     scope: data.scope
   }

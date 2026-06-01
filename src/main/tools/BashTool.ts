@@ -166,7 +166,9 @@ export class BashTool implements Tool {
     }
 
     return new Promise((resolve) => {
-      const shellPath = process.platform === 'win32' ? process.env.SHELL || 'bash' : '/bin/bash'
+      // SECURITY: On Windows use cmd.exe explicitly; never rely on SHELL env var
+      // which may be undefined or point to an untrusted binary.
+      const shellPath = process.platform === 'win32' ? 'cmd.exe' : '/bin/bash'
       const child = exec(
         command,
         {

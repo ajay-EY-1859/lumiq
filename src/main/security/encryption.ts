@@ -166,7 +166,6 @@ export function sanitizeForLogging(text: string): string {
     .replace(/sk-[a-zA-Z0-9]{20,}/g, '[OPENAI_KEY_REDACTED]')
     .replace(/AIza[a-zA-Z0-9_-]{30,}/g, '[GOOGLE_KEY_REDACTED]')
     .replace(/AKIA[A-Z0-9]{12,}/g, '[AWS_KEY_REDACTED]')
-    .replace(/(?<=[a-zA-Z0-9])[a-zA-Z0-9]{20,}(?=[a-zA-Z0-9])/g, '[KEY_REDACTED]')
 }
 
 /**

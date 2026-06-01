@@ -188,11 +188,13 @@ function ProviderSetupPanel({ info, existing, onSave, onTest, onDelete, onClose,
       setDynamicModels(mapped)
       setValidationStatus('success')
 
-      if (mapped.length > 0) {
-        const hasExistingModel = mapped.some(m => m.id === defaultModel)
-        if (!hasExistingModel) {
-          setDefaultModel(mapped[0].id)
-        }
+      // BUGFIX: Only auto-select the first fetched model when the current
+      // defaultModel is completely empty.  If the user has already typed a
+      // custom model ID (or one was loaded from the DB), we must NOT replace
+      // it — even if it doesn't appear in the fetched list (it may be a
+      // fine-grained / private model the API doesn't enumerate).
+      if (mapped.length > 0 && !defaultModel) {
+        setDefaultModel(mapped[0].id)
       }
     } catch (err) {
       setValidationStatus('error')
@@ -366,13 +368,24 @@ function ModelSelector({ providerId, value, onChange, availableModels: propModel
   const staticModels = useMemo(() => PROVIDER_MODELS[providerId] || [], [providerId])
   const [remoteModels, setRemoteModels] = useState<{ id: string; label: string }[]>([])
   const [isFetchingModels, setIsFetchingModels] = useState(false)
+
+  // Determine whether to start in custom-ID mode:
+  // - Bedrock and custom providers always use custom input
+  // - If the saved model ID is not in the static list, treat it as custom
   const shouldDefaultCustom = providerId === 'bedrock' || providerId === 'custom' || (Boolean(value) && !staticModels.some((m) => m.id === value))
   const [useCustom, setUseCustom] = useState<boolean>(shouldDefaultCustom)
   const [customModel, setCustomModel] = useState(value)
   const isBedrock = providerId === 'bedrock'
   const inputRef = useRef<HTMLInputElement>(null)
 
+  // Keep customModel in sync when the parent value changes (e.g. provider switch)
   useEffect(() => { setCustomModel(value) }, [value])
+
+  // Re-evaluate custom mode when the provider or value changes
+  useEffect(() => {
+    const isCustom = providerId === 'bedrock' || providerId === 'custom' || (Boolean(value) && !staticModels.some((m) => m.id === value))
+    setUseCustom(isCustom)
+  }, [providerId, value, staticModels])
 
   useEffect(() => {
     if (useCustom && inputRef.current) {
@@ -410,22 +423,48 @@ function ModelSelector({ providerId, value, onChange, availableModels: propModel
   const availableModels = propModels !== undefined ? propModels : (remoteModels.length > 0 ? remoteModels : staticModels)
   const isFetching = propFetching !== undefined ? propFetching : isFetchingModels
   const hasModelList = availableModels.length > 0
-  const isKnownModel = availableModels.some((m) => m.id === value)
 
-  useEffect(() => { if (!value && !useCustom && availableModels.length > 0) onChange(availableModels[0].id) }, [availableModels, useCustom, value, onChange])
+  // Only auto-select the first model when:
+  // 1. We are NOT in custom mode
+  // 2. There is no value yet (empty string)
+  // 3. Models have loaded
+  useEffect(() => {
+    if (!useCustom && !value && availableModels.length > 0) {
+      onChange(availableModels[0].id)
+    }
+  }, [availableModels, useCustom, value, onChange])
 
   const commitCustomModel = (rawValue: string): void => {
     const trimmed = rawValue.trim()
     if (trimmed) { onChange(trimmed); setCustomModel(trimmed); return }
-    if (hasModelList) { const fallback = availableModels[0]?.id || ''; onChange(fallback); setCustomModel(fallback) } else { onChange('') }
+    if (hasModelList && !useCustom) { const fallback = availableModels[0]?.id || ''; onChange(fallback); setCustomModel(fallback) } else { onChange('') }
+  }
+
+  // Switch from custom → dropdown: restore to first known model
+  const handleSwitchToDropdown = (): void => {
+    setUseCustom(false)
+    // If the current value is not in the list, reset to first available
+    if (!availableModels.some((m) => m.id === value)) {
+      const fallback = availableModels[0]?.id || ''
+      onChange(fallback)
+      setCustomModel(fallback)
+    }
+  }
+
+  // Switch from dropdown → custom: keep the current value as the starting text
+  const handleSwitchToCustom = (): void => {
+    setUseCustom(true)
+    setCustomModel(value)
   }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
         <label style={{ fontSize: '13px', fontWeight: 500, color: 'var(--text-secondary)', display: 'block' }}>Default Model</label>
-        <button type="button" onClick={useCustom ? () => { setUseCustom(false); if (!availableModels.some((m) => m.id === value)) onChange(availableModels[0]?.id || '') } : () => { setUseCustom(true); setCustomModel(value) }}
-          disabled={!hasModelList && useCustom} title={useCustom ? 'Select from predefined models' : 'Enter a custom model ID'}
+        <button type="button"
+          onClick={useCustom ? handleSwitchToDropdown : handleSwitchToCustom}
+          disabled={!hasModelList && useCustom}
+          title={useCustom ? 'Select from predefined models' : 'Enter a custom model ID'}
           style={{ padding: '4px 8px', background: useCustom ? 'rgba(37,99,235,0.1)' : 'var(--bg-tertiary)', border: `1px solid ${useCustom ? 'var(--accent-blue)' : 'var(--border)'}`, borderRadius: '6px', color: useCustom ? 'var(--accent-blue)' : 'var(--text-secondary)', cursor: !hasModelList && useCustom ? 'default' : 'pointer', fontSize: '11px', fontFamily: 'var(--font-sans)', fontWeight: 600, opacity: !hasModelList && useCustom ? 0.7 : 1 }}>
           {useCustom ? 'Custom ID' : 'Use Custom ID'}
         </button>
@@ -437,6 +476,7 @@ function ModelSelector({ providerId, value, onChange, availableModels: propModel
           onChange={(e) => {
             const val = e.target.value
             setCustomModel(val)
+            // Propagate every keystroke so the parent always has the latest value
             onChange(val)
           }}
           onBlur={() => commitCustomModel(customModel)}
@@ -446,7 +486,7 @@ function ModelSelector({ providerId, value, onChange, availableModels: propModel
         {isFetching && <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Fetching available models…</span>}
         {isBedrock && <span style={{ fontSize: '11px', color: 'var(--text-muted)', lineHeight: 1.4 }}>Copy the model ID from{' '}<button type="button" onClick={() => window.electronAPI.shell.openExternal('https://console.aws.amazon.com/bedrock/')} style={{ background: 'none', border: 'none', color: 'var(--accent-blue)', cursor: 'pointer', textDecoration: 'underline', fontSize: '11px', padding: 0, fontFamily: 'inherit' }}>AWS Bedrock</button>.</span>}
       </>) : (<>
-        <select value={isKnownModel ? value : availableModels[0]?.id || ''} onChange={(e) => onChange(e.target.value)} style={{ width: '100%', padding: '8px 12px', background: 'var(--bg-tertiary)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '13px', fontFamily: 'var(--font-sans)' }}>
+        <select value={value} onChange={(e) => onChange(e.target.value)} style={{ width: '100%', padding: '8px 12px', background: 'var(--bg-tertiary)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '13px', fontFamily: 'var(--font-sans)' }}>
           {availableModels.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
         </select>
         {isFetching && <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Refreshing model list…</span>}

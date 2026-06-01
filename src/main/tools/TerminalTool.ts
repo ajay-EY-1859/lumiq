@@ -201,6 +201,16 @@ export class TerminalTool implements Tool {
       return '[ERROR] "input" is required for action: write'
     }
 
+    // SECURITY: Validate stdin input through the same security chain as the
+    // initial command. This prevents injecting dangerous commands into an
+    // already-running session via the write action.
+    const security = process.platform === 'win32'
+      ? validatePowerShellCommand(input.input)
+      : validateBashCommand(input.input)
+    if (!security.safe) {
+      return `[SECURITY BLOCKED] ${security.reason}`
+    }
+
     const session = SESSIONS.get(input.sessionId)
     if (!session) {
       return `[ERROR] Session not found: ${input.sessionId}`

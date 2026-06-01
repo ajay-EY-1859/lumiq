@@ -1,302 +1,486 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useSessionStore } from '@renderer/store/sessionStore'
 import { useEditorStore } from '@renderer/store/editorStore'
+import { useChatStore } from '@renderer/store/chatStore'
 
+
+// ── Helpers ──────────────────────────────────────────────────────────
 const normalizePath = (p: string): string => {
-  let normalized = p.replace(/\\/g, '/')
-  // Normalize Windows drive letter to lowercase
-  if (normalized.match(/^[a-zA-Z]:/)) {
-    normalized = normalized[0].toLowerCase() + normalized.slice(1)
-  }
-  return normalized
+  let n = p.replace(/\\/g, '/')
+  if (n.match(/^[a-zA-Z]:/)) n = n[0].toLowerCase() + n.slice(1)
+  return n
 }
 
+function getFileIcon(name: string, isDir: boolean, isOpen?: boolean): string {
+  if (isDir) return isOpen ? '▾ 📂' : '▸ 📁'
+  const ext = name.split('.').pop()?.toLowerCase() ?? ''
+  const icons: Record<string, string> = {
+    ts: '🔷', tsx: '🔷', js: '🟨', jsx: '🟨', json: '📋',
+    css: '🎨', scss: '🎨', html: '🌐', md: '📝', py: '🐍',
+    yml: '⚙️', yaml: '⚙️', sh: '💻', ps1: '💻', sql: '🗄️',
+    png: '🖼️', jpg: '🖼️', jpeg: '🖼️', svg: '🖼️', gif: '🖼️',
+    env: '🔒', gitignore: '🚫', lock: '🔒',
+  }
+  return icons[ext] ?? '📄'
+}
+
+// ── Types ─────────────────────────────────────────────────────────────
 interface FileNode {
   name: string
   isDirectory: boolean
   path: string
   children?: FileNode[]
   isOpen?: boolean
+  isLoading?: boolean
 }
 
-function TreeNode({ node, level, onToggle, onSelect, onContextMenu, renamingNode, renameValue, onRenameChange, onRenameSubmit, onRenameCancel }: { node: FileNode; level: number; onToggle: (node: FileNode) => void; onSelect: (node: FileNode) => void; onContextMenu: (e: React.MouseEvent, node: FileNode) => void; renamingNode: FileNode | null; renameValue: string; onRenameChange: (v: string) => void; onRenameSubmit: () => void; onRenameCancel: () => void }): React.JSX.Element {
+type ContextMenuState = { x: number; y: number; node: FileNode } | null
+type CreatingState = { parentPath: string; type: 'file' | 'folder' } | null
+
+// ── TreeNode ──────────────────────────────────────────────────────────
+function TreeNode({
+  node, level, activeFilePath, onToggle, onSelect, onContextMenu,
+  renamingNode, renameValue, onRenameChange, onRenameSubmit, onRenameCancel,
+  creatingIn, createValue, onCreateChange, onCreateSubmit, onCreateCancel,
+}: {
+  node: FileNode; level: number; activeFilePath: string | null
+  onToggle: (node: FileNode) => void
+  onSelect: (node: FileNode) => void
+  onContextMenu: (e: React.MouseEvent, node: FileNode) => void
+  renamingNode: FileNode | null; renameValue: string
+  onRenameChange: (v: string) => void; onRenameSubmit: () => void; onRenameCancel: () => void
+  creatingIn: CreatingState; createValue: string
+  onCreateChange: (v: string) => void; onCreateSubmit: () => void; onCreateCancel: () => void
+}): React.JSX.Element {
   const isRenaming = renamingNode?.path === node.path
-  
+  const isActive = !node.isDirectory && activeFilePath === node.path
+  const isCreatingHere = creatingIn?.parentPath === node.path
+
   return (
     <div>
+      {/* Row */}
       <div
-        onClick={() => {
-          if (!isRenaming) {
-            node.isDirectory ? onToggle(node) : onSelect(node)
-          }
-        }}
+        role={node.isDirectory ? 'button' : 'button'}
+        tabIndex={0}
+        aria-expanded={node.isDirectory ? node.isOpen : undefined}
+        onClick={() => { if (!isRenaming) { node.isDirectory ? onToggle(node) : onSelect(node) } }}
+        onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && !isRenaming) { node.isDirectory ? onToggle(node) : onSelect(node) } }}
         onContextMenu={(e) => onContextMenu(e, node)}
         style={{
-          padding: `4px 8px 4px ${8 + level * 12}px`,
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '6px',
-          fontSize: '13px',
-          color: 'var(--text-secondary)',
-          borderRadius: '4px',
-          transition: 'background var(--transition-fast)'
+          padding: `3px 8px 3px ${8 + level * 14}px`,
+          cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px',
+          fontSize: '13px', borderRadius: '4px', userSelect: 'none',
+          background: isActive ? 'var(--accent-blue-dim, rgba(37,99,235,0.18))' : 'transparent',
+          color: isActive ? 'var(--accent-blue)' : 'var(--text-secondary)',
+          transition: 'background 0.1s',
+          outline: 'none',
         }}
-        onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-tertiary)'; e.currentTarget.style.color = 'var(--text-primary)' }}
-        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--text-secondary)' }}
+        onMouseEnter={(e) => { if (!isActive) { e.currentTarget.style.background = 'var(--bg-tertiary)'; e.currentTarget.style.color = 'var(--text-primary)' } }}
+        onMouseLeave={(e) => { if (!isActive) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--text-secondary)' } }}
       >
-        <span style={{ fontSize: '14px', width: '16px', textAlign: 'center' }}>
-          {node.isDirectory ? (node.isOpen ? '📂' : '📁') : '📄'}
+        <span style={{ fontSize: '12px', flexShrink: 0, lineHeight: 1 }}>
+          {node.isLoading ? '⏳' : getFileIcon(node.name, node.isDirectory, node.isOpen)}
         </span>
         {isRenaming ? (
-          <input
-            autoFocus
-            value={renameValue}
-            onChange={(e) => onRenameChange(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') onRenameSubmit()
-              if (e.key === 'Escape') onRenameCancel()
-            }}
-            onBlur={onRenameCancel}
-            onClick={(e) => e.stopPropagation()}
-            style={{ 
-              background: 'var(--bg-secondary)', border: '1px solid var(--accent-blue)', 
-              color: 'var(--text-primary)', padding: '2px 4px', fontSize: '13px', 
-              borderRadius: '2px', outline: 'none', flex: 1 
-            }}
-          />
+          <input autoFocus value={renameValue} onChange={(e) => onRenameChange(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') onRenameSubmit(); if (e.key === 'Escape') onRenameCancel() }}
+            onBlur={onRenameCancel} onClick={(e) => e.stopPropagation()}
+            style={{ background: 'var(--bg-secondary)', border: '1px solid var(--accent-blue)', color: 'var(--text-primary)', padding: '1px 4px', fontSize: '13px', borderRadius: '3px', outline: 'none', flex: 1, minWidth: 0 }} />
         ) : (
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{node.name}</span>
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{node.name}</span>
         )}
       </div>
-      {node.isDirectory && node.isOpen && node.children && (
+
+      {/* Children */}
+      {node.isDirectory && node.isOpen && (
         <div>
-          {node.children.map(child => (
-            <TreeNode 
-              key={child.path} node={child} level={level + 1} 
-              onToggle={onToggle} onSelect={onSelect} onContextMenu={onContextMenu}
-              renamingNode={renamingNode} renameValue={renameValue}
-              onRenameChange={onRenameChange} onRenameSubmit={onRenameSubmit} onRenameCancel={onRenameCancel}
-            />
-          ))}
+          {/* Inline create input */}
+          {isCreatingHere && (
+            <div style={{ padding: `3px 8px 3px ${8 + (level + 1) * 14}px`, display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <span style={{ fontSize: '12px' }}>{creatingIn?.type === 'folder' ? '📁' : '📄'}</span>
+              <input autoFocus value={createValue} onChange={(e) => onCreateChange(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') onCreateSubmit(); if (e.key === 'Escape') onCreateCancel() }}
+                onBlur={onCreateCancel} placeholder={creatingIn?.type === 'folder' ? 'folder name' : 'file name'}
+                style={{ background: 'var(--bg-secondary)', border: '1px solid var(--accent-blue)', color: 'var(--text-primary)', padding: '2px 6px', fontSize: '13px', borderRadius: '3px', outline: 'none', flex: 1, minWidth: 0 }} />
+            </div>
+          )}
+          {node.children && node.children.length > 0 ? (
+            node.children.map(child => (
+              <TreeNode key={child.path} node={child} level={level + 1} activeFilePath={activeFilePath}
+                onToggle={onToggle} onSelect={onSelect} onContextMenu={onContextMenu}
+                renamingNode={renamingNode} renameValue={renameValue}
+                onRenameChange={onRenameChange} onRenameSubmit={onRenameSubmit} onRenameCancel={onRenameCancel}
+                creatingIn={creatingIn} createValue={createValue}
+                onCreateChange={onCreateChange} onCreateSubmit={onCreateSubmit} onCreateCancel={onCreateCancel} />
+            ))
+          ) : (
+            !isCreatingHere && (
+              <div style={{ padding: `3px 8px 3px ${8 + (level + 1) * 14}px`, fontSize: '12px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                empty
+              </div>
+            )
+          )}
         </div>
       )}
     </div>
   )
 }
 
-export function ProjectExplorer(): React.JSX.Element {
+interface ProjectExplorerProps {
+  onNavigate?: (page: 'chat' | 'settings' | 'agents') => void
+  onSelectTab?: (tab: 'sessions' | 'explorer') => void
+}
+
+// ── Main Component ────────────────────────────────────────────────────
+export function ProjectExplorer({ onNavigate, onSelectTab }: ProjectExplorerProps): React.JSX.Element {
   const { activeSessionId, sessions } = useSessionStore()
-  const { openFile } = useEditorStore()
+  const { openFile, activeTabId } = useEditorStore()
   const activeSession = sessions.find((s) => s.id === activeSessionId)
+  const workspacePath = activeSession?.workspacePath ?? null
+
   const [rootNodes, setRootNodes] = useState<FileNode[]>([])
   const [ignoredPaths, setIgnoredPaths] = useState<Set<string>>(new Set())
-  
-  const [contextMenu, setContextMenu] = useState<{ x: number, y: number, node: FileNode } | null>(null)
+  const [contextMenu, setContextMenu] = useState<ContextMenuState>(null)
   const [renamingNode, setRenamingNode] = useState<FileNode | null>(null)
   const [renameValue, setRenameValue] = useState('')
+  const [creatingIn, setCreatingIn] = useState<CreatingState>(null)
+  const [createValue, setCreateValue] = useState('')
+  const [isLoading, setIsLoading] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const ignoredRef = useRef<Set<string>>(new Set())
 
-  const loadDir = useCallback(async (dirPath: string, ignores: Set<string> = ignoredPaths): Promise<FileNode[]> => {
+  // Keep ref in sync so loadDir closure always has fresh ignores
+  useEffect(() => { ignoredRef.current = ignoredPaths }, [ignoredPaths])
+
+  const loadDir = useCallback(async (dirPath: string): Promise<FileNode[]> => {
     try {
-      const normalizedDirPath = normalizePath(dirPath)
-      const entries = await window.electronAPI.fs.listDir(normalizedDirPath)
-      const nodes = entries.map((e: { name: string, isDirectory: boolean }) => ({
+      const norm = normalizePath(dirPath)
+      const entries: { name: string; isDirectory: boolean }[] = await window.electronAPI.fs.listDir(norm)
+      const ws = workspacePath ? normalizePath(workspacePath) : ''
+      const ignores = ignoredRef.current
+
+      const nodes: FileNode[] = entries.map((e) => ({
         name: e.name,
         isDirectory: e.isDirectory,
-        path: normalizePath(`${normalizedDirPath}/${e.name}`),
+        path: normalizePath(`${norm}/${e.name}`),
       }))
 
-      // Filter ignored
-      const workspacePath = activeSession?.workspacePath
-      if (!workspacePath) return nodes
-
-      const normalizedWorkspacePath = normalizePath(workspacePath)
-      
-      return nodes.filter(node => {
-        // compute relative path
-        let rel = node.path.replace(normalizedWorkspacePath, '')
+      return nodes.filter((node) => {
+        if (!ws) return true
+        let rel = node.path.replace(ws, '')
         if (rel.startsWith('/')) rel = rel.slice(1)
-        
-        // Also check if any parent directory is ignored
         const parts = rel.split('/')
         for (let i = 1; i <= parts.length; i++) {
-          const subPath = parts.slice(0, i).join('/')
-          if (ignores.has(subPath)) return false
+          if (ignores.has(parts.slice(0, i).join('/'))) return false
         }
         return true
       })
-    } catch (e) {
-      console.error(e)
+    } catch {
       return []
     }
-  }, [ignoredPaths, activeSession])
+  }, [workspacePath])
 
+  // ── Initial load ──────────────────────────────────────────────────
+  const loadWorkspace = useCallback(async () => {
+    if (!workspacePath) { setRootNodes([]); return }
+    setIsLoading(true)
+    try {
+      const ignored = await window.electronAPI.git.getIgnored(workspacePath).catch(() => [] as string[])
+      const ignoreSet = new Set(ignored.map((p: string) => p.replace(/\/$/, '')))
+      ignoreSet.add('.git')
+      ignoredRef.current = ignoreSet
+      setIgnoredPaths(ignoreSet)
+      const nodes = await loadDir(workspacePath)
+      setRootNodes(nodes)
+    } finally {
+      setIsLoading(false)
+    }
+  }, [workspacePath, loadDir])
+
+  useEffect(() => { loadWorkspace() }, [loadWorkspace])
+
+  // Close context menu on outside click
   useEffect(() => {
-    const handleGlobalClick = () => setContextMenu(null)
-    window.addEventListener('click', handleGlobalClick)
-    return () => window.removeEventListener('click', handleGlobalClick)
+    const handler = () => setContextMenu(null)
+    window.addEventListener('click', handler)
+    return () => window.removeEventListener('click', handler)
   }, [])
 
-  useEffect(() => {
-    const workspacePath = activeSession?.workspacePath
-    if (workspacePath) {
-      const normalizedWorkspacePath = normalizePath(workspacePath)
-      // First fetch ignored files
-      window.electronAPI.git.getIgnored(workspacePath)
-        .then(ignored => {
-          // git ls-files outputs directories with trailing slashes, so let's normalize
-          const ignoreSet = new Set(ignored.map(p => p.replace(/\/$/, '')))
-          // Hardcode .git as ignored
-          ignoreSet.add('.git')
-          setIgnoredPaths(ignoreSet)
-          return loadDir(normalizedWorkspacePath, ignoreSet)
-        })
-        .then(setRootNodes)
-        .catch(() => setRootNodes([]))
-    } else {
-      setRootNodes([])
-      setIgnoredPaths(new Set())
-    }
-  }, [activeSession?.workspacePath, loadDir])
+  // ── Immutable tree updater ────────────────────────────────────────
+  const updateTree = useCallback((
+    nodes: FileNode[], targetPath: string, updates: Partial<FileNode>
+  ): FileNode[] => {
+    return nodes.map((n) => {
+      if (n.path === targetPath) return { ...n, ...updates }
+      if (n.children) return { ...n, children: updateTree(n.children, targetPath, updates) }
+      return n
+    })
+  }, [])
 
-  const toggleNode = async (node: FileNode) => {
+  // ── Toggle folder ─────────────────────────────────────────────────
+  const toggleNode = useCallback(async (node: FileNode) => {
     if (!node.isDirectory) return
 
     if (node.isOpen) {
-      updateNode(rootNodes, node.path, { isOpen: false })
+      // Collapse — keep children cached for instant re-open
+      setRootNodes((prev) => updateTree(prev, node.path, { isOpen: false }))
+      return
+    }
+
+    // Expand — load children if not yet loaded
+    if (!node.children) {
+      // Show loading spinner immediately
+      setRootNodes((prev) => updateTree(prev, node.path, { isOpen: true, isLoading: true }))
+      const children = await loadDir(node.path)
+      setRootNodes((prev) => updateTree(prev, node.path, { isOpen: true, isLoading: false, children }))
     } else {
-      if (!node.children) {
-        const children = await loadDir(node.path)
-        updateNode(rootNodes, node.path, { isOpen: true, children })
-      } else {
-        updateNode(rootNodes, node.path, { isOpen: true })
-      }
+      setRootNodes((prev) => updateTree(prev, node.path, { isOpen: true }))
     }
-  }
+  }, [loadDir, updateTree])
 
-  const updateNode = (nodes: FileNode[], path: string, updates: Partial<FileNode>) => {
-    const newNodes = [...nodes]
-    const dfs = (list: FileNode[]): boolean => {
-      for (let i = 0; i < list.length; i++) {
-        if (list[i].path === path) {
-          list[i] = { ...list[i], ...updates }
-          return true
-        }
-        if (list[i].children) {
-          const newChildren: FileNode[] = [...(list[i].children || [])]
-          if (dfs(newChildren)) {
-            list[i] = { ...list[i], children: newChildren }
-            return true
-          }
-        }
-      }
-      return false
-    }
-    dfs(newNodes)
-    setRootNodes(newNodes)
-  }
-
-  const reloadWorkspace = () => {
-    const workspacePath = activeSession?.workspacePath
-    if (workspacePath) {
-      const normalizedWorkspacePath = normalizePath(workspacePath)
-      window.electronAPI.git.getIgnored(workspacePath)
-        .then(ignored => {
-          const ignoreSet = new Set(ignored.map(p => p.replace(/\/$/, '')))
-          ignoreSet.add('.git')
-          setIgnoredPaths(ignoreSet)
-          return loadDir(normalizedWorkspacePath, ignoreSet)
-        })
-        .then(setRootNodes)
-    }
-  }
-
+  // ── Context menu actions ──────────────────────────────────────────
   const handleContextMenu = (e: React.MouseEvent, node: FileNode) => {
-    e.preventDefault()
-    e.stopPropagation()
+    e.preventDefault(); e.stopPropagation()
     setContextMenu({ x: e.clientX, y: e.clientY, node })
   }
 
   const startRename = (node: FileNode) => {
-    setRenamingNode(node)
-    setRenameValue(node.name)
-    setContextMenu(null)
+    setRenamingNode(node); setRenameValue(node.name); setContextMenu(null)
   }
 
   const submitRename = async () => {
-    if (!renamingNode || renameValue === renamingNode.name) {
-      setRenamingNode(null)
-      return
+    if (!renamingNode || !renameValue.trim() || renameValue === renamingNode.name) {
+      setRenamingNode(null); return
     }
     try {
-      const oldPath = renamingNode.path
-      const newPath = oldPath.substring(0, oldPath.lastIndexOf('/')) + '/' + renameValue
-      await window.electronAPI.fs.rename(oldPath, newPath)
-      reloadWorkspace()
-    } catch (e) {
-      console.error(e)
-      alert(`Failed to rename: ${(e as Error).message}`)
-    }
+      const dir = renamingNode.path.substring(0, renamingNode.path.lastIndexOf('/'))
+      await window.electronAPI.fs.rename(renamingNode.path, `${dir}/${renameValue.trim()}`)
+      await loadWorkspace()
+    } catch (e) { alert(`Rename failed: ${(e as Error).message}`) }
     setRenamingNode(null)
   }
 
   const deleteNode = async (node: FileNode) => {
     setContextMenu(null)
-    if (confirm(`Are you sure you want to delete ${node.name}? This action cannot be undone.`)) {
-      try {
-        await window.electronAPI.fs.delete(node.path)
-        reloadWorkspace()
-      } catch (e) {
-        console.error(e)
-        alert(`Failed to delete: ${(e as Error).message}`)
-      }
-    }
+    if (!confirm(`Delete "${node.name}"? This cannot be undone.`)) return
+    try {
+      await window.electronAPI.fs.delete(node.path)
+      await loadWorkspace()
+    } catch (e) { alert(`Delete failed: ${(e as Error).message}`) }
   }
 
-  if (!activeSession?.workspacePath) {
+  const startCreate = (parentPath: string, type: 'file' | 'folder') => {
+    setContextMenu(null); setCreatingIn({ parentPath, type }); setCreateValue('')
+    // Ensure parent is open
+    setRootNodes((prev) => updateTree(prev, parentPath, { isOpen: true }))
+  }
+
+  const submitCreate = async () => {
+    if (!creatingIn || !createValue.trim()) { setCreatingIn(null); return }
+    const fullPath = `${creatingIn.parentPath}/${createValue.trim()}`
+    try {
+      if (creatingIn.type === 'folder') {
+        await window.electronAPI.fs.mkdir(fullPath)
+      } else {
+        await window.electronAPI.fs.writeFile(fullPath, '')
+        openFile(normalizePath(fullPath), createValue.trim())
+      }
+      await loadWorkspace()
+    } catch (e) { alert(`Create failed: ${(e as Error).message}`) }
+    setCreatingIn(null)
+  }
+
+  const triggerRefactoring = (action: 'js-to-ts' | 'tests' | 'perf' | 'docs', node: FileNode) => {
+    setContextMenu(null)
+    const isDir = node.isDirectory
+    const targetType = isDir ? 'folder' : 'file'
+    let prompt = ''
+
+    switch (action) {
+      case 'js-to-ts':
+        prompt = `Convert the JavaScript ${targetType} at "${node.path}" to TypeScript. Update the code to follow modern TypeScript standards, generate correct types/interfaces, and rename files from .js/.jsx to .ts/.tsx as appropriate.`
+        break
+      case 'tests':
+        prompt = `Generate comprehensive unit tests for the ${targetType} at "${node.path}". Cover edge cases, typical usage, and error boundary conditions using the standard testing tools in the project.`
+        break
+      case 'perf':
+        prompt = `Analyze and optimize performance for the ${targetType} at "${node.path}". Focus on adding memoization, reducing redundant computations, optimizing algorithm complexity, and explain the performance changes made.`
+        break
+      case 'docs':
+        prompt = `Write clear JSDoc / documentation comments for the ${targetType} at "${node.path}". Document all public functions, classes, arguments, and return types without altering the functional logic of the code.`
+        break
+    }
+
+    useChatStore.getState().setDraftMessage(prompt)
+    if (onSelectTab) onSelectTab('sessions')
+    if (onNavigate) onNavigate('chat')
+  }
+
+
+  // ── Search filter ─────────────────────────────────────────────────
+  const flattenNodes = (nodes: FileNode[]): FileNode[] =>
+    nodes.flatMap((n) => [n, ...(n.children ? flattenNodes(n.children) : [])])
+
+  const filteredNodes = searchQuery.trim()
+    ? flattenNodes(rootNodes).filter(
+        (n) => !n.isDirectory && n.name.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : null
+
+  // ── No workspace ──────────────────────────────────────────────────
+  if (!workspacePath) {
     return (
       <div style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
-        No workspace bound. Bind a workspace in the chat header to see project files.
+        <div style={{ fontSize: '32px', marginBottom: '12px', opacity: 0.4 }}>📁</div>
+        No workspace bound.<br />Bind a workspace in the chat header.
       </div>
     )
   }
 
+  const projectName = workspacePath.split(/[/\\]/).pop() || 'WORKSPACE'
+
   return (
-    <div style={{ flex: 1, overflowY: 'auto', padding: '8px 4px' }}>
-      <div style={{ padding: '4px 8px', fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={activeSession.workspacePath}>
-        {activeSession.workspacePath.split(/[/\\]/).pop() || 'WORKSPACE'}
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      {/* Header */}
+      <div style={{ padding: '6px 8px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+          <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={workspacePath}>
+            {projectName}
+          </span>
+          <div style={{ display: 'flex', gap: '2px', flexShrink: 0 }}>
+            <button title="New File" onClick={() => startCreate(normalizePath(workspacePath), 'file')}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '14px', padding: '2px 4px', borderRadius: '3px', lineHeight: 1 }}
+              onMouseEnter={(e) => e.currentTarget.style.color = 'var(--text-primary)'}
+              onMouseLeave={(e) => e.currentTarget.style.color = 'var(--text-muted)'}>＋📄</button>
+            <button title="New Folder" onClick={() => startCreate(normalizePath(workspacePath), 'folder')}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '14px', padding: '2px 4px', borderRadius: '3px', lineHeight: 1 }}
+              onMouseEnter={(e) => e.currentTarget.style.color = 'var(--text-primary)'}
+              onMouseLeave={(e) => e.currentTarget.style.color = 'var(--text-muted)'}>＋📁</button>
+            <button title="Refresh" onClick={loadWorkspace}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '13px', padding: '2px 4px', borderRadius: '3px', lineHeight: 1 }}
+              onMouseEnter={(e) => e.currentTarget.style.color = 'var(--text-primary)'}
+              onMouseLeave={(e) => e.currentTarget.style.color = 'var(--text-muted)'}>↺</button>
+          </div>
+        </div>
+        {/* Search */}
+        <input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search files…"
+          style={{ width: '100%', padding: '4px 8px', background: 'var(--bg-tertiary)', border: '1px solid var(--border)', borderRadius: '5px', color: 'var(--text-primary)', fontSize: '12px', outline: 'none', boxSizing: 'border-box' }} />
       </div>
-      {rootNodes.map(node => (
-        <TreeNode
-          key={node.path} node={node} level={0}
-          onToggle={toggleNode} onSelect={(n) => openFile(n.path, n.name)}
-          onContextMenu={handleContextMenu}
-          renamingNode={renamingNode} renameValue={renameValue}
-          onRenameChange={setRenameValue} onRenameSubmit={submitRename} onRenameCancel={() => setRenamingNode(null)}
-        />
-      ))}
-      
+
+      {/* Tree / Search results */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '4px 2px' }}>
+        {isLoading ? (
+          <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '12px' }}>Loading…</div>
+        ) : filteredNodes ? (
+          filteredNodes.length === 0 ? (
+            <div style={{ padding: '16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '12px' }}>No files match "{searchQuery}"</div>
+          ) : (
+            filteredNodes.map((n) => (
+              <div key={n.path} role="button" tabIndex={0}
+                onClick={() => openFile(n.path, n.name)}
+                onKeyDown={(e) => { if (e.key === 'Enter') openFile(n.path, n.name) }}
+                style={{ padding: '3px 8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', fontSize: '13px', color: activeTabId === n.path ? 'var(--accent-blue)' : 'var(--text-secondary)', borderRadius: '4px', outline: 'none' }}
+                onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-tertiary)'}
+                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
+                <span style={{ fontSize: '12px' }}>{getFileIcon(n.name, false)}</span>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{n.name}</span>
+                <span style={{ fontSize: '10px', color: 'var(--text-muted)', flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '80px', whiteSpace: 'nowrap' }}>
+                  {n.path.replace(normalizePath(workspacePath), '').replace(/^\//, '').replace(/\/[^/]+$/, '') || '/'}
+                </span>
+              </div>
+            ))
+          )
+        ) : (
+          <>
+            {/* Root-level inline create */}
+            {creatingIn?.parentPath === normalizePath(workspacePath) && (
+              <div style={{ padding: '3px 8px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <span style={{ fontSize: '12px' }}>{creatingIn.type === 'folder' ? '📁' : '📄'}</span>
+                <input autoFocus value={createValue} onChange={(e) => setCreateValue(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') submitCreate(); if (e.key === 'Escape') setCreatingIn(null) }}
+                  onBlur={() => setCreatingIn(null)} placeholder={creatingIn.type === 'folder' ? 'folder name' : 'file name'}
+                  style={{ background: 'var(--bg-secondary)', border: '1px solid var(--accent-blue)', color: 'var(--text-primary)', padding: '2px 6px', fontSize: '13px', borderRadius: '3px', outline: 'none', flex: 1 }} />
+              </div>
+            )}
+            {rootNodes.map((node) => (
+              <TreeNode key={node.path} node={node} level={0} activeFilePath={activeTabId}
+                onToggle={toggleNode} onSelect={(n) => openFile(n.path, n.name)}
+                onContextMenu={handleContextMenu}
+                renamingNode={renamingNode} renameValue={renameValue}
+                onRenameChange={setRenameValue} onRenameSubmit={submitRename} onRenameCancel={() => setRenamingNode(null)}
+                creatingIn={creatingIn} createValue={createValue}
+                onCreateChange={setCreateValue} onCreateSubmit={submitCreate} onCreateCancel={() => setCreatingIn(null)} />
+            ))}
+          </>
+        )}
+      </div>
+
+      {/* Context Menu */}
       {contextMenu && (
-        <div style={{
-          position: 'fixed', top: contextMenu.y, left: contextMenu.x, zIndex: 1000,
-          background: 'var(--bg-secondary)', border: '1px solid var(--border)',
-          borderRadius: '6px', boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-          padding: '4px', minWidth: '140px', fontSize: '13px', display: 'flex', flexDirection: 'column'
-        }} onClick={(e) => e.stopPropagation()}>
-          <button style={{ padding: '6px 12px', textAlign: 'left', background: 'transparent', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', borderRadius: '4px' }}
-            onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-tertiary)'}
-            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-            onClick={() => startRename(contextMenu.node)}>
-            Rename
+        <div style={{ position: 'fixed', top: contextMenu.y, left: contextMenu.x, zIndex: 9999, background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: '7px', boxShadow: '0 6px 20px rgba(0,0,0,0.4)', padding: '4px', minWidth: '180px', fontSize: '13px' }}
+          onClick={(e) => e.stopPropagation()}>
+          {contextMenu.node.isDirectory && (<>
+            <button style={ctxBtnStyle} onMouseEnter={ctxHover} onMouseLeave={ctxLeave}
+              onClick={() => startCreate(contextMenu.node.path, 'file')}>＋ New File</button>
+            <button style={ctxBtnStyle} onMouseEnter={ctxHover} onMouseLeave={ctxLeave}
+              onClick={() => startCreate(contextMenu.node.path, 'folder')}>＋ New Folder</button>
+            <div style={{ height: '1px', background: 'var(--border)', margin: '3px 0' }} />
+          </>)}
+          <button style={ctxBtnStyle} onMouseEnter={ctxHover} onMouseLeave={ctxLeave}
+            onClick={() => startRename(contextMenu.node)}>✏️ Rename</button>
+          <button style={{ ...ctxBtnStyle, color: 'var(--error, #ef4444)' }} onMouseEnter={ctxHover} onMouseLeave={ctxLeave}
+            onClick={() => deleteNode(contextMenu.node)}>🗑️ Delete</button>
+
+          {/* AI Refactorings Section */}
+          <div style={{ height: '1px', background: 'var(--border)', margin: '3px 0' }} />
+          <div style={{ padding: '4px 10px 2px 10px', fontSize: '10px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            ✨ AI Refactoring
+          </div>
+          {(contextMenu.node.isDirectory || contextMenu.node.name.endsWith('.js') || contextMenu.node.name.endsWith('.jsx')) && (
+            <button
+              style={{ ...ctxBtnStyle, color: 'var(--accent-blue, #2563eb)' }}
+              onMouseEnter={ctxHover}
+              onMouseLeave={ctxLeave}
+              onClick={() => triggerRefactoring('js-to-ts', contextMenu.node)}
+            >
+              🔷 Convert JS to TS
+            </button>
+          )}
+          <button
+            style={{ ...ctxBtnStyle, color: 'var(--accent-blue, #2563eb)' }}
+            onMouseEnter={ctxHover}
+            onMouseLeave={ctxLeave}
+            onClick={() => triggerRefactoring('tests', contextMenu.node)}
+          >
+            🧪 Generate Unit Tests
           </button>
-          <button style={{ padding: '6px 12px', textAlign: 'left', background: 'transparent', border: 'none', color: 'var(--error)', cursor: 'pointer', borderRadius: '4px' }}
-            onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-tertiary)'}
-            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-            onClick={() => deleteNode(contextMenu.node)}>
-            Delete
+          <button
+            style={{ ...ctxBtnStyle, color: 'var(--accent-blue, #2563eb)' }}
+            onMouseEnter={ctxHover}
+            onMouseLeave={ctxLeave}
+            onClick={() => triggerRefactoring('perf', contextMenu.node)}
+          >
+            ⚡ Optimize Performance
+          </button>
+          <button
+            style={{ ...ctxBtnStyle, color: 'var(--accent-blue, #2563eb)' }}
+            onMouseEnter={ctxHover}
+            onMouseLeave={ctxLeave}
+            onClick={() => triggerRefactoring('docs', contextMenu.node)}
+          >
+            📝 Write JSDoc / Docs
           </button>
         </div>
       )}
     </div>
   )
 }
+
+const ctxBtnStyle: React.CSSProperties = {
+  display: 'block', width: '100%', padding: '6px 10px', textAlign: 'left',
+  background: 'transparent', border: 'none', color: 'var(--text-primary)',
+  cursor: 'pointer', borderRadius: '4px', fontSize: '13px',
+}
+const ctxHover = (e: React.MouseEvent<HTMLButtonElement>) => { e.currentTarget.style.background = 'var(--bg-tertiary)' }
+const ctxLeave = (e: React.MouseEvent<HTMLButtonElement>) => { e.currentTarget.style.background = 'transparent' }

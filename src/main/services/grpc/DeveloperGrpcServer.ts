@@ -139,6 +139,12 @@ class DeveloperGrpcServer {
     await new Promise<void>((resolve, reject) => {
       this.server?.bindAsync(
         `127.0.0.1:${this.port}`,
+        // SECURITY NOTE: The gRPC server binds exclusively to the loopback
+        // interface (127.0.0.1) and is therefore not reachable from the network.
+        // All callers must present a valid Bearer token (this.authToken) on every
+        // RPC.  TLS is intentionally omitted for the loopback-only case to avoid
+        // certificate management complexity; the auth token provides the required
+        // confidentiality guarantee for local IPC.
         grpc.ServerCredentials.createInsecure(),
         (error) => {
           if (error) {

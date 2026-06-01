@@ -4,12 +4,13 @@
 // ═══════════════════════════════════════════════════════════════════
 
 import { ipcMain } from 'electron'
-import { IPC } from '@shared/types'
+import { IPC, PROVIDER_MODELS, ProviderType } from '@shared/types'
 import { agentLoop } from '../agent/AgentLoop'
 import { buildSkillInjection } from '../agent/SkillMatcher'
 import { getSessionMessages } from '../db/messages'
-import { getApiConfig } from '../db/apiConfigs'
+import { getApiConfig, listApiConfigsSafe } from '../db/apiConfigs'
 import { getSession } from '../db/sessions'
+import { getDatabase } from '../db/database'
 import { getAgentRoute } from '../db/agentRoutes'
 import { getAgent } from '../db/agents'
 import { handleWithTimeout, IPC_TIMEOUT } from './handleWithTimeout'
@@ -74,9 +75,49 @@ export function registerChatHandlers(): void {
       }
 
       // Get provider config (with decrypted keys)
-      const config = getApiConfig(provider)
+      let config = getApiConfig(provider)
+      const isProviderConfigured = config && (
+        config.apiKey ||
+        config.awsAccessKeyId ||
+        provider === 'ollama' ||
+        provider === 'custom' ||
+        config.authMethod === 'oauth'
+      )
+
+      if (!isProviderConfigured) {
+        // Find if there is any other provider that is configured
+        const allConfigs = listApiConfigsSafe()
+        const configured = allConfigs.find(
+          (c) =>
+            c.hasApiKey ||
+            c.hasAwsKeys ||
+            c.provider === 'ollama' ||
+            c.provider === 'custom' ||
+            c.authMethod === 'oauth'
+        )
+
+        if (configured) {
+          // Switch to the configured provider!
+          provider = configured.provider
+          model = configured.defaultModel || (PROVIDER_MODELS[provider as ProviderType]?.[0]?.id || 'default')
+          config = getApiConfig(provider)
+          
+          // Also update the session in the database so it remembers this provider/model!
+          try {
+            const db = getDatabase()
+            const stmt = db.prepare('UPDATE sessions SET provider = ?, model = ? WHERE id = ?')
+            stmt.run(provider, model, sessionId)
+          } catch (dbErr) {
+            console.error('[chatHandlers] Failed to update session provider:', dbErr)
+          }
+        } else {
+          // No api configured at all
+          throw new Error('error! no api configured please configure atleast 1 api key in setting')
+        }
+      }
+
       if (!config) {
-        throw new Error(`Provider "${provider}" is not configured. Add an API key in Settings.`)
+        throw new Error('error! no api configured please configure atleast 1 api key in setting')
       }
 
       // Get session messages for context
