@@ -3,23 +3,162 @@ import { useTaskStore } from '@renderer/store/taskStore'
 import { useSessionStore } from '@renderer/store/sessionStore'
 import { useChatStore } from '@renderer/store/chatStore'
 import { Button } from '@renderer/components/ui/Button'
+import { useProviderStore } from '@renderer/store/providerStore'
+import 'xterm/css/xterm.css'
 
 export function TaskPanel(): React.JSX.Element {
-  const { tasks, definitions, activeTaskId, setActiveTask, runTask, stopTask, removeTask, sendInput } = useTaskStore()
+  const { tasks, definitions, activeTaskId, setActiveTask, runTask, stopTask, removeTask } = useTaskStore()
   const { activeSessionId, sessions } = useSessionStore()
   const activeSession = sessions.find(s => s.id === activeSessionId)
   
   const [activeTab, setActiveTab] = useState<'tasks' | 'terminal' | 'problems'>('tasks')
-  const [terminalInput, setTerminalInput] = useState('')
   const terminalEndRef = useRef<HTMLDivElement>(null)
   const activeTask = tasks.find(t => t.id === activeTaskId)
 
-  // Auto-scroll terminal
+  // xterm refs & states
+  const terminalContainerRef = useRef<HTMLDivElement>(null)
+  const xtermInstanceRef = useRef<any>(null)
+  const lastLoggedIndexRef = useRef<number>(0)
+
+  const [aiPrompt, setAiPrompt] = useState('')
+  const [aiResponse, setAiResponse] = useState('')
+  const [isAiLoading, setIsAiLoading] = useState(false)
+  const [showAiOverlay, setShowAiOverlay] = useState(false)
+
+  // Auto-scroll terminal (fallback for static sections, no-op for xterm)
   useEffect(() => {
     if (activeTab === 'terminal') {
       terminalEndRef.current?.scrollIntoView({ behavior: 'smooth' })
     }
   }, [activeTask?.logs, activeTab])
+
+  // Initialize & Mount xterm.js instance
+  useEffect(() => {
+    if (activeTab !== 'terminal' || !terminalContainerRef.current || !activeTask) {
+      return
+    }
+
+    let term: any
+    let resizeObserver: ResizeObserver
+    let onDataDisposable: any
+
+    // Dynamically import xterm to avoid bundler issues
+    Promise.all([
+      import('xterm'),
+      import('xterm-addon-fit')
+    ]).then(([{ Terminal }, { FitAddon }]) => {
+      if (!terminalContainerRef.current) return
+
+      terminalContainerRef.current.innerHTML = ''
+
+      term = new Terminal({
+        cursorBlink: true,
+        fontSize: 13,
+        fontFamily: 'var(--font-mono)',
+        theme: {
+          background: '#0D1117',
+          foreground: '#E6EDF3',
+          cursor: '#58a6ff',
+          selectionBackground: '#264f78',
+          black: '#0d1117',
+          red: '#ff7b72',
+          green: '#3fb950',
+          yellow: '#d29922',
+          blue: '#58a6ff',
+          magenta: '#bc8cff',
+          cyan: '#39c5cf',
+          white: '#e6edf3'
+        },
+        allowProposedApi: true
+      })
+
+      const fitAddon = new FitAddon()
+      term.loadAddon(fitAddon)
+      term.open(terminalContainerRef.current)
+      fitAddon.fit()
+
+      xtermInstanceRef.current = term
+
+      // Write initial logs
+      activeTask.logs.forEach((log) => {
+        term.write(log.data)
+      })
+      lastLoggedIndexRef.current = activeTask.logs.length
+
+      // Bind keyboard input to task stdin
+      onDataDisposable = term.onData((data) => {
+        if (activeTask.status === 'running') {
+          window.electronAPI.task.stdin(activeTask.id, data)
+        }
+      })
+
+      // Resize observer to auto-fit terminal on container resizing
+      resizeObserver = new ResizeObserver(() => {
+        try { fitAddon.fit() } catch {}
+      })
+      resizeObserver.observe(terminalContainerRef.current)
+    })
+
+    return () => {
+      if (onDataDisposable) onDataDisposable.dispose()
+      if (resizeObserver) resizeObserver.disconnect()
+      if (term) term.dispose()
+      xtermInstanceRef.current = null
+      lastLoggedIndexRef.current = 0
+    }
+  }, [activeTab, activeTaskId])
+
+  // Incremental logs streaming to xterm without resetting
+  useEffect(() => {
+    const term = xtermInstanceRef.current
+    if (!term || !activeTask) return
+
+    // If logs were reset or task restarted, clear and reset pointer
+    if (activeTask.logs.length < lastLoggedIndexRef.current) {
+      term.clear()
+      lastLoggedIndexRef.current = 0
+    }
+
+    const newLogs = activeTask.logs.slice(lastLoggedIndexRef.current)
+    newLogs.forEach((log) => {
+      term.write(log.data)
+    })
+    lastLoggedIndexRef.current = activeTask.logs.length
+  }, [activeTask?.logs])
+
+  // Ctrl+K keyboard shortcut listener inside terminal tab
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k' && activeTab === 'terminal') {
+        e.preventDefault()
+        setShowAiOverlay((prev) => !prev)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [activeTab])
+
+  // AI Command Generator helper
+  const handleGenerateCommand = async () => {
+    if (!aiPrompt.trim() || !activeTask) return
+    setIsAiLoading(true)
+    try {
+      const provider = useProviderStore.getState().activeProvider
+      const model = useProviderStore.getState().activeModel
+
+      const systemPrompt = `You are a terminal command assistant.
+Your job is to generate ONLY the exact, single shell command (e.g. "git commit -m 'updates'") that answers the user's prompt.
+Do NOT write markdown code blocks, explanation, or conversational text. Output ONLY the raw command.`
+
+      const response = await window.electronAPI.chat.predictOneShot(aiPrompt, systemPrompt, provider, model)
+      setAiResponse(response.trim())
+    } catch (err) {
+      console.error('[AI Terminal] Failed to generate command:', err)
+      setAiResponse(`Error: ${(err as Error).message}`)
+    } finally {
+      setIsAiLoading(false)
+    }
+  }
 
   // Load workspace task definitions automatically when workspace path changes
   useEffect(() => {
@@ -44,13 +183,6 @@ export function TaskPanel(): React.JSX.Element {
     }
     removeTask(task.id)
     runTask(task.name, task.command, task.args, task.cwd)
-  }
-
-  const handleSendInput = async (event: React.FormEvent) => {
-    event.preventDefault()
-    if (!activeTask || activeTask.status !== 'running' || !terminalInput) return
-    await sendInput(activeTask.id, `${terminalInput}\n`)
-    setTerminalInput('')
   }
 
   // Count problems
@@ -174,80 +306,155 @@ export function TaskPanel(): React.JSX.Element {
               )}
             </div>
 
-            {/* Terminal Output */}
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#0D1117', minWidth: 0 }}>
-              <div style={{ flex: 1, padding: '12px', color: '#E6EDF3', fontFamily: 'var(--font-mono)', fontSize: '13px', overflowY: 'auto' }}>
-                {activeTask ? (
-                  <>
-                    <div style={{ marginBottom: '8px', color: '#8B949E', display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center' }}>
-                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '70%' }}>
-                        $ {activeTask.command} {activeTask.args.join(' ')}
-                      </span>
-                      <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
-                        {activeTask.status === 'running' ? (
-                          <button
-                            onClick={() => stopTask(activeTask.id)}
-                            style={{ background: 'none', border: '1px solid #30363D', borderRadius: '4px', color: '#FF7B72', cursor: 'pointer', fontSize: '12px', padding: '2px 8px' }}
-                          >
-                            Stop
-                          </button>
-                        ) : (
-                          <span style={{ fontSize: '12px', color: activeTask.status === 'success' ? '#3fb950' : '#f85149', padding: '2px 4px', background: '#21262d', borderRadius: '4px' }}>
-                            {activeTask.status.toUpperCase()}
-                          </span>
-                        )}
+            {/* Terminal Panel */}
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#0D1117', minWidth: 0, position: 'relative' }}>
+              {activeTask ? (
+                <>
+                  {/* Terminal Header */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', padding: '8px 12px', borderBottom: '1px solid #30363D', flexShrink: 0 }}>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#8B949E', fontSize: '12px', fontFamily: 'var(--font-mono)' }}>
+                      $ {activeTask.command} {activeTask.args.join(' ')}
+                    </span>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      <button
+                        onClick={() => setShowAiOverlay((prev) => !prev)}
+                        style={{
+                          background: 'rgba(37,99,235,0.15)', border: '1px solid transparent', borderRadius: '4px',
+                          color: 'var(--accent-blue)', cursor: 'pointer', fontSize: '12px', padding: '2px 8px', display: 'flex', alignItems: 'center', gap: '4px'
+                        }}
+                      >
+                        🤖 Ask AI (Ctrl+K)
+                      </button>
+                      {activeTask.status === 'running' ? (
                         <button
-                          onClick={() => handleRestartTask(activeTask)}
-                          style={{ background: 'none', border: '1px solid #30363D', borderRadius: '4px', color: '#58a6ff', cursor: 'pointer', fontSize: '12px', padding: '2px 8px' }}
+                          onClick={() => stopTask(activeTask.id)}
+                          style={{ background: 'none', border: '1px solid #30363D', borderRadius: '4px', color: '#FF7B72', cursor: 'pointer', fontSize: '12px', padding: '2px 8px' }}
                         >
-                          🔄 Restart
+                          Stop
+                        </button>
+                      ) : (
+                        <span style={{ fontSize: '12px', color: activeTask.status === 'success' ? '#3fb950' : '#f85149', padding: '2px 4px', background: '#21262d', borderRadius: '4px' }}>
+                          {activeTask.status.toUpperCase()}
+                        </span>
+                      )}
+                      <button
+                        onClick={() => handleRestartTask(activeTask)}
+                        style={{ background: 'none', border: '1px solid #30363D', borderRadius: '4px', color: '#58a6ff', cursor: 'pointer', fontSize: '12px', padding: '2px 8px' }}
+                      >
+                        🔄 Restart
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Self-Heal Recommendation Overlay */}
+                  {activeTask.selfHealSuggestion && (
+                    <div style={{ margin: '8px 12px 0 12px', padding: '10px 12px', borderRadius: '6px', background: '#161b22', border: '1px solid #30363D', flexShrink: 0 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', marginBottom: '4px' }}>
+                        <div>
+                          <div style={{ fontSize: '12px', fontWeight: 600, color: '#58a6ff' }}>Self-Heal Recommendation</div>
+                          <div style={{ fontSize: '11px', color: '#8B949E' }}>{activeTask.selfHealSuggestion.summary}</div>
+                        </div>
+                        <Button size="sm" variant="outline" style={{ padding: '2px 8px', fontSize: '11px' }} onClick={() => {
+                          const message = `The task \`${activeTask.name}\` failed. Please apply this suggested fix:\n\n${activeTask.selfHealSuggestion?.recommendation}`
+                          useChatStore.getState().setDraftMessage(message)
+                        }}>
+                          Ask Lumiq to Fix
+                        </Button>
+                      </div>
+                      <pre style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: '#C9D1D9', margin: 0, whiteSpace: 'pre-wrap', maxHeight: '60px', overflowY: 'auto' }}>
+                        {activeTask.selfHealSuggestion.recommendation}
+                      </pre>
+                    </div>
+                  )}
+
+                  {/* Real xterm.js Terminal Container */}
+                  <div ref={terminalContainerRef} style={{ flex: 1, padding: '8px', overflow: 'hidden' }} />
+
+                  {/* AI Terminal Assistant (Ctrl+K) Overlay Panel */}
+                  {showAiOverlay && (
+                    <div style={{
+                      position: 'absolute', bottom: '16px', right: '16px', left: '16px',
+                      background: 'var(--bg-secondary)', border: '1px solid var(--border)',
+                      borderRadius: '8px', padding: '12px', zIndex: 100,
+                      boxShadow: '0 4px 16px rgba(0,0,0,0.6)', display: 'flex', flexDirection: 'column', gap: '8px'
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--accent-blue)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                          🤖 AI Terminal Companion (Ctrl+K)
+                        </span>
+                        <button
+                          onClick={() => { setShowAiOverlay(false); setAiPrompt(''); setAiResponse('') }}
+                          style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '12px' }}
+                        >
+                          ✕
                         </button>
                       </div>
-                    </div>
-                    {activeTask.selfHealSuggestion && (
-                      <div style={{ marginBottom: '12px', padding: '12px', borderRadius: '8px', background: '#161b22', border: '1px solid #30363D' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', marginBottom: '8px' }}>
-                          <div>
-                            <div style={{ fontSize: '13px', fontWeight: 600, color: '#58a6ff' }}>Self-Heal Recommendation</div>
-                            <div style={{ fontSize: '12px', color: '#8B949E' }}>{activeTask.selfHealSuggestion.summary}</div>
-                          </div>
-                          <Button size="sm" variant="outline" onClick={() => {
-                            const message = `The task \`${activeTask.name}\` failed. Please apply this suggested fix:\n\n${activeTask.selfHealSuggestion?.recommendation}`
-                            useChatStore.getState().setDraftMessage(message)
-                          }}>
-                            Ask Lumiq to Fix
+
+                      {!aiResponse && (
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <input
+                            value={aiPrompt}
+                            onChange={(e) => setAiPrompt(e.target.value)}
+                            placeholder="Write a git status command, ask to explain an error..."
+                            style={{
+                              flex: 1, padding: '6px 10px', fontSize: '12px',
+                              background: 'var(--bg-primary)', border: '1px solid var(--border)',
+                              borderRadius: '4px', color: 'var(--text-primary)', outline: 'none'
+                            }}
+                            onKeyDown={async (e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault()
+                                await handleGenerateCommand()
+                              }
+                            }}
+                          />
+                          <Button size="sm" onClick={handleGenerateCommand} disabled={isAiLoading || !aiPrompt.trim()}>
+                            {isAiLoading ? 'Thinking...' : 'Generate'}
                           </Button>
                         </div>
-                        <pre style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: '#C9D1D9', margin: 0, whiteSpace: 'pre-wrap', overflowX: 'auto' }}>
-                          {activeTask.selfHealSuggestion.recommendation}
-                        </pre>
-                      </div>
-                    )}
-                    {activeTask.logs.map((log) => (
-                      <span key={log.id} style={{
-                        color: log.type === 'stderr' ? '#FF7B72' : log.type === 'system' ? '#79C0FF' : '#E6EDF3',
-                        whiteSpace: 'pre-wrap',
-                        wordBreak: 'break-all'
-                      }}>
-                        {log.data}
-                      </span>
-                    ))}
-                    <div ref={terminalEndRef} />
-                  </>
-                ) : (
-                  <div style={{ color: '#8B949E' }}>Select a task to view output</div>
-                )}
-              </div>
-              <form onSubmit={handleSendInput} style={{ display: 'flex', alignItems: 'center', gap: '8px', borderTop: '1px solid #30363D', padding: '8px 12px' }}>
-                <span style={{ color: '#8B949E', fontFamily: 'var(--font-mono)', fontSize: '13px' }}>&gt;</span>
-                <input
-                  value={terminalInput}
-                  onChange={(event) => setTerminalInput(event.target.value)}
-                  disabled={!activeTask || activeTask.status !== 'running'}
-                  placeholder={activeTask?.status === 'running' ? 'Send input to task' : 'No running task'}
-                  style={{ flex: 1, minWidth: 0, background: 'transparent', border: 'none', outline: 'none', color: '#E6EDF3', fontFamily: 'var(--font-mono)', fontSize: '13px' }}
-                />
-              </form>
+                      )}
+
+                      {aiResponse && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          <pre style={{
+                            fontFamily: 'var(--font-mono)', fontSize: '12px', color: '#E6EDF3',
+                            background: '#0D1117', padding: '8px', borderRadius: '4px',
+                            border: '1px solid var(--border)', margin: 0, whiteSpace: 'pre-wrap'
+                          }}>
+                            {aiResponse}
+                          </pre>
+                          <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                            <Button size="sm" variant="outline" onClick={() => {
+                              if (activeTask && activeTask.status === 'running') {
+                                window.electronAPI.task.stdin(activeTask.id, aiResponse)
+                              }
+                              setShowAiOverlay(false)
+                              setAiPrompt('')
+                              setAiResponse('')
+                            }}>
+                              Type Command
+                            </Button>
+                            <Button size="sm" onClick={() => {
+                              if (activeTask && activeTask.status === 'running') {
+                                window.electronAPI.task.stdin(activeTask.id, aiResponse + '\n')
+                              }
+                              setShowAiOverlay(false)
+                              setAiPrompt('')
+                              setAiResponse('')
+                            }}>
+                              Execute
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8B949E', fontSize: '13px' }}>
+                  Select a task to view output
+                </div>
+              )}
             </div>
           </div>
         )}

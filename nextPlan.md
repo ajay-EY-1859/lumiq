@@ -1,19 +1,20 @@
 # Lumiq — Advanced Vision & Next Phase Roadmap
 
 **Last Updated:** 2026-06-01  
-**Current Status:** 🚀 **Phase 2 Fully Complete & Shipped!** Entering **Phase 3 & Phase 4: Ultimate AI-First IDE Horizon**
+**Current Status:** 🚀 **Phase 2 & Initial Phase 3 Complete!** Entering **Phase 3 advanced Code Intelligence (Milestone 13)**
+- **Workspace:** `d:\agentic-desktop-app`
 
 ---
 
 ## 📈 Executive Summary
 
-Lumiq has evolved from a multi-provider chat interface into a highly capable local AI development environment. With the completion of **Milestones 1 through 10** (including MCP integration, semantic search/RAG, autonomous self-healing diagnostics, and multi-file side-by-side diff review), the core agent engine is solid and production-ready.
+Lumiq has evolved from a multi-provider chat interface into a highly capable local AI development environment. With the completion of **Milestones 1 through 12** (including MCP integration, semantic search/RAG, autonomous self-healing diagnostics, multi-file side-by-side diff review, real-time autocomplete ghost-text, and xterm-based interactive terminal with Ctrl+K helper), the core agent engine is solid and production-ready.
 
-To transition Lumiq into a **next-generation, complete AI IDE** (bridging the capabilities seen in VS Code, Zed, and Cursor), the next phases of development will focus on deep editor immersion, interactive terminal bindings, static symbol dependency modeling, multi-agent orchestrations, and interactive live runtime debugging.
+To transition Lumiq into a **next-generation, complete AI IDE** (bridging the capabilities seen in VS Code, Zed, and Cursor), the next phases of development will focus on static symbol dependency modeling, multi-agent orchestrations, and interactive live runtime debugging.
 
 ---
 
-## 🟢 Shipped & Verified Milestones (Phase 1 & 2)
+## 🟢 Shipped & Verified Milestones (Phase 1, 2 & 3)
 
 - [x] **Milestone 7: Model Context Protocol (MCP) & Dynamic Tooling**
   - Dynamic tool discovery and binding from local/remote MCP servers (SQLite, Brave Search, etc.).
@@ -23,6 +24,10 @@ To transition Lumiq into a **next-generation, complete AI IDE** (bridging the ca
   - Terminal-monitoring loop with diagnostic error capturing, background Fix Subagents, and safe sandbox dry-runs.
 - [x] **Milestone 10: Multi-File Diff Explorer & Refactoring Suite**
   - Interactive multi-file side-by-side diff review workspace and folder-level bulk refactorings.
+- [x] **Milestone 11: Real-Time Inline Autocomplete & Local Ghost-Text (FIM Engine)**
+  - Local gray-text code autocompletions (ghost-text) in Monaco Editor with debounced low-latency and status-bar toggle control.
+- [x] **Milestone 12: Immersive Interactive AI Terminal (Lumiq-Term xterm.js)**
+  - Embedded high-performance interactive shell terminal (keystroke-to-stdin streaming) with Ctrl+K AI Command Companion and execution bridges.
 
 ---
 
@@ -30,19 +35,35 @@ To transition Lumiq into a **next-generation, complete AI IDE** (bridging the ca
 
 In this phase, we design and build the premium, immersive developer workflow inspired by advanced modern IDE architectures (like VS Code, Cursor, and Zed), ensuring offline-first execution, strict user control, and maximum speed.
 
-### Milestone 11: Real-Time Inline Autocomplete & Local Ghost-Text (FIM Engine)
-Bring instantaneous, context-aware code predictions to the Monaco Editor.
-- **Monaco Ghost-Text Extension**: Render inline gray suggestions directly in the active editor pane as the user types (similar to VS Code Copilot/Cursor Tab).
-- **Fill-in-the-Middle (FIM) Engine**: Leverage ultra-fast, local, lightweight LLMs (e.g., DeepSeek-Coder 1.5B/7B, Qwen2.5-Coder 1.5B, or StarCoder2) via Ollama/Llama.cpp or local Transformers.js.
-- **Smart Triggering & Debouncing**: Intelligent trigger points (whitespace, brackets, cursor pauses) and debouncing algorithms to keep typing latency at ~0ms.
-- **Cache-Ahead & Prefetching**: Prefetch context lines around the cursor to deliver suggestions with sub-50ms latency.
+### VS Code-Inspired Workbench & Productivity Baseline
+Capture the essential editor/productivity strengths of VS Code as part of the Lumiq roadmap:
+- **Command Palette & Quick Open**: Fast keyboard-driven command execution and workspace file navigation.
+- **Multi-root workspace support**: Open and manage multiple projects in a single window.
+- **Integrated Source Control**: Full Git pane with staging, diff previews, history, and branch actions.
+- **Extensions & Marketplace model**: An extensible plugin system with built-in extension management and easy install/update workflows.
+- **Settings / Keybindings UI**: A graphical settings editor, profile support, and keyboard shortcut customization.
+- **Panel layout & Activity Bar**: Flexible workbench layout with dockable panels, activity bar, sidebar, and status bar.
+- **Split editors / Tabs**: Multi-column split editing, editor tabs, drag-and-drop tab rearrangement, and editor groups.
+- **Search & Replace across workspace**: Regex-powered global search and replace with filters and results preview.
+- **Markdown Preview / Notebook support**: Live Markdown rendering and support for interactive notebook documents.
+- **Accessibility & theming**: High contrast UI modes, keyboard navigation, screen-reader-friendly interfaces, and theme/icon customization.
+- **Built-in terminal + tasks**: Embedded terminal with task runner integration and shell task automation.
+- **Language features via LSP/extension host**: Rich language support using LSP-style providers, hover, go-to-definition, and diagnostics.
+- **Remote workspace connectivity**: Remote container, SSH, and WSL-style workspace concepts for seamless external dev environments.
 
-### Milestone 12: Immersive Interactive AI Terminal (Lumiq-Term xterm.js)
+### Milestone 11: Real-Time Inline Autocomplete & Local Ghost-Text (FIM Engine) [COMPLETED]
+Bring instantaneous, context-aware code predictions to the Monaco Editor.
+- [x] **Monaco Ghost-Text Extension**: Render inline gray suggestions directly in the active editor pane as the user types (similar to VS Code Copilot/Cursor Tab).
+- [x] **Fill-in-the-Middle (FIM) Engine**: Leverage ultra-fast, local, lightweight LLMs (e.g., DeepSeek-Coder 1.5B/7B, Qwen2.5-Coder 1.5B, or StarCoder2) via Ollama/Llama.cpp or local Transformers.js.
+- [x] **Smart Triggering & Debouncing**: Intelligent trigger points (whitespace, brackets, cursor pauses) and debouncing algorithms to keep typing latency at ~0ms.
+- [x] **Cache-Ahead & Prefetching**: Prefetch context lines around the cursor to deliver suggestions with sub-50ms latency.
+
+### Milestone 12: Immersive Interactive AI Terminal (Lumiq-Term xterm.js) [COMPLETED]
 Bridge the gap between file editing and terminal command execution.
-- **Embedded xterm.js Panel**: Embed a fully interactive, GPU-accelerated terminal panel in the bottom dock of the Lumiq GUI.
-- **Terminal Inline helper (Ctrl+K)**: Allow users to open an inline chat overlay directly in the terminal to explain commands, auto-generate complex scripts, or ask the AI to perform commands.
-- **Visual Command Streaming**: Let the AI stream commands directly into the terminal, visually showing command outputs, with single-click human authorization before execution.
-- **Fail-Safe Diagnostics Interceptor**: Intercept compiler, build, and test exceptions in the terminal stream, prompting the user with an instant *"Auto-Fix with Lumiq"* diagnostic button.
+- [x] **Embedded xterm.js Panel**: Embed a fully interactive, GPU-accelerated terminal panel in the bottom dock of the Lumiq GUI.
+- [x] **Terminal Inline helper (Ctrl+K)**: Allow users to open an inline chat overlay directly in the terminal to explain commands, auto-generate complex scripts, or ask the AI to perform commands.
+- [x] **Visual Command Streaming**: Let the AI stream commands directly into the terminal, visually showing command outputs, with single-click human authorization before execution.
+- [x] **Fail-Safe Diagnostics Interceptor**: Intercept compiler, build, and test exceptions in the terminal stream, prompting the user with an instant *"Auto-Fix with Lumiq"* diagnostic button.
 
 ### Milestone 13: AST Symbol Graph & Semantic Indexer (Code Intelligence)
 Move beyond regex search to a structural, graph-based understanding of the user's codebase.

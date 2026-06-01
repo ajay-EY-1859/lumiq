@@ -315,6 +315,7 @@ export const IPC = {
   CHAT_ERROR: 'chat:error',
   CHAT_CANCEL: 'chat:cancel',
   AUTOCOMPLETE_PREDICT: 'autocomplete:predict',
+  CHAT_PREDICT_ONE_SHOT: 'chat:predict-one-shot',
 
   // Tool approval
   TOOL_APPROVAL_REQUEST: 'tool:approval-request',

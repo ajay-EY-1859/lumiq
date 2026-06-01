@@ -45,6 +45,7 @@ export interface ElectronAPI {
     onChunk: (callback: (chunk: string) => void) => () => void
     onEnd: (callback: (data: { content: string; tokensUsed: number }) => void) => () => void
     onError: (callback: (error: string) => void) => () => void
+    predictOneShot: (prompt: string, systemPrompt: string, provider: string, model: string) => Promise<string>
   }
   autocomplete: {
     predict: (prefix: string, suffix: string, provider: string, model: string) => Promise<string>
@@ -242,7 +243,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     cancel: () => ipcRenderer.invoke(IPC.CHAT_CANCEL),
     onChunk: (cb: (chunk: string) => void) => createListener(IPC.CHAT_STREAM_CHUNK, cb),
     onEnd: (cb: (data: { content: string; tokensUsed: number }) => void) => createListener(IPC.CHAT_STREAM_END, cb),
-    onError: (cb: (error: string) => void) => createListener(IPC.CHAT_ERROR, cb)
+    onError: (cb: (error: string) => void) => createListener(IPC.CHAT_ERROR, cb),
+    predictOneShot: (prompt: string, systemPrompt: string, provider: string, model: string) =>
+      ipcRenderer.invoke(IPC.CHAT_PREDICT_ONE_SHOT, { prompt, systemPrompt, provider, model })
   },
 
   // ── Autocomplete ──

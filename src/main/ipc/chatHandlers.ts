@@ -15,6 +15,7 @@ import { getAgentRoute } from '../db/agentRoutes'
 import { getAgent } from '../db/agents'
 import { handleWithTimeout, IPC_TIMEOUT } from './handleWithTimeout'
 import { setAllowedExtraPaths, parseAttachedPaths } from '../security/pathValidation'
+import { AutocompleteService } from '../services/AutocompleteService'
 
 const DEFAULT_SYSTEM_PROMPT = `You are Lumiq, an advanced agentic AI coding assistant embedded in a desktop IDE.
 You operate directly on the user's local file system within a designated workspace directory.
@@ -183,4 +184,21 @@ All file paths should be relative to the workspace directory above. Use it as th
   handleWithTimeout(IPC.CHAT_CANCEL, IPC_TIMEOUT.short, () => {
     agentLoop.cancel()
   })
+
+  // ── One-shot prediction ──
+  ipcMain.handle(
+    IPC.CHAT_PREDICT_ONE_SHOT,
+    async (
+      _event,
+      data: {
+        prompt: string
+        systemPrompt: string
+        provider: string
+        model: string
+      }
+    ) => {
+      const { prompt, systemPrompt, provider, model } = data
+      return await AutocompleteService.predictOneShot(prompt, systemPrompt, provider, model)
+    }
+  )
 }

@@ -73,4 +73,52 @@ Provide the exact raw completion at <CURSOR>:`
       return ''
     }
   }
+
+  /**
+   * Generates a single, non-streaming response for one-shot utility actions.
+   */
+  static async predictOneShot(
+    prompt: string,
+    systemPrompt: string,
+    providerName: string,
+    modelName: string
+  ): Promise<string> {
+    const config = getApiConfig(providerName)
+    if (!config) {
+      throw new Error(`Provider "${providerName}" is not configured.`)
+    }
+
+    const provider = ProviderFactory.create(config)
+
+    try {
+      const result = await provider.sendMessage(
+        [
+          {
+            id: 'sys',
+            sessionId: 'oneshot',
+            role: 'system',
+            content: systemPrompt,
+            createdAt: new Date().toISOString()
+          },
+          {
+            id: 'usr',
+            sessionId: 'oneshot',
+            role: 'user',
+            content: prompt,
+            createdAt: new Date().toISOString()
+          }
+        ],
+        {
+          model: modelName,
+          maxTokens: 512,
+          stream: false
+        }
+      )
+
+      return result.content || ''
+    } catch (err) {
+      console.error('[AutocompleteService] One-shot prediction failed:', err)
+      return `Error: ${(err as Error).message}`
+    }
+  }
 }
