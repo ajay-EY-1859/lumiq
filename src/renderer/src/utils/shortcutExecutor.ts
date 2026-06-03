@@ -3,9 +3,16 @@
 // Centralizes logic for F5, F6, Shift+F5, and step debugging triggers
 // ═══════════════════════════════════════════════════════════════════
 
+import path from 'path'
 import { useTaskStore } from '../store/taskStore'
 import { useEditorStore } from '../store/editorStore'
 import { useSessionStore } from '../store/sessionStore'
+
+function getExecutableOutputPath(filePath: string): string {
+  const parsed = path.parse(filePath)
+  const suffix = process.platform === 'win32' ? '.exe' : ''
+  return path.join(parsed.dir, `${parsed.name}${suffix}`)
+}
 
 export function runProjectAction(): void {
   const sessionState = useSessionStore.getState()
@@ -73,10 +80,10 @@ export function runCurrentFileAction(): void {
     args = [activeTab.id]
   } else if (ext === 'c') {
     command = 'gcc'
-    args = [activeTab.id, '-o', 'temp_out']
+    args = [activeTab.id, '-o', getExecutableOutputPath(activeTab.id)]
   } else if (ext === 'cpp' || ext === 'cc' || ext === 'cxx') {
     command = 'g++'
-    args = [activeTab.id, '-o', 'temp_out']
+    args = [activeTab.id, '-o', getExecutableOutputPath(activeTab.id)]
   } else if (ext === 'cs') {
     command = 'dotnet'
     args = ['run', '--project', activeTab.id]

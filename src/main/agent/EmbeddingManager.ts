@@ -5,13 +5,42 @@
 
 import { getApiConfig } from '../db/apiConfigs'
 import { GoogleGenerativeAI } from '@google/generative-ai'
+import { Worker } from 'worker_threads'
+import { join } from 'path'
+import { existsSync } from 'fs'
+
+// Rust native module for SIMD-accelerated vector similarity
+let native: any = null
+try {
+  native = require('@lumiq/native')
+} catch (err) {
+  // Rust module not available, will use JS fallback
+}
 
 export class EmbeddingManager {
   private static instance: EmbeddingManager
-  private pipelineInstance: any = null
-  private isLocalModelLoaded = false
+  private worker: Worker | null = null
+  private pendingRequests = new Map<string, { resolve: (v: number[]) => void; reject: (err: Error) => void }>()
+  private requestIdCounter = 0
+  private localPipelineInstance: any = null
 
   private constructor() {}
+
+  private async getLocalPipeline(): Promise<any> {
+    if (this.localPipelineInstance) {
+      return this.localPipelineInstance
+    }
+    try {
+      const { pipeline } = await import('@xenova/transformers')
+      console.log('[EmbeddingManager] Loading offline embedding model "Xenova/all-MiniLM-L6-v2" inline...')
+      this.localPipelineInstance = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2')
+      console.log('[EmbeddingManager] Local embedding model loaded successfully inline!')
+      return this.localPipelineInstance
+    } catch (err) {
+      console.error('[EmbeddingManager] Failed to load @xenova/transformers inline:', err)
+      throw err
+    }
+  }
 
   public static getInstance(): EmbeddingManager {
     if (!EmbeddingManager.instance) {
@@ -41,16 +70,21 @@ export class EmbeddingManager {
         }
       }
 
-      // 2. Try Local Offline-First Embedding using Transformers.js
+      // 2. Try Local Offline-First Embedding using worker thread (with main thread inline fallback)
       try {
-        const pipeline = await this.getLocalPipeline()
-        if (pipeline) {
-          const output = await pipeline(text, { pooling: 'mean', normalize: true })
-          const vector = Array.from(output.data) as number[]
-          return vector
-        }
+        const vector = await this.getEmbeddingFromWorker(text)
+        if (vector) return vector
       } catch (localErr) {
-        console.warn('[EmbeddingManager] Transformers.js local embedding failed:', localErr)
+        console.warn('[EmbeddingManager] Transformers.js local embedding worker failed/unavailable, trying inline fallback:', localErr)
+        try {
+          const pipeline = await this.getLocalPipeline()
+          if (pipeline) {
+            const output = await pipeline(text, { pooling: 'mean', normalize: true })
+            return Array.from(output.data) as number[]
+          }
+        } catch (inlineErr) {
+          console.warn('[EmbeddingManager] Inline Transformers.js embedding failed:', inlineErr)
+        }
       }
 
       // 3. Resilient Fallback: Generate keyword-frequency hashed pseudo-embeddings
@@ -64,25 +98,68 @@ export class EmbeddingManager {
   }
 
   /**
-   * Lazily loads and caches the local Transformers.js pipeline.
+   * Lazily spawns and caches the local embedding worker thread.
    */
-  private async getLocalPipeline(): Promise<any> {
-    if (this.isLocalModelLoaded && this.pipelineInstance) {
-      return this.pipelineInstance
-    }
+  private getEmbeddingWorker(): Worker | null {
+    if (this.worker) return this.worker
 
     try {
-      // Dynamic import to prevent startup bottlenecks and compilation crashes if package is missing
-      const { pipeline } = await import('@xenova/transformers')
-      console.log('[EmbeddingManager] Loading offline embedding model "Xenova/all-MiniLM-L6-v2"...')
-      this.pipelineInstance = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2')
-      this.isLocalModelLoaded = true
-      console.log('[EmbeddingManager] Local embedding model loaded successfully!')
-      return this.pipelineInstance
+      const workerPath = join(__dirname, 'embeddingWorker.js')
+      if (!existsSync(workerPath)) {
+        console.warn(`[EmbeddingManager] Local embedding worker script not found at "${workerPath}", will fall back to inline.`)
+        return null
+      }
+      console.log(`[EmbeddingManager] Spawning local embedding worker thread: ${workerPath}`)
+      
+      this.worker = new Worker(workerPath)
+      
+      this.worker.on('message', (data: { id: string; vector?: number[]; error?: string }) => {
+        const req = this.pendingRequests.get(data.id)
+        if (req) {
+          this.pendingRequests.delete(data.id)
+          if (data.vector) {
+            req.resolve(data.vector)
+          } else {
+            req.reject(new Error(data.error || 'Unknown worker error'))
+          }
+        }
+      })
+
+      this.worker.on('error', (err: Error) => {
+        console.error('[EmbeddingManager] Local embedding worker crashed:', err)
+        for (const [, req] of this.pendingRequests.entries()) {
+          req.reject(err)
+        }
+        this.pendingRequests.clear()
+        this.worker = null
+      })
+      
+      return this.worker
     } catch (err) {
-      console.warn('[EmbeddingManager] Could not dynamically load @xenova/transformers:', err)
+      console.error('[EmbeddingManager] Failed to spawn embedding worker:', err)
       return null
     }
+  }
+
+  /**
+   * Dispatches text embedding task to the background worker thread.
+   */
+  private getEmbeddingFromWorker(text: string): Promise<number[]> {
+    return new Promise((resolve, reject) => {
+      try {
+        const worker = this.getEmbeddingWorker()
+        if (!worker) {
+          reject(new Error('Embedding worker is not available'))
+          return
+        }
+
+        const id = String(++this.requestIdCounter)
+        this.pendingRequests.set(id, { resolve, reject })
+        worker.postMessage({ id, text })
+      } catch (err) {
+        reject(err)
+      }
+    })
   }
 
   /**
@@ -90,6 +167,13 @@ export class EmbeddingManager {
    * if both vectors are normalized).
    */
   public cosineSimilarity(vecA: number[], vecB: number[]): number {
+    if (native) {
+      try {
+        return native.cosineSimilarity(vecA, vecB)
+      } catch (err) {
+        // Fallback to JS
+      }
+    }
     if (vecA.length !== vecB.length) return 0
     let dotProduct = 0
     for (let i = 0; i < vecA.length; i++) {

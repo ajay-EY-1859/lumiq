@@ -10,6 +10,15 @@ import { getDatabase } from '../db/database'
 import { embeddingManager } from './EmbeddingManager'
 import type { SemanticIndexStatus } from '@shared/types'
 
+// Rust native module for high-performance file scanning and text chunking
+let native: any = null
+try {
+  native = require('@lumiq/native')
+  console.log('[CodebaseIndexer] Rust native module loaded successfully')
+} catch (err) {
+  console.warn('[CodebaseIndexer] Rust native module not available, falling back to JS implementation:', err)
+}
+
 // Allowed file extensions for code indexing
 const ALLOWED_EXTENSIONS = new Set([
   '.ts', '.tsx', '.js', '.jsx', '.py', '.go', '.rs', '.java', '.cpp', '.c', '.h', '.hpp',
@@ -45,13 +54,26 @@ export class CodebaseIndexer {
       return this.getStatus(workspacePath)
     }
 
+    const existingChunks = this.countChunks(workspacePath)
+    if (!force && existingChunks > 0) {
+      this.currentStatus = {
+        workspacePath,
+        state: 'ready',
+        filesScanned: 0,
+        filesIndexed: 0,
+        chunksStored: existingChunks,
+        lastIndexedAt: this.getLastIndexedAt(workspacePath)
+      }
+      return this.getStatus(workspacePath)
+    }
+
     this.isCurrentlyIndexing = true
     this.currentStatus = {
       workspacePath,
       state: 'indexing',
       filesScanned: 0,
       filesIndexed: 0,
-      chunksStored: this.countChunks(workspacePath)
+      chunksStored: existingChunks
     }
     this.startIndexing(workspacePath, force)
     return this.getStatus(workspacePath)
@@ -70,19 +92,19 @@ export class CodebaseIndexer {
   }
 
   private async runIndexPass(workspacePath: string, force: boolean): Promise<SemanticIndexStatus> {
+    let chunksCount = this.countChunks(workspacePath)
     this.currentStatus = {
       workspacePath,
       state: 'indexing',
       filesScanned: 0,
       filesIndexed: 0,
-      chunksStored: this.countChunks(workspacePath)
+      chunksStored: chunksCount
     }
 
     console.log(`[CodebaseIndexer] Starting semantic indexing for workspace: ${workspacePath}`)
 
     try {
-      const files: string[] = []
-      this.scanFiles(workspacePath, files)
+      const files = await this.scanFiles(workspacePath)
       this.currentStatus.filesScanned = files.length
 
       console.log(`[CodebaseIndexer] Discovered ${files.length} code files in workspace.`)
@@ -92,7 +114,8 @@ export class CodebaseIndexer {
           const chunksAdded = await this.indexFile(workspacePath, file, force)
           if (chunksAdded > 0) {
             this.currentStatus.filesIndexed++
-            this.currentStatus.chunksStored = this.countChunks(workspacePath)
+            chunksCount += chunksAdded
+            this.currentStatus.chunksStored = chunksCount
           }
         } catch (fileErr) {
           console.error(`[CodebaseIndexer] Failed to index file "${file}":`, fileErr)
@@ -104,7 +127,7 @@ export class CodebaseIndexer {
       this.currentStatus = {
         ...this.currentStatus,
         state: 'ready',
-        chunksStored: this.countChunks(workspacePath),
+        chunksStored: chunksCount,
         lastIndexedAt: new Date().toISOString(),
         lastError: undefined
       }
@@ -116,7 +139,7 @@ export class CodebaseIndexer {
         state: 'error',
         filesScanned: this.currentStatus?.filesScanned ?? 0,
         filesIndexed: this.currentStatus?.filesIndexed ?? 0,
-        chunksStored: this.countChunks(workspacePath),
+        chunksStored: chunksCount,
         lastError: (err as Error).message
       }
     } finally {
@@ -156,9 +179,32 @@ export class CodebaseIndexer {
   }
 
   /**
-   * Recursively scans directories to collect allowed code files.
+   * Scans workspace for code files. Uses Rust native module when available.
    */
-  private scanFiles(dir: string, fileList: string[]): void {
+  private async scanFiles(dir: string): Promise<string[]> {
+    if (native) {
+      try {
+        const entries = await native.scanWorkspace(dir, {
+          allowedExtensions: [...ALLOWED_EXTENSIONS],
+          ignoredDirs: [...IGNORED_DIRECTORIES],
+          maxFiles: 50000,
+        })
+        return entries.map((e: any) => e.path)
+      } catch (err) {
+        console.warn('[CodebaseIndexer] Rust scanner failed, falling back to JS:', err)
+      }
+    }
+
+    // JS fallback (synchronous, but still works)
+    const fileList: string[] = []
+    this.scanFilesSync(dir, fileList)
+    return fileList
+  }
+
+  /**
+   * Recursively scans directories to collect allowed code files (JS Fallback).
+   */
+  private scanFilesSync(dir: string, fileList: string[]): void {
     try {
       const entries = fs.readdirSync(dir, { withFileTypes: true })
       for (const entry of entries) {
@@ -178,7 +224,7 @@ export class CodebaseIndexer {
         }
 
         if (entry.isDirectory()) {
-          this.scanFiles(fullPath, fileList)
+          this.scanFilesSync(fullPath, fileList)
         } else if (entry.isFile()) {
           const ext = path.extname(entry.name).toLowerCase()
           if (ALLOWED_EXTENSIONS.has(ext)) {
@@ -226,7 +272,18 @@ export class CodebaseIndexer {
     if (!content.trim()) return 0
 
     // 2. Semantic Chunking: Split by double newlines (functions, blocks) with max size constraints
-    const chunks = this.chunkText(content, 1000, 200) // Chunk size ~1000 chars, overlap 200 chars
+    let chunks: string[]
+    if (native) {
+      try {
+        const nativeChunks = native.chunkSingleFile(filePath, relativePath, 1000, 200)
+        chunks = nativeChunks.map((c: any) => c.content)
+      } catch (err) {
+        console.warn('[CodebaseIndexer] Rust chunkSingleFile failed, falling back to JS:', err)
+        chunks = this.chunkText(content, 1000, 200)
+      }
+    } else {
+      chunks = this.chunkText(content, 1000, 200)
+    }
     if (chunks.length === 0) return 0
 
     // 3. Generate embeddings and save to SQLite
@@ -237,28 +294,37 @@ export class CodebaseIndexer {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
 
+    const chunksWithEmbeddings: Array<{ chunkText: string; embedding: number[] }> = []
+
     for (let i = 0; i < chunks.length; i++) {
       const chunkText = chunks[i]!
       const embedding = await embeddingManager.getEmbedding(chunkText)
-
-      // Serialize embedding float array to buffer for efficient SQLite BLOB storage
-      const buffer = Buffer.from(new Float32Array(embedding).buffer)
-
-      insertStmt.run(
-        uuidv4(),
-        workspacePath,
-        relativePath,
-        i,
-        chunkText,
-        buffer,
-        stat.mtimeMs,
-        stat.size,
-        new Date().toISOString()
-      )
+      chunksWithEmbeddings.push({ chunkText, embedding })
 
       // Yield after every embedding generation to let the main process breathe
       await new Promise((resolve) => setTimeout(resolve, 0))
     }
+
+    // Now insert all embeddings in a single SQLite transaction
+    const insertTransaction = db.transaction((rows: typeof chunksWithEmbeddings) => {
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i]!
+        const buffer = Buffer.from(new Float32Array(row.embedding).buffer)
+        insertStmt.run(
+          uuidv4(),
+          workspacePath,
+          relativePath,
+          i,
+          row.chunkText,
+          buffer,
+          stat.mtimeMs,
+          stat.size,
+          new Date().toISOString()
+        )
+      }
+    })
+
+    insertTransaction(chunksWithEmbeddings)
 
     return chunks.length
   }

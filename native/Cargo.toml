@@ -1,0 +1,47 @@
+[package]
+name = "lumiq-native"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+# NAPI-RS bindings for Node.js
+napi = { version = "2", default-features = false, features = ["async", "napi8", "serde-json"] }
+napi-derive = "2"
+
+# Parallelism & async
+rayon = "1.10"
+tokio = { version = "1", features = ["rt-multi-thread", "fs", "sync", "macros"] }
+
+# File system
+walkdir = "2"
+memmap2 = "0.9"
+notify = { version = "6", features = ["macos_kqueue"] }
+notify-debouncer-mini = "0.4"
+ignore = "0.4"          # .gitignore-aware file walking
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# SQLite direct access (same DB as better-sqlite3)
+rusqlite = { version = "0.31", features = ["bundled"] }
+
+# Regex search (ripgrep core)
+regex = "1"
+grep-regex = "0.1"
+
+# Utilities
+uuid = { version = "1", features = ["v4"] }
+chrono = "0.4"
+
+[build-dependencies]
+napi-build = "2"
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = 3
+strip = true

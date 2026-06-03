@@ -28,6 +28,9 @@ vi.mock('../../db/database', () => ({
   initDatabase: vi.fn(),
   closeDatabase: vi.fn(),
   getDatabase: vi.fn(() => ({
+    transaction: vi.fn((fn: any) => {
+      return (...args: any[]) => fn(...args)
+    }),
     prepare: (sql: string) => {
       const normalized = sql.replace(/\s+/g, ' ').trim()
 
@@ -196,6 +199,19 @@ describe('CodebaseIndexer semantic indexing', () => {
 
     expect(changed.filesIndexed).toBe(1)
     expect(changed.chunksStored).toBeGreaterThan(0)
+  })
+
+  it('keeps an already indexed workspace in ready state instead of restarting a heavy indexing pass', async () => {
+    const target = join(tempWorkspacePath, 'auth.ts')
+    writeFileSync(target, 'export function refreshOAuthToken() {\n  return "oauth token expiration"\n}\n')
+
+    await codebaseIndexer.indexWorkspaceNow(tempWorkspacePath, true)
+
+    const status = await codebaseIndexer.indexWorkspace(tempWorkspacePath, false)
+
+    expect(status.state).toBe('ready')
+    expect(status.chunksStored).toBeGreaterThan(0)
+    expect(status.filesScanned).toBe(0)
   })
 
   it('returns sorted semantic matches above the relevance threshold', async () => {

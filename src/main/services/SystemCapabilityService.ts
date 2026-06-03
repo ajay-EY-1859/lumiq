@@ -67,8 +67,8 @@ export class SystemCapabilityService {
     console.log('[SystemCapabilityService] Starting environment capabilities scan...')
     const results: Capability[] = []
 
-    // Execute checks in parallel (each with short timeouts to avoid any hangs)
-    const scanPromises = toolsToCheck.map(async (tool) => {
+    // Execute checks sequentially with a slight yield (20ms) to avoid CPU spikes on startup
+    for (const tool of toolsToCheck) {
       try {
         const capability = await this.checkTool(tool.name, tool.cmd)
         results.push(capability)
@@ -80,9 +80,9 @@ export class SystemCapabilityService {
           installPath: null
         })
       }
-    })
-
-    await Promise.all(scanPromises)
+      // Yield to the event loop
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    }
 
     // Save results to database
     try {

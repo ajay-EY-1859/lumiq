@@ -99,9 +99,9 @@ export function registerSessionHandlers(): void {
       setupWorkspaceRunner(session.workspacePath)
     }
 
-    // Trigger background code intelligence indexing & watching with a 2-second delay to ensure instant app loading
+    // Restore the bound workspace without triggering a heavy re-scan on app reopen.
     setTimeout(() => {
-      void CodeIntelligenceService.getInstance().setWorkspace(session.workspacePath || null)
+      void CodeIntelligenceService.getInstance().setWorkspace(session.workspacePath || null, { skipIndexing: true })
     }, 2000)
 
     const messages = getSessionMessages(sessionId)
@@ -155,8 +155,8 @@ export function registerSessionHandlers(): void {
       if (workspacePath) {
         setupWorkspaceRunner(workspacePath)
       }
-      // Immediately trigger background code intelligence indexing & watching
-      void CodeIntelligenceService.getInstance().setWorkspace(workspacePath)
+      // Rebind the workspace without forcing a heavy background scan during the initial bind flow.
+      void CodeIntelligenceService.getInstance().setWorkspace(workspacePath, { skipIndexing: true })
     }
   )
 

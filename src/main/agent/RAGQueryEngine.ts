@@ -6,6 +6,14 @@
 import { getDatabase } from '../db/database'
 import { embeddingManager } from './EmbeddingManager'
 
+// Rust native module for SIMD-accelerated vector similarity
+let native: any = null
+try {
+  native = require('@lumiq/native')
+} catch (err) {
+  // Rust module not available, will use JS fallback
+}
+
 export interface RAGMatch {
   filePath: string
   chunkIndex: number
@@ -51,18 +59,45 @@ export class RAGQueryEngine {
 
       if (rows.length === 0) return []
 
-      // 3. Compute cosine similarity for each chunk
-      const matches: RAGMatch[] = []
+      // 3. Compute cosine similarity — try Rust native batch first
+      if (native && rows.length > 0) {
+        try {
+          // Extract all vectors as f64 arrays for Rust
+          const allVectors: number[][] = rows.map(row => {
+            return Array.from(new Float32Array(
+              row.embedding.buffer,
+              row.embedding.byteOffset,
+              row.embedding.byteLength / Float32Array.BYTES_PER_ELEMENT
+            )) as number[]
+          })
 
+          const results = native.cosineSimilarityBatch(
+            queryVec,
+            allVectors,
+            topK,
+            0.15 // threshold
+          )
+
+          return results.map((r: any) => ({
+            filePath: rows[r.index].filePath,
+            chunkIndex: rows[r.index].chunkIndex,
+            content: rows[r.index].content,
+            score: r.score
+          }))
+        } catch (err) {
+          console.warn('[RAGQueryEngine] Rust similarity failed, falling back to JS:', err)
+        }
+      }
+
+      // JS fallback: sequential cosine similarity
+      const matches: RAGMatch[] = []
       for (const row of rows) {
-        // Deserialize float array from buffer
         const chunkVec = Array.from(new Float32Array(
           row.embedding.buffer,
           row.embedding.byteOffset,
           row.embedding.byteLength / Float32Array.BYTES_PER_ELEMENT
         ))
         const score = embeddingManager.cosineSimilarity(queryVec, chunkVec)
-
         matches.push({
           filePath: row.filePath,
           chunkIndex: row.chunkIndex,
@@ -70,12 +105,10 @@ export class RAGQueryEngine {
           score
         })
       }
-
-      // 4. Sort descending by score and keep topK
       return matches
         .sort((a, b) => b.score - a.score)
         .slice(0, topK)
-        .filter((m) => m.score > 0.15) // Relevancy threshold filter
+        .filter((m) => m.score > 0.15)
 
     } catch (err) {
       console.error('[RAGQueryEngine] Semantic search query failed:', err)

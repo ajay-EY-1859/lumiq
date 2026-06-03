@@ -76,6 +76,7 @@ export function TaskPanel(): React.JSX.Element {
       term.loadAddon(fitAddon)
       term.open(terminalContainerRef.current)
       fitAddon.fit()
+      setTimeout(() => term.focus(), 0)
 
       xtermInstanceRef.current = term
 
@@ -94,10 +95,10 @@ export function TaskPanel(): React.JSX.Element {
         return true
       })
 
-      // Bind keyboard input to task stdin
+      // Bind keyboard input to task stdin. xterm handles local rendering; we only forward the bytes.
       onDataDisposable = term.onData((data) => {
         if (activeTask.status === 'running') {
-          window.electronAPI.task.stdin(activeTask.id, data)
+          void window.electronAPI.task.stdin(activeTask.id, data)
         }
       })
 

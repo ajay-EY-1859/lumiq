@@ -1,0 +1,1 @@
+D:\agentic-desktop-app\native\target\release\lumiq_native.dll: D:\agentic-desktop-app\native\build.rs D:\agentic-desktop-app\native\src\chunker.rs D:\agentic-desktop-app\native\src\lib.rs D:\agentic-desktop-app\native\src\scanner.rs D:\agentic-desktop-app\native\src\search.rs D:\agentic-desktop-app\native\src\similarity.rs

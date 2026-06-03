@@ -15,7 +15,8 @@ export default defineConfig({
       rollupOptions: {
         input: {
           index: resolve('src/main/index.ts'),
-          codeIntelligenceWorker: resolve('src/main/services/CodeIntelligenceWorker.ts')
+          codeIntelligenceWorker: resolve('src/main/services/CodeIntelligenceWorker.ts'),
+          embeddingWorker: resolve('src/main/agent/EmbeddingWorker.ts')
         }
       }
     }

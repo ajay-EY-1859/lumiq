@@ -9,6 +9,14 @@ import type { SearchMatch, SearchRequest, SearchResponse } from '@shared/types'
 import { handleWithTimeout, IPC_TIMEOUT } from './handleWithTimeout'
 import { getDatabase } from '../db/database'
 
+// Rust native module for high-performance parallel file search
+let native: any = null
+try {
+  native = require('@lumiq/native')
+} catch (err) {
+  console.warn('[searchHandlers] Rust native module not available:', err)
+}
+
 const MAX_RESULTS = 500
 const MAX_FILE_SIZE = 5 * 1024 * 1024 // 5 MB
 const BINARY_EXTENSIONS = new Set([
@@ -23,7 +31,7 @@ const BINARY_EXTENSIONS = new Set([
 const DEFAULT_IGNORED = new Set(['node_modules', '.git', '.svn', '__pycache__', 'dist', 'out', '.next', '.cache'])
 
 export function registerSearchHandlers(): void {
-  handleWithTimeout(IPC.SEARCH_FILES, IPC_TIMEOUT.long, (_event, request: SearchRequest): SearchResponse => {
+  handleWithTimeout(IPC.SEARCH_FILES, IPC_TIMEOUT.long, async (_event, request: SearchRequest): Promise<SearchResponse> => {
     const start = Date.now()
     const { query, workspacePath, isRegex, caseSensitive, includePattern, excludePattern } = request
 
@@ -31,7 +39,32 @@ export function registerSearchHandlers(): void {
       return { matches: [], totalMatches: 0, truncated: false, elapsed: 0 }
     }
 
-    // Build regex
+    // Try Rust native search first (parallel, non-blocking)
+    if (native) {
+      try {
+        const includeExts = parseFilterPatterns(includePattern)
+        const excludeDirs = parseFilterPatterns(excludePattern)
+        const result = await native.searchFiles(
+          workspacePath,
+          query,
+          isRegex ?? false,
+          caseSensitive ?? false,
+          includeExts,
+          excludeDirs,
+          MAX_RESULTS
+        )
+        return {
+          matches: result.matches,
+          totalMatches: result.totalMatches,
+          truncated: result.truncated,
+          elapsed: result.elapsedMs
+        }
+      } catch (err) {
+        console.warn('[searchHandlers] Rust search failed, falling back to JS:', err)
+      }
+    }
+
+    // JS fallback (synchronous, original implementation)
     let regex: RegExp
     const flags = caseSensitive ? 'g' : 'gi'
     try {
@@ -42,10 +75,8 @@ export function registerSearchHandlers(): void {
       return { matches: [], totalMatches: 0, truncated: false, elapsed: Date.now() - start }
     }
 
-    // Parse include/exclude patterns
     const includeExts = parseFilterPatterns(includePattern)
     const excludeDirs = new Set([...DEFAULT_IGNORED, ...parseFilterPatterns(excludePattern)])
-
     const matches: SearchMatch[] = []
     const visited = new Set<string>()
 

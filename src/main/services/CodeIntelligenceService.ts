@@ -34,9 +34,9 @@ export class CodeIntelligenceService {
   }
 
   /**
-   * Binds a new workspace, triggers initial asynchronous indexing, and starts the file watcher.
+   * Binds a new workspace, optionally skipping the heavy background scan for restore flows.
    */
-  public async setWorkspace(path: string | null): Promise<void> {
+  public async setWorkspace(path: string | null, options: { skipIndexing?: boolean } = {}): Promise<void> {
     if (this.activeWorker) {
       this.activeWorker.terminate()
       this.activeWorker = null
@@ -58,15 +58,19 @@ export class CodeIntelligenceService {
     console.log(`[CodeIntelligence] Workspace bound: ${this.workspacePath}`)
     this.disableAsarPatching()
 
-    // Trigger SystemCapabilityService scan first in the background
-    SystemCapabilityService.getInstance().scan().catch((err) => {
-      console.error('[CodeIntelligence] System capabilities scan failed:', err)
-    })
+    if (!options.skipIndexing) {
+      // Trigger SystemCapabilityService scan first in the background
+      SystemCapabilityService.getInstance().scan().catch((err) => {
+        console.error('[CodeIntelligence] System capabilities scan failed:', err)
+      })
 
-    // Run workspace indexing asynchronously in the background
-    this.scanWorkspaceAsync().catch((err) => {
-      console.error('[CodeIntelligence] Background workspace scan failed:', err)
-    })
+      // Run workspace indexing asynchronously in the background
+      this.scanWorkspaceAsync().catch((err) => {
+        console.error('[CodeIntelligence] Background workspace scan failed:', err)
+      })
+    } else {
+      console.log('[CodeIntelligence] Skipping heavy workspace scan for restore flow to keep startup responsive.')
+    }
 
     // Setup chokidar watcher for real-time incremental updates
     this.setupWatcher()
@@ -357,24 +361,23 @@ export class CodeIntelligenceService {
 
     console.log('[CodeIntelligence] Setting up chokidar workspace watcher...')
 
+    const ignoredDirs = [
+      'node_modules', '.git', '.vscode', 'dist', 'build', 'out', 'bin', 'obj',
+      '__pycache__', '.venv', 'env', '$RECYCLE.BIN', 'System Volume Information',
+      'vscode/extensions'
+    ]
+
     this.watcher = chokidar.watch(this.workspacePath, {
-      ignored: [
-        '**/node_modules/**',
-        '**/.git/**',
-        '**/.vscode/**',
-        '**/dist/**',
-        '**/build/**',
-        '**/out/**',
-        '**/bin/**',
-        '**/obj/**',
-        '**/__pycache__/**',
-        '**/.venv/**',
-        '**/env/**',
-        '**/$RECYCLE.BIN/**',
-        '**/System Volume Information/**',
-        '**/vscode/extensions/**',
-        '**/*.asar'
-      ],
+      ignored: (filePath: string) => {
+        const normalized = filePath.replace(/\\/g, '/')
+        if (ignoredDirs.some(dir => normalized.includes(`/${dir}/`) || normalized.endsWith(`/${dir}`))) {
+          return true
+        }
+        if (normalized.endsWith('.asar')) {
+          return true
+        }
+        return false
+      },
       persistent: true,
       ignoreInitial: true, // Only trigger on modified/created files
       ignorePermissionErrors: true,
