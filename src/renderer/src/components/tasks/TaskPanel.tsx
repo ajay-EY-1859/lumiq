@@ -85,6 +85,15 @@ export function TaskPanel(): React.JSX.Element {
       })
       lastLoggedIndexRef.current = activeTask.logs.length
 
+      // Intercept Escape key in terminal to refocus the editor
+      term.attachCustomKeyEventHandler((arg: KeyboardEvent) => {
+        if (arg.key === 'Escape') {
+          window.dispatchEvent(new CustomEvent('lumiq-focus-editor'))
+          return false
+        }
+        return true
+      })
+
       // Bind keyboard input to task stdin
       onDataDisposable = term.onData((data) => {
         if (activeTask.status === 'running') {
@@ -132,6 +141,9 @@ export function TaskPanel(): React.JSX.Element {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k' && activeTab === 'terminal') {
         e.preventDefault()
         setShowAiOverlay((prev) => !prev)
+      }
+      if (e.key === 'Escape' && activeTab === 'terminal') {
+        window.dispatchEvent(new CustomEvent('lumiq-focus-editor'))
       }
     }
     window.addEventListener('keydown', handleKeyDown)

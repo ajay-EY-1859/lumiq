@@ -1,6 +1,6 @@
 {
   "name": "lumiq",
-  "version": "1.0.0",
+  "version": "1.1",
   "description": "Lumiq — One interface. Every model. An Electron desktop GUI for multi-provider AI chat.",
   "main": "./out/main/index.js",
   "homepage": "https://github.com/ajay-EY-1859/lumiq",
@@ -38,6 +38,7 @@
     "@xenova/transformers": "^2.0.1",
     "axios": "^1.7.9",
     "better-sqlite3": "^12.9.0",
+    "chokidar": "^5.0.0",
     "electron-updater": "^6.3.9",
     "keytar": "^7.9.0",
     "monaco-editor": "^0.53.0",

@@ -18,7 +18,8 @@ const ALLOWED_EXTENSIONS = new Set([
 
 // Directories to ignore
 const IGNORED_DIRECTORIES = new Set([
-  'node_modules', '.git', '.github', 'dist', 'out', 'build', '.next', '.vite', 'coverage', 'temp'
+  'node_modules', '.git', '.github', '.vscode', 'vscode', 'dist', 'out', 'build', '.next', '.vite', 'coverage', 'temp',
+  'Program Files', 'Program Files (x86)', 'Windows', '$RECYCLE.BIN', 'System Volume Information'
 ])
 
 export class CodebaseIndexer {
@@ -96,6 +97,8 @@ export class CodebaseIndexer {
         } catch (fileErr) {
           console.error(`[CodebaseIndexer] Failed to index file "${file}":`, fileErr)
         }
+        // Yield to the event loop after processing each file to ensure zero lag
+        await new Promise((resolve) => setTimeout(resolve, 0))
       }
 
       this.currentStatus = {
@@ -160,11 +163,22 @@ export class CodebaseIndexer {
       const entries = fs.readdirSync(dir, { withFileTypes: true })
       for (const entry of entries) {
         const fullPath = path.join(dir, entry.name)
+        const normalizedName = entry.name.toLowerCase()
+
+        if (
+          entry.name.startsWith('.') ||
+          normalizedName.endsWith('.asar') ||
+          IGNORED_DIRECTORIES.has(entry.name)
+        ) {
+          continue
+        }
+
+        if (entry.isSymbolicLink()) {
+          continue
+        }
 
         if (entry.isDirectory()) {
-          if (!IGNORED_DIRECTORIES.has(entry.name)) {
-            this.scanFiles(fullPath, fileList)
-          }
+          this.scanFiles(fullPath, fileList)
         } else if (entry.isFile()) {
           const ext = path.extname(entry.name).toLowerCase()
           if (ALLOWED_EXTENSIONS.has(ext)) {
@@ -241,6 +255,9 @@ export class CodebaseIndexer {
         stat.size,
         new Date().toISOString()
       )
+
+      // Yield after every embedding generation to let the main process breathe
+      await new Promise((resolve) => setTimeout(resolve, 0))
     }
 
     return chunks.length

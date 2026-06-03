@@ -39,10 +39,11 @@ import { ClipboardTool } from '../tools/ClipboardTool'
 import { ArchiveTool } from '../tools/ArchiveTool'
 import { HttpTool } from '../tools/HttpTool'
 import { EnvTool } from '../tools/EnvTool'
+import { SymbolQueryTool } from '../tools/SymbolQueryTool'
 import { setWorkspaceRoot } from '../security/pathValidation'
 
 // Read-only tools that can run concurrently
-const READ_ONLY_TOOLS = new Set(['FileReadTool', 'GrepTool', 'GlobTool', 'SleepTool', 'ListDirTool', 'GitTool', 'DiffTool', 'ImageReadTool', 'FileSearchTool', 'EnvTool'])
+const READ_ONLY_TOOLS = new Set(['FileReadTool', 'GrepTool', 'GlobTool', 'SleepTool', 'ListDirTool', 'GitTool', 'DiffTool', 'ImageReadTool', 'FileSearchTool', 'EnvTool', 'SymbolQueryTool'])
 const MAX_CONCURRENCY = 10
 
 // Pending approval requests
@@ -117,7 +118,8 @@ export class ToolExecutor {
       new ClipboardTool(),
       new ArchiveTool(),
       new HttpTool(),
-      new EnvTool()
+      new EnvTool(),
+      new SymbolQueryTool()
     ]
 
     for (const tool of toolInstances) {

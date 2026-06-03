@@ -2,18 +2,27 @@
 // Lumiq — OpenAI Provider
 // ═══════════════════════════════════════════════════════════════════
 
-import OpenAI from 'openai'
+import type OpenAI from 'openai'
 import type { AIProvider } from './AIProvider'
 import type { Message, ProviderConfig, SendOptions, SendResult, TestResult } from '@shared/types'
 
 export class OpenAIProvider implements AIProvider {
-  protected client: OpenAI
+  protected client: any = null
+  protected config: ProviderConfig
 
   constructor(config: ProviderConfig) {
-    this.client = new OpenAI({
-      apiKey: config.apiKey,
-      baseURL: config.baseUrl || undefined
-    })
+    this.config = config
+  }
+
+  protected async getClient() {
+    if (!this.client) {
+      const { default: OpenAI } = await import('openai')
+      this.client = new OpenAI({
+        apiKey: this.config.apiKey,
+        baseURL: this.config.baseUrl || undefined
+      })
+    }
+    return this.client
   }
 
   async sendMessage(messages: Message[], options: SendOptions): Promise<SendResult> {
@@ -38,7 +47,8 @@ export class OpenAIProvider implements AIProvider {
       }
     }))
 
-    const stream = await this.client.chat.completions.create({
+    const client = await this.getClient()
+    const stream = await client.chat.completions.create({
       model: options.model,
       messages: openaiMessages,
       stream: true,
@@ -136,7 +146,8 @@ export class OpenAIProvider implements AIProvider {
 
   async listModels(): Promise<string[]> {
     try {
-      const models = await this.client.models.list()
+      const client = await this.getClient()
+      const models = await client.models.list()
       return models.data
         .filter((m) => m.id.startsWith('gpt'))
         .map((m) => m.id)
@@ -148,7 +159,8 @@ export class OpenAIProvider implements AIProvider {
 
   async testConnection(): Promise<TestResult> {
     try {
-      await this.client.models.list()
+      const client = await this.getClient()
+      await client.models.list()
       return { success: true }
     } catch (e) {
       return { success: false, error: (e as Error).message }

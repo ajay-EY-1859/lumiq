@@ -15,10 +15,23 @@
  */
 import React, { useEffect, useState, useCallback, useRef, useId } from 'react'
 import Editor, { OnMount, useMonaco } from '@monaco-editor/react'
+import '../../utils/monacoSetup'
 import { useEditorStore } from '@renderer/store/editorStore'
 import { useChatStore } from '@renderer/store/chatStore'
 import { useProviderStore } from '@renderer/store/providerStore'
-import { DocumentSymbol, SymbolKind } from '@shared/types'
+import { useTaskStore } from '@renderer/store/taskStore'
+import { useSessionStore } from '@renderer/store/sessionStore'
+import { DocumentSymbol, SymbolKind, TaskSelfHealSuggestion } from '@shared/types'
+import {
+  runProjectAction,
+  buildProjectAction,
+  runCurrentFileAction,
+  compileCurrentFileAction,
+  stopActiveTaskAction,
+  debugStepOverAction,
+  debugStepIntoAction,
+  debugStepOutAction
+} from '@renderer/utils/shortcutExecutor'
 
 // ── Language detection ────────────────────────────────────────────────
 function getLanguage(fileName: string): string | undefined {
@@ -173,6 +186,24 @@ export function EditorPane(): React.JSX.Element | null {
   const [wordWrap, setWordWrap]   = useState<'off' | 'on'>('off')
   const [minimap, setMinimap]     = useState(true)
   const [autocompleteEnabled, setAutocompleteEnabled] = useState(true)
+  const [errorSuggestion, setErrorSuggestion] = useState<TaskSelfHealSuggestion | null>(null)
+
+  useEffect(() => {
+    const cleanup = window.electronAPI.task.onSelfHeal((suggestion: TaskSelfHealSuggestion) => {
+      setErrorSuggestion(suggestion)
+    })
+    return cleanup
+  }, [])
+
+  useEffect(() => {
+    const handleFocusEditor = () => {
+      if (editorRef.current) {
+        editorRef.current.focus()
+      }
+    }
+    window.addEventListener('lumiq-focus-editor', handleFocusEditor)
+    return () => window.removeEventListener('lumiq-focus-editor', handleFocusEditor)
+  }, [])
 
   // Stable IDs for ARIA relationships
   const uid        = useId()
@@ -356,6 +387,46 @@ export function EditorPane(): React.JSX.Element | null {
       focused?.focus()
     })
 
+    // F5 — run project
+    editor.addCommand(monacoInstance.KeyCode.F5, () => {
+      runProjectAction()
+    })
+
+    // Ctrl+F5 — run active file
+    editor.addCommand(monacoInstance.KeyMod.CtrlCmd | monacoInstance.KeyCode.F5, () => {
+      runCurrentFileAction()
+    })
+
+    // Shift+F5 — stop active task
+    editor.addCommand(monacoInstance.KeyMod.Shift | monacoInstance.KeyCode.F5, () => {
+      stopActiveTaskAction()
+    })
+
+    // F6 — build project
+    editor.addCommand(monacoInstance.KeyCode.F6, () => {
+      buildProjectAction()
+    })
+
+    // Ctrl+F6 — compile active file
+    editor.addCommand(monacoInstance.KeyMod.CtrlCmd | monacoInstance.KeyCode.F6, () => {
+      compileCurrentFileAction()
+    })
+
+    // F10 — debug step over
+    editor.addCommand(monacoInstance.KeyCode.F10, () => {
+      debugStepOverAction()
+    })
+
+    // F11 — debug step into
+    editor.addCommand(monacoInstance.KeyCode.F11, () => {
+      debugStepIntoAction()
+    })
+
+    // Shift+F11 — debug step out
+    editor.addCommand(monacoInstance.KeyMod.Shift | monacoInstance.KeyCode.F11, () => {
+      debugStepOutAction()
+    })
+
     // Add to Chat
     editor.addAction({
       id: 'lumiq-add-to-chat',
@@ -375,9 +446,141 @@ export function EditorPane(): React.JSX.Element | null {
         store.setDraftMessage((store.draftMessage ?? '') + snippet)
       }
     })
+
+    // Run Current File
+    editor.addAction({
+      id: 'lumiq-run-file',
+      label: 'Lumiq: Run Current File',
+      contextMenuGroupId: 'navigation',
+      contextMenuOrder: 2,
+      run: () => {
+        const id = activeTabIdRef.current
+        const tab = id ? useEditorStore.getState().tabs.find((t) => t.id === id) : null
+        if (!tab) return
+
+        const ext = tab.name.split('.').pop()?.toLowerCase() ?? ''
+        let command = ''
+        let args: string[] = []
+
+        if (ext === 'py') {
+          command = 'python'
+          args = [tab.id]
+        } else if (['js', 'jsx', 'ts', 'tsx'].includes(ext)) {
+          command = 'node'
+          args = [tab.id]
+        } else if (ext === 'go') {
+          command = 'go'
+          args = ['run', tab.id]
+        } else if (ext === 'java') {
+          command = 'javac'
+          args = [tab.id]
+        } else if (ext === 'c') {
+          command = 'node'
+          args = ['.lumiq/c-cpp-runner.js', 'gcc', tab.id]
+        } else if (ext === 'cpp' || ext === 'cc' || ext === 'cxx') {
+          command = 'node'
+          args = ['.lumiq/c-cpp-runner.js', 'g++', tab.id]
+        } else if (ext === 'cs') {
+          command = 'dotnet'
+          args = ['run', '--project', tab.id]
+        }
+
+        if (command) {
+          const workspacePath = useSessionStore.getState().sessions.find(s => s.id === useSessionStore.getState().activeSessionId)?.workspacePath
+          if (workspacePath) {
+            useTaskStore.getState().runTask(`Run File: ${tab.name}`, command, args, workspacePath)
+          }
+        }
+      }
+    })
+
+    // Compile Current File
+    editor.addAction({
+      id: 'lumiq-compile-file',
+      label: 'Lumiq: Compile Current File',
+      contextMenuGroupId: 'navigation',
+      contextMenuOrder: 3,
+      run: () => {
+        const id = activeTabIdRef.current
+        const tab = id ? useEditorStore.getState().tabs.find((t) => t.id === id) : null
+        if (!tab) return
+
+        const ext = tab.name.split('.').pop()?.toLowerCase() ?? ''
+        let command = ''
+        let args: string[] = []
+
+        if (ext === 'java') {
+          command = 'javac'
+          args = [tab.id]
+        } else if (ext === 'c') {
+          command = 'gcc'
+          args = ['-c', tab.id]
+        } else if (ext === 'cpp' || ext === 'cc' || ext === 'cxx') {
+          command = 'g++'
+          args = ['-c', tab.id]
+        } else if (ext === 'go') {
+          command = 'go'
+          args = ['build', '-o', tab.name.split('.').slice(0, -1).join('.'), tab.id]
+        } else if (ext === 'cs') {
+          command = 'dotnet'
+          args = ['build', tab.id]
+        }
+
+        if (command) {
+          const workspacePath = useSessionStore.getState().sessions.find(s => s.id === useSessionStore.getState().activeSessionId)?.workspacePath
+          if (workspacePath) {
+            useTaskStore.getState().runTask(`Compile File: ${tab.name}`, command, args, workspacePath)
+          }
+        }
+      }
+    })
+
+    // Build Project
+    editor.addAction({
+      id: 'lumiq-build-project',
+      label: 'Lumiq: Build Project',
+      contextMenuGroupId: 'navigation',
+      contextMenuOrder: 4,
+      run: () => {
+        const workspacePath = useSessionStore.getState().sessions.find(s => s.id === useSessionStore.getState().activeSessionId)?.workspacePath
+        if (!workspacePath) return
+        
+        const defs = useTaskStore.getState().definitions
+        const buildTask = defs.find(d => d.name.endsWith(':build') || d.name.endsWith(':compile') || d.name.endsWith(':build-project'))
+        
+        if (buildTask) {
+          useTaskStore.getState().runTask(buildTask.name, buildTask.command, buildTask.args, workspacePath)
+        } else {
+          alert('No project build configuration discovered. Please click the Refresh button in the Runner panel to discover scripts.')
+        }
+      }
+    })
+
+    // Run Project
+    editor.addAction({
+      id: 'lumiq-run-project',
+      label: 'Lumiq: Run Project',
+      contextMenuGroupId: 'navigation',
+      contextMenuOrder: 5,
+      run: () => {
+        const workspacePath = useSessionStore.getState().sessions.find(s => s.id === useSessionStore.getState().activeSessionId)?.workspacePath
+        if (!workspacePath) return
+        
+        const defs = useTaskStore.getState().definitions
+        const runTask = defs.find(d => d.name.endsWith(':run') || d.name.startsWith('npm:start') || d.name.startsWith('npm:dev') || d.name.startsWith('python:run'))
+        
+        if (runTask) {
+          useTaskStore.getState().runTask(runTask.name, runTask.command, runTask.args, workspacePath)
+        } else {
+          alert('No project run configuration discovered. Please click the Refresh button in the Runner panel to discover scripts.')
+        }
+      }
+    })
   }
 
   // ── Empty state ──────────────────────────────────────────────────
+
+
   if (tabs.length === 0) {
     return (
       <div
@@ -552,6 +755,135 @@ export function EditorPane(): React.JSX.Element | null {
               linkedEditing: true,
             }}
           />
+          
+          {/* Gorgeous glassmorphic errors popup overlay */}
+          {errorSuggestion && (
+            <div style={{
+              position: 'absolute',
+              bottom: '24px',
+              right: '24px',
+              maxWidth: '380px',
+              maxHeight: '80%',
+              background: 'rgba(22, 27, 34, 0.85)',
+              backdropFilter: 'blur(16px) saturate(180%)',
+              border: '1px solid rgba(255, 123, 114, 0.4)', // glowing red border
+              borderRadius: '12px',
+              boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5), 0 0 15px rgba(255, 123, 114, 0.15)',
+              padding: '16px',
+              zIndex: 1000,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '12px',
+              animation: 'slideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+              color: 'var(--text-primary)',
+            }}>
+              <style dangerouslySetInnerHTML={{__html: `
+                @keyframes slideIn {
+                  from { transform: translateY(20px); opacity: 0; }
+                  to { transform: translateY(0); opacity: 1; }
+                }
+              `}} />
+
+              {/* Title & Close */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#ff7b72', fontWeight: 600, fontSize: '13px' }}>
+                  <span style={{ fontSize: '16px' }}>⚠️</span>
+                  <span>Errors Detected!</span>
+                </div>
+                <button
+                  onClick={() => setErrorSuggestion(null)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--text-muted)',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    padding: '2px 4px',
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.color = '#ff7b72'}
+                  onMouseLeave={(e) => e.currentTarget.style.color = 'var(--text-muted)'}
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Subtitle */}
+              <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: '1.4' }}>
+                Lumiq detected compilation or execution errors. Do you want to fix these errors using the AI Agent?
+              </div>
+
+              {/* Scrollable Errors */}
+              <div style={{
+                background: 'rgba(0,0,0,0.3)',
+                borderRadius: '6px',
+                padding: '8px 10px',
+                maxHeight: '120px',
+                overflowY: 'auto',
+                border: '1px solid rgba(255,255,255,0.05)',
+              }}>
+                <pre style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: '11px',
+                  color: '#f85149',
+                  margin: 0,
+                  whiteSpace: 'pre-wrap',
+                }}>
+                  {errorSuggestion.errorLines.join('\n')}
+                </pre>
+              </div>
+
+              {/* Action Buttons */}
+              <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '4px' }}>
+                <button
+                  onClick={() => setErrorSuggestion(null)}
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: '6px',
+                    border: '1px solid var(--border)',
+                    background: 'transparent',
+                    color: 'var(--text-primary)',
+                    fontSize: '11px',
+                    fontWeight: 500,
+                    cursor: 'pointer',
+                    transition: 'background 0.2s',
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+                  onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                >
+                  No, Dismiss
+                </button>
+                <button
+                  onClick={() => {
+                    const taskName = useTaskStore.getState().tasks.find(t => t.id === errorSuggestion.taskId)?.name || 'Project Build'
+                    const activeTabInfo = activeTab ? `\n\nActive file when error occurred: \`${activeTab.name}\` (${activeTab.id})` : ''
+                    const prompt = `The task \`${taskName}\` failed with the following errors:${activeTabInfo}\n\n\`\`\`\n${errorSuggestion.errorLines.join('\n')}\n\`\`\`\n\nPlease help me analyze and fix these errors.`
+                    
+                    // Paste to chat input
+                    useChatStore.getState().setDraftMessage(prompt)
+                    
+                    // Dismiss modal
+                    setErrorSuggestion(null)
+                  }}
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: '6px',
+                    border: 'none',
+                    background: 'linear-gradient(135deg, #2563eb, #1d4ed8)',
+                    color: '#ffffff',
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    boxShadow: '0 2px 8px rgba(37,99,235,0.3)',
+                    transition: 'opacity 0.2s',
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.opacity = '0.9'}
+                  onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
+                >
+                  Yes, Fix with Agent
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

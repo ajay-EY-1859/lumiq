@@ -168,6 +168,20 @@ describe('CodebaseIndexer semantic indexing', () => {
     expect(rows.map(row => row.filePath)).toEqual(['auth.ts'])
   })
 
+  it('skips .asar directories and weird package-like names', async () => {
+    writeFileSync(join(tempWorkspacePath, 'auth.ts'), 'export function refreshOAuthToken() { return "oauth token" }\n')
+    mkdirSync(join(tempWorkspacePath, 'foo.asar'), { recursive: true })
+    writeFileSync(join(tempWorkspacePath, 'foo.asar', 'ignored.ts'), 'export const ignored = true\n')
+    mkdirSync(join(tempWorkspacePath, '..foo.asar'), { recursive: true })
+    writeFileSync(join(tempWorkspacePath, '..foo.asar', 'ignored2.ts'), 'export const ignored2 = true\n')
+
+    const status = await codebaseIndexer.indexWorkspaceNow(tempWorkspacePath, true)
+    const rows = getDatabase().prepare('SELECT file_path as filePath FROM codebase_embeddings').all() as Array<{ filePath: string }>
+
+    expect(status.state).toBe('ready')
+    expect(rows.map(row => row.filePath)).toEqual(['auth.ts'])
+  })
+
   it('skips unchanged files and reindexes changed files', async () => {
     const target = join(tempWorkspacePath, 'retry.ts')
     writeFileSync(target, 'export const retryPolicy = "retry with backoff"\n')

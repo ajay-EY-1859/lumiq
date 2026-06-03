@@ -15,26 +15,61 @@ import { SelfHealingPanel } from './SelfHealingPanel'
 import { Button } from '@renderer/components/ui/Button'
 import type { ToolApprovalRequest } from '@shared/types'
 
+// Sub-component to isolate streaming re-renders from the main ChatPage tree
+const StreamingBubble = React.memo(function StreamingBubble({
+  activeSessionId,
+  messagesEndRef
+}: {
+  activeSessionId: string
+  messagesEndRef: React.RefObject<HTMLDivElement | null>
+}): React.JSX.Element | null {
+  const isStreaming = useChatStore((s) => s.isStreaming)
+  const streamingContent = useChatStore((s) => s.streamingContent)
+
+  useEffect(() => {
+    if (isStreaming) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [isStreaming, streamingContent, messagesEndRef])
+
+  if (!isStreaming) return null
+
+  if (!streamingContent) {
+    return <div className="ml-4"><TypingIndicator /></div>
+  }
+
+  return (
+    <MessageBubble
+      message={{
+        id: 'streaming',
+        sessionId: activeSessionId,
+        role: 'assistant',
+        content: streamingContent,
+        createdAt: new Date().toISOString()
+      }}
+    />
+  )
+})
+
 export function ChatPage(): React.JSX.Element {
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  const {
-    messages,
-    isStreaming,
-    streamingContent,
-    error,
-    pendingApprovals,
-    loadSession,
-    sendMessage,
-    cancelStream,
-    respondToApproval,
-    setStreaming,
-    appendStreamChunk,
-    resetStream,
-    setError,
-    addPendingApproval,
-    addMessage,
-    deleteMessagesFrom
-  } = useChatStore()
+  
+  const messages = useChatStore((s) => s.messages)
+  const isStreaming = useChatStore((s) => s.isStreaming)
+  const error = useChatStore((s) => s.error)
+  const pendingApprovals = useChatStore((s) => s.pendingApprovals)
+  
+  const loadSession = useChatStore((s) => s.loadSession)
+  const sendMessage = useChatStore((s) => s.sendMessage)
+  const cancelStream = useChatStore((s) => s.cancelStream)
+  const respondToApproval = useChatStore((s) => s.respondToApproval)
+  const setStreaming = useChatStore((s) => s.setStreaming)
+  const appendStreamChunk = useChatStore((s) => s.appendStreamChunk)
+  const resetStream = useChatStore((s) => s.resetStream)
+  const setError = useChatStore((s) => s.setError)
+  const addPendingApproval = useChatStore((s) => s.addPendingApproval)
+  const addMessage = useChatStore((s) => s.addMessage)
+  const deleteMessagesFrom = useChatStore((s) => s.deleteMessagesFrom)
   const { activeSessionId, createSession, sessions, setWorkspace, setActiveSession } = useSessionStore()
   const { activeProvider, activeModel } = useProviderStore()
   const [taskMode, setTaskMode] = useState<string | null>(null)
@@ -120,7 +155,7 @@ export function ChatPage(): React.JSX.Element {
   // Auto-scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, streamingContent])
+  }, [messages])
 
   const handleSend = useCallback(
     async (message: string) => {
@@ -297,21 +332,8 @@ export function ChatPage(): React.JSX.Element {
             <MessageBubble key={msg.id} message={msg} onRetry={handleRetry} />
           ))}
 
-          {/* Streaming content */}
-          {isStreaming && streamingContent && (
-            <MessageBubble
-              message={{
-                id: 'streaming',
-                sessionId: activeSessionId || '',
-                role: 'assistant',
-                content: streamingContent,
-                createdAt: new Date().toISOString()
-              }}
-            />
-          )}
-
-          {/* Typing indicator */}
-          {isStreaming && !streamingContent && <div className="ml-4"><TypingIndicator /></div>}
+          {/* Streaming content (isolated to avoid re-rendering entire ChatPage on every token) */}
+          <StreamingBubble activeSessionId={activeSessionId || ''} messagesEndRef={messagesEndRef} />
 
           {/* Error display */}
           {error && (

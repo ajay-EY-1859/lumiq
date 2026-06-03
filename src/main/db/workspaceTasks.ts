@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'fs'
+import { existsSync, readFileSync, readdirSync } from 'fs'
 import { join, resolve } from 'path'
 import { v4 as uuidv4 } from 'uuid'
 import { getDatabase } from './database'
@@ -80,21 +80,193 @@ export function deleteWorkspaceTask(workspacePath: string, name: string): boolea
 
 export function syncPackageJsonTasks(workspacePath: string): WorkspaceTaskDefinition[] {
   const safePath = resolve(workspacePath)
+  
+  // 1. Sync package.json (Node/JS/TS)
   const packageJsonPath = join(safePath, 'package.json')
-  if (!existsSync(packageJsonPath)) {
-    return listWorkspaceTasks(safePath)
+  if (existsSync(packageJsonPath)) {
+    try {
+      const raw = readFileSync(packageJsonPath, 'utf-8')
+      const pkg = JSON.parse(raw) as { scripts?: Record<string, string> }
+      const scripts = pkg.scripts || {}
+
+      for (const name of Object.keys(scripts)) {
+        saveWorkspaceTask({
+          workspacePath: safePath,
+          name: `npm:${name}`,
+          command: 'npm',
+          args: ['run', name],
+          source: 'package'
+        })
+      }
+    } catch (err) {
+      console.error('[workspaceTasks] Failed to sync package.json scripts:', err)
+    }
   }
 
-  const raw = readFileSync(packageJsonPath, 'utf-8')
-  const pkg = JSON.parse(raw) as { scripts?: Record<string, string> }
-  const scripts = pkg.scripts || {}
+  // Gather workspace directory contents to auto-detect other languages
+  let hasGo = false
+  let hasPy = false
+  let hasRs = false
+  let hasJava = false
+  let hasCs = false
+  let hasC = false
+  let hasCpp = false
+  let pythonMainFile = 'main.py'
 
-  for (const name of Object.keys(scripts)) {
+  try {
+    const files = readdirSync(safePath)
+    for (const file of files) {
+      const ext = file.split('.').pop()?.toLowerCase()
+      if (ext === 'go') hasGo = true
+      if (ext === 'py') {
+        hasPy = true
+        if (file === 'main.py' || file === 'app.py' || file === 'run.py') {
+          pythonMainFile = file
+        }
+      }
+      if (ext === 'rs' || file === 'Cargo.toml') hasRs = true
+      if (ext === 'java') hasJava = true
+      if (ext === 'cs' || file.endsWith('.csproj')) hasCs = true
+      if (ext === 'c') hasC = true
+      if (ext === 'cpp' || ext === 'cc' || ext === 'cxx') hasCpp = true
+    }
+  } catch (err) {
+    console.error('[workspaceTasks] Failed to read directory files for auto-sync:', err)
+  }
+
+  // 2. Check Cargo.toml (Rust)
+  const cargoTomlPath = join(safePath, 'Cargo.toml')
+  if (existsSync(cargoTomlPath) || hasRs) {
     saveWorkspaceTask({
       workspacePath: safePath,
-      name,
-      command: 'npm',
-      args: ['run', name],
+      name: 'cargo:build',
+      command: 'cargo',
+      args: ['build'],
+      source: 'package'
+    })
+    saveWorkspaceTask({
+      workspacePath: safePath,
+      name: 'cargo:run',
+      command: 'cargo',
+      args: ['run'],
+      source: 'package'
+    })
+    saveWorkspaceTask({
+      workspacePath: safePath,
+      name: 'cargo:test',
+      command: 'cargo',
+      args: ['test'],
+      source: 'package'
+    })
+  }
+
+  // 3. Check Python
+  if (hasPy) {
+    saveWorkspaceTask({
+      workspacePath: safePath,
+      name: 'python:run',
+      command: 'python',
+      args: [pythonMainFile],
+      source: 'package'
+    })
+  }
+
+  // 4. Check Go
+  if (hasGo) {
+    saveWorkspaceTask({
+      workspacePath: safePath,
+      name: 'go:build',
+      command: 'go',
+      args: ['build'],
+      source: 'package'
+    })
+    saveWorkspaceTask({
+      workspacePath: safePath,
+      name: 'go:run',
+      command: 'go',
+      args: ['run', '.'],
+      source: 'package'
+    })
+    saveWorkspaceTask({
+      workspacePath: safePath,
+      name: 'go:test',
+      command: 'go',
+      args: ['test', './...'],
+      source: 'package'
+    })
+  }
+
+  // 5. Check Java
+  if (hasJava) {
+    saveWorkspaceTask({
+      workspacePath: safePath,
+      name: 'java:compile',
+      command: 'javac',
+      args: ['*.java'],
+      source: 'package'
+    })
+    saveWorkspaceTask({
+      workspacePath: safePath,
+      name: 'java:run',
+      command: 'java',
+      args: ['Main'],
+      source: 'package'
+    })
+  }
+
+  // 6. Check C / C++
+  const makefilePath = join(safePath, 'Makefile')
+  if (existsSync(makefilePath)) {
+    const makeCmd = process.platform === 'win32' ? 'mingw32-make' : 'make'
+    saveWorkspaceTask({
+      workspacePath: safePath,
+      name: 'make:build',
+      command: makeCmd,
+      args: [],
+      source: 'package'
+    })
+  } else {
+    if (hasCpp) {
+      saveWorkspaceTask({
+        workspacePath: safePath,
+        name: 'g++:compile',
+        command: 'g++',
+        args: ['-o', 'main', '*.cpp'],
+        source: 'package'
+      })
+    }
+    if (hasC) {
+      saveWorkspaceTask({
+        workspacePath: safePath,
+        name: 'gcc:compile',
+        command: 'gcc',
+        args: ['-o', 'main', '*.c'],
+        source: 'package'
+      })
+    }
+  }
+
+  // 7. Check C#
+  if (hasCs) {
+    saveWorkspaceTask({
+      workspacePath: safePath,
+      name: 'dotnet:build',
+      command: 'dotnet',
+      args: ['build'],
+      source: 'package'
+    })
+    saveWorkspaceTask({
+      workspacePath: safePath,
+      name: 'dotnet:run',
+      command: 'dotnet',
+      args: ['run'],
+      source: 'package'
+    })
+    saveWorkspaceTask({
+      workspacePath: safePath,
+      name: 'dotnet:test',
+      command: 'dotnet',
+      args: ['test'],
       source: 'package'
     })
   }

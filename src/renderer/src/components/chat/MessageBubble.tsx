@@ -24,7 +24,7 @@ function isSafeExternalUrl(url: string): boolean {
   }
 }
 
-export function MessageBubble({ message, onRetry }: MessageBubbleProps): React.JSX.Element {
+export const MessageBubble = React.memo(function MessageBubble({ message, onRetry }: MessageBubbleProps): React.JSX.Element {
   const [showCopy, setShowCopy] = useState(false)
   const [copied, setCopied] = useState(false)
 
@@ -63,51 +63,53 @@ export function MessageBubble({ message, onRetry }: MessageBubbleProps): React.J
         }`}
       >
         <div className="markdown-content">
-          <ReactMarkdown
-            remarkPlugins={[remarkGfm]}
-            components={{
-              a({ href, children }) {
-                const safeHref = href && isSafeExternalUrl(href) ? href : undefined
-                return (
-                  <button
-                    type="button"
-                    disabled={!safeHref}
-                    onClick={() => {
-                      if (safeHref) void window.electronAPI.shell.openExternal(safeHref)
-                    }}
-                    className={`${safeHref ? 'text-[var(--accent-blue)] cursor-pointer hover:underline' : 'text-[var(--text-muted)] cursor-not-allowed line-through'} bg-transparent border-none p-0 font-inherit`}
-                  >
-                    {children}
-                  </button>
-                )
-              },
-              img() {
-                return null
-              },
-              code({ className, children, node, ...props }) {
-                void node // react-markdown extra prop, not needed
-                const match = /language-(\w+)/.exec(className || '')
-                const isInline = !match
-                if (isInline) {
+          {useMemo(() => (
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              components={{
+                a({ href, children }) {
+                  const safeHref = href && isSafeExternalUrl(href) ? href : undefined
                   return (
-                    <code
-                      className="font-mono text-[13px] bg-black/5 dark:bg-white/10 px-1.5 py-0.5 rounded border border-black/5 dark:border-white/5 text-[var(--accent-blue)] font-medium"
-                      {...props}
+                    <button
+                      type="button"
+                      disabled={!safeHref}
+                      onClick={() => {
+                        if (safeHref) void window.electronAPI.shell.openExternal(safeHref)
+                      }}
+                      className={`${safeHref ? 'text-[var(--accent-blue)] cursor-pointer hover:underline' : 'text-[var(--text-muted)] cursor-not-allowed line-through'} bg-transparent border-none p-0 font-inherit`}
                     >
                       {children}
-                    </code>
+                    </button>
+                  )
+                },
+                img() {
+                  return null
+                },
+                code({ className, children, node, ...props }) {
+                  void node // react-markdown extra prop, not needed
+                  const match = /language-(\w+)/.exec(className || '')
+                  const isInline = !match
+                  if (isInline) {
+                    return (
+                      <code
+                        className="font-mono text-[13px] bg-black/5 dark:bg-white/10 px-1.5 py-0.5 rounded border border-black/5 dark:border-white/5 text-[var(--accent-blue)] font-medium"
+                        {...props}
+                      >
+                        {children}
+                      </code>
+                    )
+                  }
+                  return (
+                    <CodeBlock language={match?.[1]}>
+                      {String(children).replace(/\n$/, '')}
+                    </CodeBlock>
                   )
                 }
-                return (
-                  <CodeBlock language={match?.[1]}>
-                    {String(children).replace(/\n$/, '')}
-                  </CodeBlock>
-                )
-              }
-            }}
-          >
-            {message.content}
-          </ReactMarkdown>
+              }}
+            >
+              {message.content}
+            </ReactMarkdown>
+          ), [message.content])}
         </div>
 
         {/* Copy / Retry buttons on hover */}
@@ -144,7 +146,7 @@ export function MessageBubble({ message, onRetry }: MessageBubbleProps): React.J
       )}
     </div>
   )
-}
+})
 
 // ── Tool Message ────────────────────────────────────────────────
 function ToolMessage({ message }: { message: Message }): React.JSX.Element {

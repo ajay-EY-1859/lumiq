@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useSessionStore } from '@renderer/store/sessionStore'
 import { useEditorStore } from '@renderer/store/editorStore'
 import { useChatStore } from '@renderer/store/chatStore'
+import { useProviderStore } from '@renderer/store/providerStore'
 
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -133,7 +134,7 @@ interface ProjectExplorerProps {
 
 // ── Main Component ────────────────────────────────────────────────────
 export function ProjectExplorer({ onNavigate, onSelectTab }: ProjectExplorerProps): React.JSX.Element {
-  const { activeSessionId, sessions } = useSessionStore()
+  const { activeSessionId, sessions, setWorkspace, createSession, setActiveSession } = useSessionStore()
   const { openFile, activeTabId } = useEditorStore()
   const activeSession = sessions.find((s) => s.id === activeSessionId)
   const workspacePath = activeSession?.workspacePath ?? null
@@ -179,6 +180,31 @@ export function ProjectExplorer({ onNavigate, onSelectTab }: ProjectExplorerProp
       return []
     }
   }, [workspacePath])
+
+  const handleSelectWorkspace = async (): Promise<void> => {
+    let sessionId = activeSessionId
+    if (!sessionId) {
+      try {
+        const { activeProvider, activeModel } = useProviderStore.getState()
+        const session = await createSession(activeProvider, activeModel || 'default')
+        sessionId = session.id
+        setActiveSession(sessionId)
+      } catch (err) {
+        console.error('Failed to create session:', err)
+        alert(`Failed to create session: ${(err as Error).message}`)
+        return
+      }
+    }
+
+    const result = await window.electronAPI.dialog.showOpenDialog({
+      properties: ['openDirectory']
+    })
+    if (!result.canceled && result.filePaths.length > 0) {
+      const selectedPath = result.filePaths[0]
+      await setWorkspace(sessionId, selectedPath)
+      await useChatStore.getState().loadSession(sessionId)
+    }
+  }
 
   // ── Initial load ──────────────────────────────────────────────────
   const loadWorkspace = useCallback(async () => {
@@ -330,9 +356,79 @@ export function ProjectExplorer({ onNavigate, onSelectTab }: ProjectExplorerProp
   // ── No workspace ──────────────────────────────────────────────────
   if (!workspacePath) {
     return (
-      <div style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
-        <div style={{ fontSize: '32px', marginBottom: '12px', opacity: 0.4 }}>📁</div>
-        No workspace bound.<br />Bind a workspace in the chat header.
+      <div style={{
+        padding: '40px 16px',
+        textAlign: 'center',
+        color: 'var(--text-muted)',
+        fontSize: '13px',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: '100%',
+        boxSizing: 'border-box',
+        gap: '16px'
+      }}>
+        {/* Glow pulsing folder icon */}
+        <div style={{
+          position: 'relative',
+          width: '64px',
+          height: '64px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          borderRadius: '50%',
+          background: 'rgba(37, 99, 235, 0.08)',
+          border: '1px solid rgba(37, 99, 235, 0.2)',
+          boxShadow: '0 0 20px rgba(37, 99, 235, 0.1)',
+          animation: 'pulseGlow 2.5s infinite ease-in-out'
+        }}>
+          <style dangerouslySetInnerHTML={{__html: `
+            @keyframes pulseGlow {
+              0% { box-shadow: 0 0 15px rgba(37, 99, 235, 0.1); border-color: rgba(37, 99, 235, 0.2); }
+              50% { box-shadow: 0 0 25px rgba(37, 99, 235, 0.3); border-color: rgba(37, 99, 235, 0.5); }
+              100% { box-shadow: 0 0 15px rgba(37, 99, 235, 0.1); border-color: rgba(37, 99, 235, 0.2); }
+            }
+          `}} />
+          <span style={{ fontSize: '32px', lineHeight: 1 }}>📁</span>
+        </div>
+
+        <div>
+          <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '14px', marginBottom: '6px' }}>
+            No Workspace Bound
+          </div>
+          <div style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: '1.4', maxWidth: '220px', margin: '0 auto' }}>
+            Connect a local directory to enable file indexing, semantic search, and project tasks.
+          </div>
+        </div>
+
+        {/* Premium Bind button */}
+        <button
+          onClick={handleSelectWorkspace}
+          style={{
+            marginTop: '8px',
+            padding: '8px 16px',
+            borderRadius: '8px',
+            border: 'none',
+            background: 'linear-gradient(135deg, #2563eb, #1d4ed8)',
+            color: '#ffffff',
+            fontSize: '12px',
+            fontWeight: 600,
+            cursor: 'pointer',
+            boxShadow: '0 4px 12px rgba(37,99,235,0.3)',
+            transition: 'transform 0.2s, opacity 0.2s',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = 'scale(1.02)'
+            e.currentTarget.style.opacity = '0.95'
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = 'scale(1)'
+            e.currentTarget.style.opacity = '1'
+          }}
+        >
+          Bind Workspace Folder
+        </button>
       </div>
     )
   }

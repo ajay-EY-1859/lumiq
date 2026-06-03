@@ -536,6 +536,49 @@ function runMigrations(database: Database.Database): void {
 
       CREATE INDEX IF NOT EXISTS idx_self_healing_session ON self_healing_attempts(session_id);
     `)
+
+    // ── Migration 17: System Capabilities & AST Symbols Graph ────
+    database.exec(`
+      CREATE TABLE IF NOT EXISTS system_capabilities (
+        tool_name TEXT PRIMARY KEY,
+        is_installed INTEGER NOT NULL,
+        version TEXT,
+        install_path TEXT,
+        last_checked DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS ast_symbols (
+        id TEXT PRIMARY KEY,
+        workspace_path TEXT NOT NULL,
+        file_path TEXT NOT NULL,
+        name TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        container_name TEXT,
+        start_line INTEGER NOT NULL,
+        start_column INTEGER NOT NULL,
+        end_line INTEGER NOT NULL,
+        end_column INTEGER NOT NULL,
+        signature TEXT,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS ast_references (
+        id TEXT PRIMARY KEY,
+        workspace_path TEXT NOT NULL,
+        source_file_path TEXT NOT NULL,
+        target_name TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        line INTEGER NOT NULL,
+        column INTEGER NOT NULL,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_ast_symbols_workspace ON ast_symbols(workspace_path);
+      CREATE INDEX IF NOT EXISTS idx_ast_symbols_file ON ast_symbols(workspace_path, file_path);
+      CREATE INDEX IF NOT EXISTS idx_ast_symbols_name ON ast_symbols(name);
+      CREATE INDEX IF NOT EXISTS idx_ast_references_target ON ast_references(target_name);
+      CREATE INDEX IF NOT EXISTS idx_ast_references_source ON ast_references(workspace_path, source_file_path);
+    `)
   })
 
   migrate()

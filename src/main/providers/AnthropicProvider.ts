@@ -2,18 +2,27 @@
 // Lumiq — Anthropic Claude Provider
 // ═══════════════════════════════════════════════════════════════════
 
-import Anthropic from '@anthropic-ai/sdk'
+import type Anthropic from '@anthropic-ai/sdk'
 import type { AIProvider } from './AIProvider'
 import type { Message, ProviderConfig, SendOptions, SendResult, TestResult } from '@shared/types'
 
 export class AnthropicProvider implements AIProvider {
-  private client: Anthropic
+  private client: any = null
+  private config: ProviderConfig
 
   constructor(config: ProviderConfig) {
-    this.client = new Anthropic({
-      apiKey: config.apiKey,
-      baseURL: config.baseUrl || undefined
-    })
+    this.config = config
+  }
+
+  private async getClient() {
+    if (!this.client) {
+      const { default: Anthropic } = await import('@anthropic-ai/sdk')
+      this.client = new Anthropic({
+        apiKey: this.config.apiKey,
+        baseURL: this.config.baseUrl || undefined
+      })
+    }
+    return this.client
   }
 
   async sendMessage(messages: Message[], options: SendOptions): Promise<SendResult> {
@@ -36,13 +45,14 @@ export class AnthropicProvider implements AIProvider {
       input_schema: tool.inputSchema
     }))
 
-    const stream = this.client.messages.stream({
+    const client = await this.getClient()
+    const stream = client.messages.stream({
       model: options.model,
       max_tokens: options.maxTokens ?? 8096,
       system: options.systemPrompt ? [{ type: 'text', text: options.systemPrompt, cache_control: { type: 'ephemeral' } }] : undefined,
       messages: anthropicMessages,
       tools: tools && tools.length > 0 ? tools : undefined
-    } as Anthropic.MessageCreateParamsNonStreaming)
+    } as any)
 
     let content = ''
     for await (const event of stream) {
@@ -111,7 +121,8 @@ export class AnthropicProvider implements AIProvider {
 
   async testConnection(): Promise<TestResult> {
     try {
-      await this.client.messages.create({
+      const client = await this.getClient()
+      await client.messages.create({
         model: 'claude-haiku-4-20250506',
         max_tokens: 1,
         messages: [{ role: 'user', content: 'hi' }]

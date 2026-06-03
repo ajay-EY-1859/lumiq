@@ -3,7 +3,12 @@ import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { TitleBar } from './components/layout/TitleBar'
 import { Sidebar } from './components/sidebar/Sidebar'
 import { ChatPage } from './components/chat/ChatPage'
-import { EditorPane } from './components/editor/EditorPane'
+
+// Lazy load Monaco editor to optimize application startup (P0 optimization)
+const EditorPane = React.lazy(() =>
+  import('./components/editor/EditorPane').then((m) => ({ default: m.EditorPane }))
+)
+
 import { TaskPanel } from './components/tasks/TaskPanel'
 import { SearchPanel } from './components/search/SearchPanel'
 import { GitPanel } from './components/git/GitPanel'
@@ -16,6 +21,16 @@ import { useSessionStore } from './store/sessionStore'
 import { useProviderStore } from './store/providerStore'
 import { useSearchStore } from './store/searchStore'
 import { useEditorStore } from './store/editorStore'
+import {
+  runProjectAction,
+  buildProjectAction,
+  runCurrentFileAction,
+  compileCurrentFileAction,
+  stopActiveTaskAction,
+  debugStepOverAction,
+  debugStepIntoAction,
+  debugStepOutAction
+} from './utils/shortcutExecutor'
 
 type Page = 'chat' | 'settings' | 'agents'
 type BottomPanel = 'tasks' | 'search' | 'git' | 'semantic'
@@ -70,6 +85,7 @@ export default function App(): React.JSX.Element {
   // Editor panel width in px — default 420, min 280, max 900
   const [editorWidth, setEditorWidth] = useState(420)
   const [editorVisible, setEditorVisible] = useState(true)
+  const [isElectronAvailable, setIsElectronAvailable] = useState(true)
   const { loadSettings, loadWorkspaceSettings } = useSettingsStore()
   const { loadSessions, activeSessionId, sessions } = useSessionStore()
   const { loadProviders } = useProviderStore()
@@ -77,6 +93,10 @@ export default function App(): React.JSX.Element {
   const editorTabs = useEditorStore(s => s.tabs)
 
   useEffect(() => {
+    if (!window.electronAPI) {
+      setIsElectronAvailable(false)
+      return
+    }
     loadSettings(); loadSessions(); loadProviders()
   }, [loadSettings, loadSessions, loadProviders])
 
@@ -86,6 +106,8 @@ export default function App(): React.JSX.Element {
   }, [activeSessionId, sessions, loadWorkspaceSettings])
 
   useEffect(() => {
+    if (!window.electronAPI) return undefined
+
     const cleanupNewSession = window.electronAPI.onMenuNewSession(() => setCurrentPage('chat'))
     const cleanupSettings = window.electronAPI.onMenuSettings(() => setCurrentPage('settings'))
     const cleanupSidebar = window.electronAPI.onMenuToggleSidebar(() => setSidebarVisible((v) => !v))
@@ -94,6 +116,38 @@ export default function App(): React.JSX.Element {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent): void => {
+      // Task and Build execution hotkeys (F5, F6, F10, F11)
+      if (e.key === 'F5') {
+        e.preventDefault()
+        if (e.ctrlKey || e.metaKey) {
+          runCurrentFileAction()
+        } else if (e.shiftKey) {
+          stopActiveTaskAction()
+        } else {
+          runProjectAction()
+        }
+      }
+      if (e.key === 'F6') {
+        e.preventDefault()
+        if (e.ctrlKey || e.metaKey) {
+          compileCurrentFileAction()
+        } else {
+          buildProjectAction()
+        }
+      }
+      if (e.key === 'F10') {
+        e.preventDefault()
+        debugStepOverAction()
+      }
+      if (e.key === 'F11') {
+        e.preventDefault()
+        if (e.shiftKey) {
+          debugStepOutAction()
+        } else {
+          debugStepIntoAction()
+        }
+      }
+
       if (e.ctrlKey || e.metaKey) {
         if (e.key === 'b') { e.preventDefault(); setSidebarVisible((v) => !v) }
         if (e.key === ',') { e.preventDefault(); setCurrentPage('settings') }
@@ -111,6 +165,27 @@ export default function App(): React.JSX.Element {
   const handleEditorResize = useCallback((dx: number) => {
     setEditorWidth((w) => Math.max(280, Math.min(900, w + dx)))
   }, [])
+
+  if (!isElectronAvailable) {
+    return (
+      <div className="min-h-screen w-full flex items-center justify-center bg-[var(--bg-primary)] text-[var(--text-primary)] p-6">
+        <div className="max-w-xl w-full rounded-3xl border border-[var(--border)] bg-[var(--bg-secondary)] p-10 shadow-2xl">
+          <h1 className="text-2xl font-semibold mb-4">Electron bridge unavailable</h1>
+          <p className="text-sm leading-6 text-[var(--text-muted)] mb-6">
+            The renderer did not detect the Electron preload API. This usually means the app started without the preload bridge or the IPC channel is not initialized.
+          </p>
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <button
+              onClick={() => window.location.reload()}
+              className="px-4 py-3 rounded-xl bg-[var(--accent-blue)] text-white font-semibold hover:bg-blue-500 transition"
+            >
+              Reload app
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <ErrorBoundary>
@@ -153,7 +228,13 @@ export default function App(): React.JSX.Element {
 
                       {/* Monaco editor — takes all remaining height */}
                       <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-                        <EditorPane />
+                        <React.Suspense fallback={
+                          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-primary)', color: 'var(--text-muted)' }}>
+                            <div style={{ fontSize: '13px' }}>Loading editor UI...</div>
+                          </div>
+                        }>
+                          <EditorPane />
+                        </React.Suspense>
                       </div>
 
                       {/* Bottom panel tabs */}

@@ -4,6 +4,8 @@
 // ═══════════════════════════════════════════════════════════════════
 
 import { IPC } from '@shared/types'
+import { existsSync, mkdirSync, writeFileSync } from 'fs'
+import { join } from 'path'
 import {
   createSession,
   listSessions,
@@ -15,6 +17,70 @@ import {
 import { getSessionMessages, clearSessionMessages, compactSessionMessages, deleteMessagesFrom } from '../db/messages'
 import { setWorkspaceRoot, setAllowedExtraPaths, validateWorkspaceRootCandidate, parseAttachedPaths } from '../security/pathValidation'
 import { handleWithTimeout, IPC_TIMEOUT } from './handleWithTimeout'
+import { CodeIntelligenceService } from '../services/CodeIntelligenceService'
+
+function setupWorkspaceRunner(workspacePath: string): void {
+  try {
+    const lumiqDir = join(workspacePath, '.lumiq')
+    if (!existsSync(lumiqDir)) {
+      mkdirSync(lumiqDir, { recursive: true })
+    }
+    const runnerPath = join(lumiqDir, 'c-cpp-runner.js')
+    
+    const runnerCode = `const { spawn } = require('child_process');
+const path = require('path');
+const fs = require('fs');
+
+const args = process.argv.slice(2);
+if (args.length < 2) {
+  console.error('Usage: node c-cpp-runner.js <compiler> <source_file>');
+  process.exit(1);
+}
+
+const compiler = args[0];
+const sourceFile = args[1];
+
+if (!fs.existsSync(sourceFile)) {
+  console.error(\`Source file not found: \${sourceFile}\`);
+  process.exit(1);
+}
+
+const ext = path.extname(sourceFile);
+const parsed = path.parse(sourceFile);
+const isWindows = process.platform === 'win32';
+const outputName = parsed.name + (isWindows ? '.exe' : '');
+const outputPath = path.join(parsed.dir, outputName);
+
+console.log(\`[Lumiq] Compiling \${parsed.base} using \${compiler}...\`);
+
+const compileProcess = spawn(compiler, [sourceFile, '-o', outputPath], {
+  stdio: 'inherit'
+});
+
+compileProcess.on('close', (code) => {
+  if (code !== 0) {
+    console.error(\`\\n[Lumiq] Compilation failed with exit code \${code}\`);
+    process.exit(code);
+  }
+
+  console.log(\`\\n[Lumiq] Compilation successful. Running \${outputName}...\\n\`);
+
+  // Spawn the compiled executable
+  const runProcess = spawn(outputPath, [], {
+    stdio: 'inherit'
+  });
+
+  runProcess.on('close', (runCode) => {
+    process.exit(runCode);
+  });
+});
+`
+    writeFileSync(runnerPath, runnerCode, 'utf8')
+    console.log(`[Lumiq] C/C++ Workspace Runner written to ${runnerPath}`)
+  } catch (err) {
+    console.error('[Lumiq] Failed to setup C/C++ workspace runner:', err)
+  }
+}
 
 export function registerSessionHandlers(): void {
   // ── List all sessions ──
@@ -29,6 +95,14 @@ export function registerSessionHandlers(): void {
     
     // Authorize this session's workspace for file operations
     setWorkspaceRoot(session.workspacePath || null)
+    if (session.workspacePath) {
+      setupWorkspaceRunner(session.workspacePath)
+    }
+
+    // Trigger background code intelligence indexing & watching with a 2-second delay to ensure instant app loading
+    setTimeout(() => {
+      void CodeIntelligenceService.getInstance().setWorkspace(session.workspacePath || null)
+    }, 2000)
 
     const messages = getSessionMessages(sessionId)
 
@@ -78,6 +152,11 @@ export function registerSessionHandlers(): void {
       updateSessionWorkspace(data.sessionId, workspacePath)
       // Immediately authorize the new workspace
       setWorkspaceRoot(workspacePath)
+      if (workspacePath) {
+        setupWorkspaceRunner(workspacePath)
+      }
+      // Immediately trigger background code intelligence indexing & watching
+      void CodeIntelligenceService.getInstance().setWorkspace(workspacePath)
     }
   )
 
