@@ -1,7 +1,7 @@
 # Lumiq — Advanced Vision & Next Phase Roadmap
 
-**Last Updated:** 2026-06-01  
-**Current Status:** 🚀 **Phase 2 & Initial Phase 3 Complete!** Entering **Phase 3 advanced Code Intelligence (Milestone 13)**
+**Last Updated:** 2026-06-04  
+**Current Status:** 🚀 **Phase 2 & Phase 3 (including Milestone 15) Complete!** Ready to transition to **Phase 4: The Ultimate AI-First IDE Horizon (Milestones 16 - 25)**
 - **Workspace:** `d:\agentic-desktop-app`
 
 ---
@@ -28,6 +28,12 @@ To transition Lumiq into a **next-generation, complete AI IDE** (bridging the ca
   - Local gray-text code autocompletions (ghost-text) in Monaco Editor with debounced low-latency and status-bar toggle control.
 - [x] **Milestone 12: Immersive Interactive AI Terminal (Lumiq-Term xterm.js)**
   - Embedded high-performance interactive shell terminal (keystroke-to-stdin streaming) with Ctrl+K AI Command Companion and execution bridges.
+- [x] **Milestone 13: AST Symbol Graph & Semantic Indexer (Code Intelligence)**
+  - Tree-Sitter AST Parsing, global dependency symbol table, symbol routing queries, and incremental index updates.
+- [x] **Milestone 14: Composer Mode & Collaborative Multi-Agent Swarm**
+  - Dedicated Composer Workspace, specialized multi-agent parallel/concurrent swarm (Architect, Coder, Tester, Reviewer), and visual parallel flowchart SVG graph.
+- [x] **Milestone 15: DAP Integration & Live Runtime Debugger Binding**
+  - DAP Client service implementation, automatic call-stack & local/global variables state capture, keyboard stepping bindings, visual Debugger panel, and integrated state-aware AI Explainer.
 
 ---
 
@@ -75,24 +81,24 @@ Move beyond regex search to a structural, graph-based understanding of the user'
   - *"Find all files implementing this specific class."*
 - [x] **Incremental Index updates**: Efficient file system watchers (`chokidar`) that update the AST graph incrementally on file saves.
 
-### Milestone 14: Composer Mode & Collaborative Multi-Agent Swarm
+### Milestone 14: Composer Mode & Collaborative Multi-Agent Swarm [COMPLETED]
 Orchestrate high-level, complex coding goals across parallel specialized AI agents.
-- **Dedicated Composer Workspace**: A visual, widescreen interface designed for project-scale changes (e.g., *"Refactor our entire auth layer to use Clerk"*).
-- **Specialized Multi-Agent Swarm**: Spawn specialized background subagents:
+- [x] **Dedicated Composer Workspace**: A visual, widescreen interface designed for project-scale changes (e.g., *"Refactor our entire auth layer to use Clerk"*).
+- [x] **Specialized Multi-Agent Swarm**: Spawn specialized background subagents:
   - **The Architect**: Analyzes import graphs and plans file creations/deletions.
-  - **The Coder**: Generates modifications using multi-file edit pools.
-  - **The Tester**: Writes unit tests and executes them in parallel.
-  - **The Reviewer**: Audits changed code for security risks, memory leaks, and performance bottlenecks.
-- **Visual Agent Orchestration Tree**: A premium, real-time node graph showing agent statuses, thought blocks, active file locks, and data flows.
+  - **The Coder**: Generates modifications using multi-file edit pools in parallel.
+  - **The Tester**: Writes unit tests and executes them concurrently.
+  - **The Reviewer**: Audits changed code for security risks, memory leaks, and performance bottlenecks concurrently.
+- [x] **Visual Agent Orchestration Tree**: A premium, real-time node graph showing agent statuses, thought blocks, active file locks, and data flows, rendered as a parallel fork-join flowchart.
 
-### Milestone 15: DAP Integration & Live Runtime Debugger Binding
+### Milestone 15: DAP Integration & Live Runtime Debugger Binding [COMPLETED]
 Connect the AI directly to execution state for unparalleled debugging capabilities.
-- **Debug Adapter Protocol (DAP) Client**: Implement a DAP-compliant client in the main process to connect to language-specific debuggers (Node inspector, Python debugpy, Go Delve).
-- **Automatic Call-Stack Capture**: On uncaught exceptions or failed test assertions, automatically extract:
+- [x] **Debug Adapter Protocol (DAP) Client**: Implement a DAP-compliant client in the main process to connect to language-specific debuggers (Node inspector, Python debugpy, Go Delve).
+- [x] **Automatic Call-Stack Capture**: On uncaught exceptions or failed test assertions, automatically extract:
   - Complete stack trace.
   - Local variables, parameters, and global states.
   - Recent console stderr outputs.
-- **State-Aware Interactive Explainer**: Let the user inspect runtime variables in the sidebar, with the AI agent providing a step-by-step explanation of the state mutation that led to the bug, along with a validated repair diff.
+- [x] **State-Aware Interactive Explainer**: Let the user inspect runtime variables in the sidebar, with the AI agent providing a step-by-step explanation of the state mutation that led to the bug, along with a validated repair diff.
 
 ---
 

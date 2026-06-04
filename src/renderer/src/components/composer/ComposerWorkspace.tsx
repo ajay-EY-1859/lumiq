@@ -114,9 +114,9 @@ export function ComposerWorkspace({ onNavigate }: ComposerWorkspaceProps): React
   const getStatusText = (state: ComposerState) => {
     switch (state) {
       case 'planning': return '🧠 Architect: Analyzing workspace and planning modifications...'
-      case 'coding': return '💻 Coder: Staging file edits to memory...'
-      case 'testing': return '⚡ Tester: Running diagnostic tests...'
-      case 'reviewing': return '🛡️ Reviewer: Scanning code logic and security constraints...'
+      case 'coding': return '💻 Coder: Staging file edits in parallel...'
+      case 'testing': return '⚡ Swarm Verification: Running tests & reviewing code concurrently...'
+      case 'reviewing': return '🛡️ Swarm Verification: Running tests & reviewing code concurrently...'
       case 'awaiting_approval': return '🤝 Verification Success. Staged diffs ready for review!'
       case 'completed': return '🎉 Commits finalized successfully!'
       case 'cancelled': return '⚠️ Orchestration session aborted.'
@@ -277,80 +277,94 @@ export function ComposerWorkspace({ onNavigate }: ComposerWorkspaceProps): React
               {/* Curve connections */}
               {/* Goal to Architect */}
               <path
-                d="M 400 50 C 400 100, 150 100, 150 135"
+                d="M 60 140 L 200 140"
                 fill="none"
-                stroke={isNodeActive('architect') ? '#3b82f6' : task.state !== 'idle' && task.state !== 'cancelled' ? '#10b981' : 'var(--border)'}
+                stroke={isNodeActive('architect') ? '#3b82f6' : (task.nodes.find(n => n.id === 'architect')?.status === 'completed' || task.state === 'awaiting_approval' || task.state === 'completed') ? '#10b981' : 'var(--border)'}
                 strokeWidth="2"
                 strokeDasharray={isNodeActive('architect') ? "6 6" : "none"}
                 className={isNodeActive('architect') ? "animate-flow" : ""}
               />
               {/* Architect to Coder */}
               <path
-                d="M 150 160 C 150 210, 320 210, 320 185"
+                d="M 200 140 L 340 140"
                 fill="none"
-                stroke={isNodeActive('coder') ? '#3b82f6' : (task.nodes.find(n => n.id === 'coder')?.status === 'completed' || task.nodes.find(n => n.id === 'reviewer')?.status === 'completed') ? '#10b981' : 'var(--border)'}
+                stroke={isNodeActive('coder') ? '#3b82f6' : (task.nodes.find(n => n.id === 'coder')?.status === 'completed' || task.state === 'awaiting_approval' || task.state === 'completed') ? '#10b981' : 'var(--border)'}
                 strokeWidth="2"
                 strokeDasharray={isNodeActive('coder') ? "6 6" : "none"}
                 className={isNodeActive('coder') ? "animate-flow" : ""}
               />
-              {/* Coder to Tester */}
+              {/* Coder to Tester (split path) */}
               <path
-                d="M 320 160 C 320 110, 480 110, 480 135"
+                d="M 340 140 C 400 140, 420 80, 480 80"
                 fill="none"
-                stroke={isNodeActive('tester') ? '#3b82f6' : (task.nodes.find(n => n.id === 'tester')?.status === 'completed' || task.nodes.find(n => n.id === 'reviewer')?.status === 'completed') ? '#10b981' : 'var(--border)'}
+                stroke={isNodeActive('tester') ? '#3b82f6' : (task.nodes.find(n => n.id === 'tester')?.status === 'completed' || task.state === 'awaiting_approval' || task.state === 'completed') ? '#10b981' : 'var(--border)'}
                 strokeWidth="2"
                 strokeDasharray={isNodeActive('tester') ? "6 6" : "none"}
                 className={isNodeActive('tester') ? "animate-flow" : ""}
               />
-              {/* Tester to Reviewer */}
+              {/* Coder to Reviewer (split path) */}
               <path
-                d="M 480 160 C 480 210, 650 210, 650 185"
+                d="M 340 140 C 400 140, 420 200, 480 200"
                 fill="none"
-                stroke={isNodeActive('reviewer') ? '#3b82f6' : task.nodes.find(n => n.id === 'reviewer')?.status === 'completed' ? '#10b981' : 'var(--border)'}
+                stroke={isNodeActive('reviewer') ? '#3b82f6' : (task.nodes.find(n => n.id === 'reviewer')?.status === 'completed' || task.state === 'awaiting_approval' || task.state === 'completed') ? '#10b981' : 'var(--border)'}
                 strokeWidth="2"
                 strokeDasharray={isNodeActive('reviewer') ? "6 6" : "none"}
                 className={isNodeActive('reviewer') ? "animate-flow" : ""}
               />
-              {/* Reviewer to Goal */}
+              {/* Tester to Commit */}
               <path
-                d="M 650 160 C 650 100, 400 100, 400 65"
+                d="M 480 80 C 540 80, 560 140, 620 140"
                 fill="none"
-                stroke={task.state === 'awaiting_approval' || task.state === 'completed' ? '#10b981' : 'var(--border)'}
+                stroke={(task.nodes.find(n => n.id === 'tester')?.status === 'completed' || task.state === 'awaiting_approval' || task.state === 'completed') ? '#10b981' : 'var(--border)'}
+                strokeWidth="2"
+              />
+              {/* Reviewer to Commit */}
+              <path
+                d="M 480 200 C 540 200, 560 140, 620 140"
+                fill="none"
+                stroke={(task.nodes.find(n => n.id === 'reviewer')?.status === 'completed' || task.state === 'awaiting_approval' || task.state === 'completed') ? '#10b981' : 'var(--border)'}
                 strokeWidth="2"
               />
 
-              {/* Goal Node */}
-              <g transform="translate(400, 45)">
+              {/* Goal/Start Node */}
+              <g transform="translate(60, 140)">
                 <circle r="22" fill="var(--bg-primary)" stroke={task.state !== 'idle' ? '#6366f1' : 'var(--border)'} strokeWidth="2" />
                 <text textAnchor="middle" y="5" fill="var(--text-primary)" fontSize="18">🎯</text>
               </g>
 
               {/* Architect Node */}
-              <g transform="translate(150, 160)" style={{ cursor: 'pointer' }} onClick={() => setActiveNodeId('architect')}>
+              <g transform="translate(200, 140)" style={{ cursor: 'pointer' }} onClick={() => setActiveNodeId('architect')}>
                 <circle r="20" fill="var(--bg-primary)" stroke={getNodeColor('architect')} strokeWidth="2.5" className={isNodeActive('architect') ? "pulse-active" : ""} />
                 <text textAnchor="middle" y="5" fill="var(--text-primary)" fontSize="16">🧠</text>
                 <text textAnchor="middle" y="32" fill="var(--text-secondary)" fontSize="10" fontWeight="600">Architect</text>
               </g>
 
               {/* Coder Node */}
-              <g transform="translate(320, 160)" style={{ cursor: 'pointer' }} onClick={() => setActiveNodeId('coder')}>
+              <g transform="translate(340, 140)" style={{ cursor: 'pointer' }} onClick={() => setActiveNodeId('coder')}>
                 <circle r="20" fill="var(--bg-primary)" stroke={getNodeColor('coder')} strokeWidth="2.5" className={isNodeActive('coder') ? "pulse-active" : ""} />
                 <text textAnchor="middle" y="5" fill="var(--text-primary)" fontSize="16">💻</text>
                 <text textAnchor="middle" y="32" fill="var(--text-secondary)" fontSize="10" fontWeight="600">Coder</text>
               </g>
 
               {/* Tester Node */}
-              <g transform="translate(480, 160)" style={{ cursor: 'pointer' }} onClick={() => setActiveNodeId('tester')}>
+              <g transform="translate(480, 80)" style={{ cursor: 'pointer' }} onClick={() => setActiveNodeId('tester')}>
                 <circle r="20" fill="var(--bg-primary)" stroke={getNodeColor('tester')} strokeWidth="2.5" className={isNodeActive('tester') ? "pulse-active" : ""} />
                 <text textAnchor="middle" y="5" fill="var(--text-primary)" fontSize="16">⚡</text>
                 <text textAnchor="middle" y="32" fill="var(--text-secondary)" fontSize="10" fontWeight="600">Tester</text>
               </g>
 
               {/* Reviewer Node */}
-              <g transform="translate(650, 160)" style={{ cursor: 'pointer' }} onClick={() => setActiveNodeId('reviewer')}>
+              <g transform="translate(480, 200)" style={{ cursor: 'pointer' }} onClick={() => setActiveNodeId('reviewer')}>
                 <circle r="20" fill="var(--bg-primary)" stroke={getNodeColor('reviewer')} strokeWidth="2.5" className={isNodeActive('reviewer') ? "pulse-active" : ""} />
                 <text textAnchor="middle" y="5" fill="var(--text-primary)" fontSize="16">🛡️</text>
                 <text textAnchor="middle" y="32" fill="var(--text-secondary)" fontSize="10" fontWeight="600">Reviewer</text>
+              </g>
+
+              {/* Commit Node */}
+              <g transform="translate(620, 140)">
+                <circle r="22" fill="var(--bg-primary)" stroke={(task.state === 'awaiting_approval' || task.state === 'completed') ? '#10b981' : 'var(--border)'} strokeWidth="2" />
+                <text textAnchor="middle" y="5" fill="var(--text-primary)" fontSize="18">🤝</text>
+                <text textAnchor="middle" y="32" fill="var(--text-secondary)" fontSize="10" fontWeight="600">Commit</text>
               </g>
             </svg>
             

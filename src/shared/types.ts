@@ -468,6 +468,17 @@ export const IPC = {
   COMPOSER_REJECT: 'composer:reject',
   COMPOSER_DIFF_PREVIEW: 'composer:diff-preview',
 
+  // DAP Debugger (Milestone 15)
+  DAP_START: 'dap:start',
+  DAP_STOP: 'dap:stop',
+  DAP_STATUS: 'dap:status',
+  DAP_SET_BREAKPOINT: 'dap:set-breakpoint',
+  DAP_STEP_OVER: 'dap:step-over',
+  DAP_STEP_INTO: 'dap:step-into',
+  DAP_STEP_OUT: 'dap:step-out',
+  DAP_CONTINUE: 'dap:continue',
+  DAP_EXPLAIN_STATE: 'dap:explain-state',
+
   // Traces
   TRACES_LIST: 'traces:list',
   COSTS_SUMMARY: 'costs:summary',
@@ -798,3 +809,46 @@ export interface ComposerTaskStatus {
   nodes: ComposerAgentNode[]
   stagedFiles: { path: string; status: 'modified' | 'created' | 'deleted' }[]
 }
+
+// ─── DAP Debugger Types (Milestone 15) ──────────────────────────────
+export type DapSessionState = 'inactive' | 'running' | 'paused'
+
+export interface DapBreakpoint {
+  filePath: string
+  line: number
+  verified: boolean
+}
+
+export interface DapStackFrame {
+  id: number
+  name: string
+  source: { name: string; path: string }
+  line: number
+  column: number
+}
+
+export interface DapVariable {
+  name: string
+  value: string
+  type?: string
+  variablesReference?: number // For nested object expansion
+}
+
+export interface DapScope {
+  name: string // 'Local' | 'Global' | 'Closure' etc.
+  variablesReference: number
+  variables: DapVariable[]
+}
+
+export interface DapState {
+  state: DapSessionState
+  port: number
+  scriptPath: string
+  threadId?: number
+  breakpoints: DapBreakpoint[]
+  stackFrames: DapStackFrame[]
+  scopes: DapScope[]
+  activeFrameId: number | null
+  errorOutput?: string
+}
+

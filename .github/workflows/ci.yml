@@ -48,6 +48,9 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Test
+        run: npx cross-env ELECTRON_RUN_AS_NODE=true electron node_modules/vitest/vitest.mjs run
+
       - name: Build (verify only)
         run: npm run build
         

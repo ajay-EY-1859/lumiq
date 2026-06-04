@@ -15,6 +15,7 @@ import { GitPanel } from './components/git/GitPanel'
 import { SettingsPage } from './components/settings/SettingsPage'
 import { AgentBuilderPage } from './components/agents/AgentBuilderPage'
 import { ComposerWorkspace } from './components/composer/ComposerWorkspace'
+import { DebuggerPanel } from './components/debugger/DebuggerPanel'
 import { ToastContainer } from './components/ui/Toast'
 import { ErrorBoundary } from './components/ui/ErrorBoundary'
 import { useSettingsStore } from './store/settingsStore'
@@ -34,7 +35,7 @@ import {
 } from './utils/shortcutExecutor'
 
 type Page = 'chat' | 'settings' | 'agents' | 'composer'
-type BottomPanel = 'tasks' | 'search' | 'git' | 'semantic'
+type BottomPanel = 'tasks' | 'search' | 'git' | 'semantic' | 'debug'
 
 // ── Resizable divider between editor and chat ─────────────────────────
 function ResizeDivider({ onDrag }: { onDrag: (dx: number) => void }): React.JSX.Element {
@@ -240,7 +241,7 @@ export default function App(): React.JSX.Element {
 
                       {/* Bottom panel tabs */}
                       <div style={{ display: 'flex', borderTop: '1px solid var(--border)', background: 'var(--bg-primary)', flexShrink: 0 }}>
-                        {(['tasks', 'search', 'git', 'semantic'] as BottomPanel[]).map(tab => {
+                        {(['tasks', 'search', 'git', 'semantic', 'debug'] as BottomPanel[]).map(tab => {
                           const isActive =
                             bottomPanel === tab ||
                             (tab === 'search' && bottomPanel === 'search' && searchMode === 'text') ||
@@ -258,7 +259,7 @@ export default function App(): React.JSX.Element {
                                 borderBottom: isActive ? '2px solid var(--accent-blue)' : '2px solid transparent',
                                 cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.5px',
                               }}>
-                              {tab === 'tasks' ? '⚡ Tasks' : tab === 'search' ? '🔍 Search' : tab === 'git' ? '⎇ Git' : '🧠 Semantic'}
+                              {tab === 'tasks' ? '⚡ Tasks' : tab === 'search' ? '🔍 Search' : tab === 'git' ? '⎇ Git' : tab === 'semantic' ? '🧠 Semantic' : '🐞 Debug'}
                             </button>
                           )
                         })}
@@ -269,6 +270,7 @@ export default function App(): React.JSX.Element {
                         {bottomPanel === 'tasks' && <TaskPanel />}
                         {bottomPanel === 'search' && <SearchPanel />}
                         {bottomPanel === 'git' && <GitPanel />}
+                        {bottomPanel === 'debug' && <DebuggerPanel />}
                       </div>
                     </div>
 

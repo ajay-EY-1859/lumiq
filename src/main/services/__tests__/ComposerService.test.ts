@@ -123,4 +123,35 @@ describe('ComposerService Orchestration & Staging Diffs', () => {
     expect(existsSync(filePath)).toBe(false)
     expect(stagedFilesMap.size).toBe(0)
   })
+
+  it('should transition through simulated swarm states with parallel nodes', async () => {
+    vi.useFakeTimers()
+    const service = ComposerService.getInstance()
+    
+    await service.startComposerTask('Build utilities', workspacePath)
+    
+    // Initially planning
+    expect((service as any).task.state).toBe('planning')
+    expect((service as any).task.nodes.find(n => n.id === 'architect').status).toBe('running')
+    
+    // Advance to coding
+    vi.advanceTimersByTime(1100)
+    expect((service as any).task.state).toBe('coding')
+    expect((service as any).task.nodes.find(n => n.id === 'coder').status).toBe('running')
+    
+    // Advance to parallel testing/reviewing
+    vi.advanceTimersByTime(1500)
+    expect((service as any).task.state).toBe('testing')
+    expect((service as any).task.nodes.find(n => n.id === 'tester').status).toBe('running')
+    expect((service as any).task.nodes.find(n => n.id === 'reviewer').status).toBe('running')
+    
+    // Advance to awaiting_approval
+    vi.advanceTimersByTime(2000)
+    expect((service as any).task.state).toBe('awaiting_approval')
+    expect((service as any).task.nodes.find(n => n.id === 'tester').status).toBe('completed')
+    expect((service as any).task.nodes.find(n => n.id === 'reviewer').status).toBe('completed')
+    
+    vi.useRealTimers()
+  })
 })
+

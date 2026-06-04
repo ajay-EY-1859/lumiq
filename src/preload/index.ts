@@ -36,7 +36,8 @@ import type {
   DefinitionResult,
   ReferenceResult,
   SelfHealingAttempt,
-  ComposerTaskStatus
+  ComposerTaskStatus,
+  DapState
 } from '../shared/types'
 
 // Type for the exposed API
@@ -216,6 +217,17 @@ export interface ElectronAPI {
     reject: () => Promise<void>
     getDiffPreview: (filePath: string) => Promise<{ original: string; proposed: string }>
     onStatusUpdate: (callback: (status: ComposerTaskStatus) => void) => () => void
+  }
+  dap: {
+    start: (port: number, scriptPath: string) => Promise<void>
+    stop: () => Promise<void>
+    toggleBreakpoint: (filePath: string, line: number) => Promise<void>
+    stepOver: () => Promise<void>
+    stepInto: () => Promise<void>
+    stepOut: () => Promise<void>
+    continue: () => Promise<void>
+    explainState: (goal: string) => Promise<string>
+    onStateUpdate: (callback: (state: DapState) => void) => () => void
   }
   git: {
     status: (workspacePath: string) => Promise<GitStatusResult>
@@ -481,6 +493,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
       const handler = (_event: any, status: ComposerTaskStatus) => callback(status)
       ipcRenderer.on(IPC.COMPOSER_STATUS, handler)
       return () => { ipcRenderer.removeListener(IPC.COMPOSER_STATUS, handler) }
+    }
+  },
+  dap: {
+    start: (port: number, scriptPath: string) => ipcRenderer.invoke(IPC.DAP_START, { port, scriptPath }),
+    stop: () => ipcRenderer.invoke(IPC.DAP_STOP),
+    toggleBreakpoint: (filePath: string, line: number) => ipcRenderer.invoke(IPC.DAP_SET_BREAKPOINT, { filePath, line }),
+    stepOver: () => ipcRenderer.invoke(IPC.DAP_STEP_OVER),
+    stepInto: () => ipcRenderer.invoke(IPC.DAP_STEP_INTO),
+    stepOut: () => ipcRenderer.invoke(IPC.DAP_STEP_OUT),
+    continue: () => ipcRenderer.invoke(IPC.DAP_CONTINUE),
+    explainState: (goal: string) => ipcRenderer.invoke(IPC.DAP_EXPLAIN_STATE, { goal }),
+    onStateUpdate: (callback: (state: DapState) => void) => {
+      const handler = (_event: any, state: DapState) => callback(state)
+      ipcRenderer.on(IPC.DAP_STATUS, handler)
+      return () => { ipcRenderer.removeListener(IPC.DAP_STATUS, handler) }
     }
   },
 

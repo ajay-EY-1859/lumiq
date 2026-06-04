@@ -166,27 +166,21 @@ export function stopActiveTaskAction(): void {
 
 export function debugStepOverAction(): void {
   console.log('[ShortcutExecutor] F10: Debug Step Over triggered (DAP integration binding).')
-  const taskState = useTaskStore.getState()
-  const runningTask = taskState.tasks.find(t => t.status === 'running')
-  if (runningTask) {
-    useTaskStore.getState()._appendLog(runningTask.id, '\n[Lumiq Debugger] F10: Step Over executed.\n', 'system')
+  if (window.electronAPI && window.electronAPI.dap) {
+    window.electronAPI.dap.stepOver().catch(err => console.error('[Debugger] Step over failed:', err))
   }
 }
 
 export function debugStepIntoAction(): void {
   console.log('[ShortcutExecutor] F11: Debug Step Into triggered (DAP integration binding).')
-  const taskState = useTaskStore.getState()
-  const runningTask = taskState.tasks.find(t => t.status === 'running')
-  if (runningTask) {
-    useTaskStore.getState()._appendLog(runningTask.id, '\n[Lumiq Debugger] F11: Step Into executed.\n', 'system')
+  if (window.electronAPI && window.electronAPI.dap) {
+    window.electronAPI.dap.stepInto().catch(err => console.error('[Debugger] Step into failed:', err))
   }
 }
 
 export function debugStepOutAction(): void {
   console.log('[ShortcutExecutor] Shift+F11: Debug Step Out triggered (DAP integration binding).')
-  const taskState = useTaskStore.getState()
-  const runningTask = taskState.tasks.find(t => t.status === 'running')
-  if (runningTask) {
-    useTaskStore.getState()._appendLog(runningTask.id, '\n[Lumiq Debugger] Shift+F11: Step Out executed.\n', 'system')
+  if (window.electronAPI && window.electronAPI.dap) {
+    window.electronAPI.dap.stepOut().catch(err => console.error('[Debugger] Step out failed:', err))
   }
 }

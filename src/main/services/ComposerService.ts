@@ -344,7 +344,15 @@ export class ComposerService {
 Your goal: "${goal}"
 First, use tools like GlobTool, ListDirTool, FileReadTool, GrepTool, or SymbolQueryTool to inspect the workspace and understand the codebase.
 Then, analyze how to implement the goal.
-Finally, write down a clear plan and list the files that need to be created, modified, or deleted. Keep it concise.`
+Finally, write down a clear plan and list the files that need to be created, modified, or deleted. Keep it concise.
+Your final response MUST end with a JSON block enclosed in \`\`\`json and \`\`\` in the following format:
+{
+  "plan": "Description of the plan...",
+  "files": [
+    { "path": "relative/path/to/file1.ts", "action": "modify" },
+    { "path": "relative/path/to/file2.ts", "action": "create" }
+  ]
+}`
       
       const architectAllowedTools = ['ListDirTool', 'FileReadTool', 'GlobTool', 'GrepTool', 'SymbolQueryTool', 'GitTool']
       const planResult = await this.runAgentLoop('architect', architectSystemPrompt, architectAllowedTools, config, model, signal)
@@ -354,8 +362,46 @@ Finally, write down a clear plan and list the files that need to be created, mod
       this.setTaskState('coding')
       this.setNodeStatus('coder', 'running')
 
+      // Parse planResult for structured files list
+      let filesToEdit: { path: string; action: 'create' | 'modify' | 'delete' }[] = []
+      try {
+        const jsonMatch = planResult.match(/```json\s*([\s\S]*?)\s*```/)
+        if (jsonMatch && jsonMatch[1]) {
+          const parsed = JSON.parse(jsonMatch[1].trim())
+          if (parsed && Array.isArray(parsed.files)) {
+            filesToEdit = parsed.files
+          }
+        }
+      } catch (err) {
+        console.warn('[ComposerService] Failed to parse files list from architect plan:', err)
+      }
+
       // Step 2: Coder Implementation
-      const coderSystemPrompt = `You are the Coder agent in a collaborative multi-agent swarm. Your job is to implement the changes planned by the Architect to satisfy the user's goal.
+      if (filesToEdit.length > 0) {
+        this.addLog('coder', `Starting parallel coding loops for ${filesToEdit.length} files...`)
+        const codingPromises = filesToEdit.map(async (fileEntry) => {
+          const relativePath = fileEntry.path
+          const action = fileEntry.action
+          this.addLog('coder', `Spawning parallel Coder agent for file: ${relativePath} (${action})`)
+          
+          const fileCoderSystemPrompt = `You are a specialized Coder agent in a collaborative multi-agent swarm. Your job is to implement changes to a single file to satisfy the user's goal.
+User's goal: "${goal}"
+Architect's plan:
+${planResult}
+
+Your specific target file is: "${relativePath}" (Action: ${action})
+
+Use tools like FileReadTool, FileWriteTool, FileEditTool, FileDeleteTool to read the file and write/edit the code.
+Note: All your write, edit and delete operations will be automatically staged in memory for the user to review. You will not write directly to the physical disk.
+Implement the code completely and correctly. Do not use placeholders.`
+
+          const coderAllowedTools = ['FileReadTool', 'FileWriteTool', 'FileEditTool', 'MultiFileEditTool', 'FileDeleteTool', 'GlobTool', 'GrepTool']
+          await this.runAgentLoop('coder', fileCoderSystemPrompt, coderAllowedTools, config, model, signal)
+        })
+        await Promise.all(codingPromises)
+      } else {
+        this.addLog('coder', 'No structured files list found in plan. Running fallback single Coder loop...')
+        const coderSystemPrompt = `You are the Coder agent in a collaborative multi-agent swarm. Your job is to implement the changes planned by the Architect to satisfy the user's goal.
 User's goal: "${goal}"
 Architect's plan:
 ${planResult}
@@ -364,58 +410,62 @@ Use tools like FileReadTool, FileWriteTool, FileEditTool, MultiFileEditTool, Fil
 Note: All your write, edit and delete operations will be automatically staged in memory for the user to review. You will not write directly to the physical disk.
 Implement the code completely and correctly. Do not use placeholders.`
 
-      const coderAllowedTools = ['FileReadTool', 'FileWriteTool', 'FileEditTool', 'MultiFileEditTool', 'FileDeleteTool', 'GlobTool', 'GrepTool']
-      await this.runAgentLoop('coder', coderSystemPrompt, coderAllowedTools, config, model, signal)
+        const coderAllowedTools = ['FileReadTool', 'FileWriteTool', 'FileEditTool', 'MultiFileEditTool', 'FileDeleteTool', 'GlobTool', 'GrepTool']
+        await this.runAgentLoop('coder', coderSystemPrompt, coderAllowedTools, config, model, signal)
+      }
       this.setNodeStatus('coder', 'completed')
 
-      // Transition to Tester
+      // Transition to verification (Tester and Reviewer concurrently)
       this.setTaskState('testing')
       this.setNodeStatus('tester', 'running')
+      this.setNodeStatus('reviewer', 'running')
 
-      // Step 3: Tester Diagnostic
       // Apply staged files to disk temporarily so tests can execute on actual updated code
-      this.addLog('tester', 'Temporarily applying staged files to disk for test suite run...')
+      this.addLog('tester', 'Temporarily applying staged files to disk for verification...')
       this.applyStagedFilesToDisk()
 
       try {
-        const testerSystemPrompt = `You are the Tester agent in a collaborative multi-agent swarm. Your job is to run the workspace test suite to verify the correctness of the changes made by the Coder.
+        const testerPromise = (async () => {
+          this.addLog('tester', 'Tester node activated. Running LLM loop...')
+          const testerSystemPrompt = `You are the Tester agent in a collaborative multi-agent swarm. Your job is to run the workspace test suite to verify the correctness of the changes made by the Coder.
 User's goal: "${goal}"
 
 Use BashTool or PowerShellTool to run the test suite (e.g. "npm test" or the appropriate test command).
 Analyze the test output. If any tests fail, explain what went wrong so we can report the failure.`
 
-        const testerAllowedTools = ['BashTool', 'PowerShellTool', 'FileReadTool']
-        await this.runAgentLoop('tester', testerSystemPrompt, testerAllowedTools, config, model, signal)
-      } finally {
-        this.addLog('tester', 'Restoring original files on disk...')
-        this.restoreFilesFromBackup()
-      }
-      this.setNodeStatus('tester', 'completed')
+          const testerAllowedTools = ['BashTool', 'PowerShellTool', 'FileReadTool']
+          await this.runAgentLoop('tester', testerSystemPrompt, testerAllowedTools, config, model, signal)
+          this.setNodeStatus('tester', 'completed')
+        })()
 
-      // Transition to Reviewer
-      this.setTaskState('reviewing')
-      this.setNodeStatus('reviewer', 'running')
+        const reviewerPromise = (async () => {
+          this.addLog('reviewer', 'Reviewer node activated. Running LLM loop...')
+          // Prepare staged diff list for reviewer context
+          let stagedFilesContent = ''
+          for (const f of this.task.stagedFiles) {
+            stagedFilesContent += `\n--- File: ${f.path} (Status: ${f.status}) ---\n`
+            if (f.status !== 'deleted') {
+              stagedFilesContent += this.stagedFiles.get(f.path) || ''
+            }
+          }
 
-      // Step 4: Reviewer Audit
-      // Prepare staged diff list for reviewer context
-      let stagedFilesContent = ''
-      for (const f of this.task.stagedFiles) {
-        stagedFilesContent += `\n--- File: ${f.path} (Status: ${f.status}) ---\n`
-        if (f.status !== 'deleted') {
-          stagedFilesContent += this.stagedFiles.get(f.path) || ''
-        }
-      }
-
-      const reviewerSystemPrompt = `You are the Reviewer agent in a collaborative multi-agent swarm. Your job is to review the staged code changes for quality, correctness, security vulnerabilities, and adherence to design principles.
+          const reviewerSystemPrompt = `You are the Reviewer agent in a collaborative multi-agent swarm. Your job is to review the staged code changes for quality, correctness, security vulnerabilities, and adherence to design principles.
 User's goal: "${goal}"
 Staged files and their proposed contents:
 ${stagedFilesContent}
 
 Perform a detailed audit. If everything looks good, state that the changes are approved. If there are issues, list them clearly.`
 
-      const reviewerAllowedTools = ['FileReadTool', 'GlobTool', 'GrepTool']
-      await this.runAgentLoop('reviewer', reviewerSystemPrompt, reviewerAllowedTools, config, model, signal)
-      this.setNodeStatus('reviewer', 'completed')
+          const reviewerAllowedTools = ['FileReadTool', 'GlobTool', 'GrepTool']
+          await this.runAgentLoop('reviewer', reviewerSystemPrompt, reviewerAllowedTools, config, model, signal)
+          this.setNodeStatus('reviewer', 'completed')
+        })()
+
+        await Promise.all([testerPromise, reviewerPromise])
+      } finally {
+        this.addLog('tester', 'Restoring original files on disk...')
+        this.restoreFilesFromBackup()
+      }
 
       // Transition to awaiting_approval
       this.setTaskState('awaiting_approval')
@@ -447,11 +497,11 @@ Perform a detailed audit. If everything looks good, state that the changes are a
 
     // Step 1: Architect Plan
     this.addLog('architect', `Architect starting codebase structure analysis for goal: ${goal}`)
-    delay(1000, () => {
+    delay(500, () => {
       this.addLog('architect', 'Analyzing workspace import graphs and symbol index tables...')
     })
 
-    delay(2000, () => {
+    delay(1000, () => {
       this.addLog('architect', 'Identified files for the change plan:')
       this.addLog('architect', ' - CREATE: src/utils/stringFormatter.ts (new layout utilities)')
       this.addLog('architect', ' - MODIFY: src/main.ts (register custom parser helpers)')
@@ -463,18 +513,17 @@ Perform a detailed audit. If everything looks good, state that the changes are a
       this.addLog('coder', 'Coder starting modifications stage...')
     })
 
-    // Step 2: Coder Writes proposed changes
-    delay(3000, () => {
-      this.addLog('coder', 'Structuring src/utils/stringFormatter.ts...')
+    // Step 2: Coder Writes proposed changes in parallel
+    delay(1500, () => {
+      this.addLog('coder', 'Spawning parallel Coder agents for 2 files...')
+      this.addLog('coder', '[Agent 1] Structuring src/utils/stringFormatter.ts...')
+      this.addLog('coder', '[Agent 2] Modifying src/main.ts to import formatter helper...')
+      
       const newFilePath = join(this.activeWorkspacePath, 'src/utils/stringFormatter.ts').replace(/\\/g, '/')
       const mockFormatterCode = `// String Formatter utilities for Lumiq\nexport function formatSnippet(text: string): string {\n  return text.trim().toLowerCase();\n}\n`
       this.stagedFiles.set(newFilePath, mockFormatterCode)
       this.task.stagedFiles.push({ path: newFilePath, status: 'created' })
-      this.broadcastStatus()
-    })
-
-    delay(4500, () => {
-      this.addLog('coder', 'Modifying src/main.ts to import formatter helper...')
+      
       const mainPath = join(this.activeWorkspacePath, 'src/main.ts').replace(/\\/g, '/')
       let originalMain = '// Lumiq main\nconsole.log("App startup");\n'
       try {
@@ -485,38 +534,35 @@ Perform a detailed audit. If everything looks good, state that the changes are a
       const proposedMain = `import { formatSnippet } from './utils/stringFormatter';\n${originalMain}\nconsole.log(formatSnippet("  LUMIQ COMPOSER  "));\n`
       this.stagedFiles.set(mainPath, proposedMain)
       this.task.stagedFiles.push({ path: mainPath, status: 'modified' })
+      
+      this.broadcastStatus()
+    })
+
+    delay(2500, () => {
+      this.addLog('coder', 'Parallel Coder agents completed their work.')
       this.setNodeStatus('coder', 'completed')
 
-      // Transition to Tester
+      // Transition to Tester & Reviewer concurrently
       this.setTaskState('testing')
       this.setNodeStatus('tester', 'running')
+      this.setNodeStatus('reviewer', 'running')
       this.addLog('tester', 'Tester initiating diagnostic check: running test suite...')
+      this.addLog('reviewer', 'Reviewer initiating security and performance audit scan in parallel...')
     })
 
-    // Step 3: Tester executes tests
-    delay(5500, () => {
+    // Step 3 & 4: Tester and Reviewer execute concurrently
+    delay(3500, () => {
       this.addLog('tester', 'Executing npm test --run...')
+      this.addLog('reviewer', 'Reviewer: Analyzing dependency scopes...')
+      this.addLog('reviewer', 'Reviewer: Checking for potential thread leaks in asynchronous functions...')
     })
 
-    delay(6500, () => {
+    delay(4500, () => {
       this.addLog('tester', ' ✓ src/main/services/__tests__/LspReferences.test.ts (2 tests passed)')
       this.addLog('tester', ' ✓ src/main/services/__tests__/CodeIntelligence.test.ts (4 tests passed)')
       this.addLog('tester', ' ✓ StringFormatter integrity assertion passed!')
       this.setNodeStatus('tester', 'completed')
-
-      // Transition to Reviewer
-      this.setTaskState('reviewing')
-      this.setNodeStatus('reviewer', 'running')
-      this.addLog('reviewer', 'Reviewer initiating security and performance audit scan...')
-    })
-
-    // Step 4: Reviewer Audits Code
-    delay(7500, () => {
-      this.addLog('reviewer', 'Analyzing dependency scopes...')
-      this.addLog('reviewer', 'Checking for potential thread leaks in asynchronous functions...')
-    })
-
-    delay(8000, () => {
+      
       this.addLog('reviewer', ' ✓ No security loop backdoors or memory leak paths found. Verification successful!')
       this.setNodeStatus('reviewer', 'completed')
 
