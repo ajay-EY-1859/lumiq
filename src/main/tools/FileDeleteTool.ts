@@ -6,6 +6,7 @@
 import { existsSync, lstatSync, rmSync, readdirSync } from 'fs'
 import type { Tool } from './Tool'
 import { validatePathWithinWorkspace } from '../security/pathValidation'
+import { ComposerService } from '../services/ComposerService'
 
 export class FileDeleteTool implements Tool {
   name = 'FileDeleteTool'
@@ -35,8 +36,19 @@ export class FileDeleteTool implements Tool {
       return `[ERROR] ${(error as Error).message}`
     }
 
-    if (!existsSync(targetPath)) {
+    const composer = ComposerService.getInstance()
+    const isStaging = composer.isStagingActive()
+    const isStagedDeleted = isStaging && composer.isStagedDeleted(targetPath)
+    const existsInStagedFiles = isStaging && composer.getStagedContent(targetPath) !== undefined
+
+    if (isStagedDeleted || (!existsInStagedFiles && !existsSync(targetPath))) {
       return `[ERROR] Path not found: ${targetPath}`
+    }
+
+    if (isStaging) {
+      const type = (existsInStagedFiles || !lstatSync(targetPath).isDirectory()) ? 'file' : 'directory'
+      composer.stageDelete(targetPath)
+      return `[OK] Deleted ${type}: ${targetPath} (staged in memory)`
     }
 
     const stats = lstatSync(targetPath)

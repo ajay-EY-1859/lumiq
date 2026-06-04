@@ -5,6 +5,7 @@
 import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from 'fs'
 import type { Tool } from './Tool'
 import { validatePathWithinWorkspace } from '../security/pathValidation'
+import { ComposerService } from '../services/ComposerService'
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB limit
 
@@ -27,6 +28,22 @@ export class FileReadTool implements Tool {
       filePath = validatePathWithinWorkspace(input.path as string)
     } catch (error) {
       return `[ERROR] ${(error as Error).message}`
+    }
+
+    const composer = ComposerService.getInstance()
+    const isStaging = composer.isStagingActive()
+
+    if (isStaging) {
+      if (composer.isStagedDeleted(filePath)) {
+        return `[ERROR] File not found: ${filePath}`
+      }
+      const stagedContent = composer.getStagedContent(filePath)
+      if (stagedContent !== undefined) {
+        if (stagedContent.length > MAX_FILE_SIZE) {
+          return `[ERROR] File too large (${(stagedContent.length / 1024 / 1024).toFixed(1)}MB). Max: 10MB`
+        }
+        return stagedContent
+      }
     }
 
     if (!existsSync(filePath)) {

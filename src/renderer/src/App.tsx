@@ -14,6 +14,7 @@ import { SearchPanel } from './components/search/SearchPanel'
 import { GitPanel } from './components/git/GitPanel'
 import { SettingsPage } from './components/settings/SettingsPage'
 import { AgentBuilderPage } from './components/agents/AgentBuilderPage'
+import { ComposerWorkspace } from './components/composer/ComposerWorkspace'
 import { ToastContainer } from './components/ui/Toast'
 import { ErrorBoundary } from './components/ui/ErrorBoundary'
 import { useSettingsStore } from './store/settingsStore'
@@ -32,7 +33,7 @@ import {
   debugStepOutAction
 } from './utils/shortcutExecutor'
 
-type Page = 'chat' | 'settings' | 'agents'
+type Page = 'chat' | 'settings' | 'agents' | 'composer'
 type BottomPanel = 'tasks' | 'search' | 'git' | 'semantic'
 
 // ── Resizable divider between editor and chat ─────────────────────────
@@ -301,6 +302,7 @@ export default function App(): React.JSX.Element {
             )}
             {currentPage === 'settings' && <SettingsPage onNavigate={handleNavigate} />}
             {currentPage === 'agents' && <AgentBuilderPage onNavigate={handleNavigate} />}
+            {currentPage === 'composer' && <ComposerWorkspace onNavigate={handleNavigate} />}
           </main>
         </div>
         <ToastContainer />

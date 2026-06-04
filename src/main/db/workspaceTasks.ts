@@ -3,6 +3,7 @@ import { join, resolve } from 'path'
 import { v4 as uuidv4 } from 'uuid'
 import { getDatabase } from './database'
 import type { WorkspaceTaskDefinition } from '@shared/types'
+import { AutocompleteService } from '../services/AutocompleteService'
 
 type WorkspaceTaskRow = {
   id: string
@@ -13,6 +14,15 @@ type WorkspaceTaskRow = {
   source: 'package' | 'custom'
   createdAt: string
   updatedAt: string
+}
+
+const ALLOWED_TOOLS = ["npm", "npx", "node", "yarn", "pnpm", "python", "python3", "go", "cargo", "java", "javac", "gcc", "g++", "clang", "clang++", "make", "mingw32-make", "dotnet"]
+
+function isAllowedTool(command: string): boolean {
+  if (ALLOWED_TOOLS.includes(command)) return true
+  if (command.startsWith('./') || command.startsWith('.\\')) return true
+  if (command.endsWith('.sh') || command.endsWith('.bat') || command.endsWith('.cmd')) return true
+  return false
 }
 
 function mapRow(row: WorkspaceTaskRow): WorkspaceTaskDefinition {
@@ -34,7 +44,7 @@ export function listWorkspaceTasks(workspacePath: string): WorkspaceTaskDefiniti
        FROM workspace_tasks
        WHERE workspace_path = ?
        ORDER BY source DESC, name`
-    )
+     )
     .all(safePath) as WorkspaceTaskRow[]
   return rows.map(mapRow)
 }
@@ -78,7 +88,7 @@ export function deleteWorkspaceTask(workspacePath: string, name: string): boolea
   )
 }
 
-export function syncPackageJsonTasks(workspacePath: string): WorkspaceTaskDefinition[] {
+export async function syncPackageJsonTasks(workspacePath: string): Promise<WorkspaceTaskDefinition[]> {
   const safePath = resolve(workspacePath)
   
   // 1. Sync package.json (Node/JS/TS)
@@ -269,6 +279,117 @@ export function syncPackageJsonTasks(workspacePath: string): WorkspaceTaskDefini
       args: ['test'],
       source: 'package'
     })
+  }
+
+  // 8. Offline Rule-based README.md parser
+  const readmePath = join(safePath, 'README.md')
+  if (existsSync(readmePath)) {
+    try {
+      const content = readFileSync(readmePath, 'utf-8')
+      const codeBlockRegex = /```(?:[a-zA-Z0-9_-]+)?\n([\s\S]*?)\n```/g
+      let match
+      while ((match = codeBlockRegex.exec(content)) !== null) {
+        const code = match[1]
+        const lines = code.split(/\r?\n/).map(line => line.trim())
+        for (const line of lines) {
+          if (!line || line.startsWith('#') || line.startsWith('//')) continue
+
+          // Remove shell prompt symbols ($ or >) from beginning of line
+          const cleanLine = line.replace(/^[\$\>\s]+/, '').trim()
+          if (!cleanLine) continue
+
+          const parts = cleanLine.split(/\s+/)
+          const command = parts[0]
+          const args = parts.slice(1)
+
+          if (isAllowedTool(command)) {
+            let taskName = `readme:${command}`
+            if (command === 'npm' && args[0] === 'run') {
+              taskName = `readme:npm:${args[1] || 'run'}`
+            } else if (command === 'cargo' || command === 'go' || command === 'dotnet') {
+              taskName = `readme:${command}:${args[0] || 'run'}`
+            } else if (command === 'python' || command === 'python3') {
+              taskName = `readme:python:${args[0] || 'run'}`
+            } else {
+              taskName = `readme:${command}:${args.join(' ') || 'run'}`
+            }
+
+            if (taskName.length > 40) {
+              taskName = taskName.substring(0, 37) + '...'
+            }
+
+            saveWorkspaceTask({
+              workspacePath: safePath,
+              name: taskName,
+              command,
+              args,
+              source: 'package'
+            })
+          }
+        }
+      }
+    } catch (err) {
+      console.error('[workspaceTasks] Failed to parse README.md tasks offline:', err)
+    }
+  }
+
+  // 9. AI-assisted target auto-discovery (runs if defaultProvider is active)
+  try {
+    const db = getDatabase()
+    const defaultProviderRow = db.prepare("SELECT value FROM settings WHERE key = 'defaultProvider'").get() as { value: string } | undefined
+    const defaultModelRow = db.prepare("SELECT value FROM settings WHERE key = 'defaultModel'").get() as { value: string } | undefined
+    
+    if (defaultProviderRow?.value && defaultModelRow?.value) {
+      const providerName = defaultProviderRow.value
+      const modelName = defaultModelRow.value
+      
+      const config = db.prepare("SELECT api_key_encrypted FROM api_configs WHERE provider = ? AND is_active = 1").get(providerName) as { api_key_encrypted?: string } | undefined
+      // Only proceed if it is ollama or has configured active key
+      if (providerName === 'ollama' || (config?.api_key_encrypted && config.api_key_encrypted.trim().length > 0)) {
+        if (existsSync(readmePath)) {
+          const readmeContent = readFileSync(readmePath, 'utf-8')
+          const cappedReadme = readmeContent.slice(0, 4000)
+
+          const systemPrompt = `You are a project configuration discovery agent.
+Your job is to read the content of a README.md file and extract the exact commands used to build, compile, or run the project.
+Output the discovered commands as a valid JSON array of objects. Each object must have:
+- "name": a short descriptive name (e.g. "npm:dev", "gcc:compile", "python:run")
+- "command": the executable command (e.g. "npm", "gcc", "python")
+- "args": an array of arguments (e.g. ["run", "dev"])
+
+Example Output:
+[
+  {"name": "npm:dev", "command": "npm", "args": ["run", "dev"]},
+  {"name": "gcc:compile", "command": "gcc", "args": ["-o", "main", "main.c"]}
+]
+
+Do NOT write any explanation or markdown code blocks. Output ONLY the raw JSON array. If no commands are discovered, return an empty array [].`
+
+          const prompt = `Here is the README.md content:\n\n${cappedReadme}\n\nExtract the build, run, or compile commands:`
+          const response = await AutocompleteService.predictOneShot(prompt, systemPrompt, providerName, modelName)
+          
+          const cleanResponse = response.replace(/```json/g, '').replace(/```/g, '').trim()
+          if (cleanResponse.startsWith('[') && cleanResponse.endsWith(']')) {
+            const discovered = JSON.parse(cleanResponse) as { name: string; command: string; args: string[] }[]
+            for (const item of discovered) {
+              if (item.name && item.command && Array.isArray(item.args)) {
+                if (isAllowedTool(item.command)) {
+                  saveWorkspaceTask({
+                    workspacePath: safePath,
+                    name: `ai:${item.name}`,
+                    command: item.command,
+                    args: item.args,
+                    source: 'package'
+                  })
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[workspaceTasks] AI task discovery failed or skipped:', err)
   }
 
   return listWorkspaceTasks(safePath)

@@ -310,7 +310,7 @@ if (!nativeBinding) {
   throw new Error(`Failed to load native binding`)
 }
 
-const { scanWorkspace, scanWorkspaceSync, chunkFiles, chunkSingleFile, cosineSimilarityBatch, cosineSimilarityBatchBuffer, cosineSimilarity, searchFiles } = nativeBinding
+const { scanWorkspace, scanWorkspaceSync, chunkFiles, chunkSingleFile, cosineSimilarityBatch, cosineSimilarityBatchBuffer, cosineSimilarity, searchFiles, parseFileAst } = nativeBinding
 
 module.exports.scanWorkspace = scanWorkspace
 module.exports.scanWorkspaceSync = scanWorkspaceSync
@@ -320,3 +320,4 @@ module.exports.cosineSimilarityBatch = cosineSimilarityBatch
 module.exports.cosineSimilarityBatchBuffer = cosineSimilarityBatchBuffer
 module.exports.cosineSimilarity = cosineSimilarity
 module.exports.searchFiles = searchFiles
+module.exports.parseFileAst = parseFileAst

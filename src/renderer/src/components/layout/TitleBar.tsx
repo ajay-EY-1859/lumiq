@@ -7,6 +7,7 @@ import React, { useState, useEffect } from 'react'
 
 export function TitleBar(): React.JSX.Element {
   const [isMaximized, setIsMaximized] = useState(false)
+  const [indexStats, setIndexStats] = useState<{ files: number; symbols: number; references: number } | null>(null)
 
   useEffect(() => {
     const checkMaximized = async (): Promise<void> => {
@@ -14,6 +15,24 @@ export function TitleBar(): React.JSX.Element {
       setIsMaximized(result)
     }
     checkMaximized()
+  }, [])
+
+  useEffect(() => {
+    if (!window.electronAPI || !window.electronAPI.lsp || !window.electronAPI.lsp.getIndexStats) return
+
+    const fetchStats = async () => {
+      try {
+        const stats = await window.electronAPI.lsp.getIndexStats()
+        setIndexStats(stats)
+      } catch (err) {
+        // Silent error
+      }
+    }
+
+    fetchStats()
+    // Poll every 5 seconds to keep counts live during indexing scans
+    const interval = setInterval(fetchStats, 5000)
+    return () => clearInterval(interval)
   }, [])
 
   return (
@@ -48,6 +67,30 @@ export function TitleBar(): React.JSX.Element {
         >
           Lumiq
         </span>
+
+        {/* Index Status Badge */}
+        {indexStats && indexStats.symbols > 0 && (
+          <div
+            title={`${indexStats.files} files, ${indexStats.symbols} symbols, ${indexStats.references} references indexed`}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              padding: '2px 8px',
+              borderRadius: '20px',
+              background: 'rgba(139, 92, 246, 0.1)',
+              border: '1px solid rgba(139, 92, 246, 0.2)',
+              fontSize: '10px',
+              color: '#A78BFA',
+              fontWeight: 600,
+              cursor: 'help',
+              marginLeft: '6px'
+            }}
+          >
+            <span>🧠</span>
+            <span>{indexStats.symbols.toLocaleString()} symbols</span>
+          </div>
+        )}
       </div>
 
       {/* Center: Empty for future use */}

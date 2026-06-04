@@ -5,6 +5,7 @@
 import { existsSync, readFileSync, statSync, writeFileSync } from 'fs'
 import type { Tool } from './Tool'
 import { validatePathWithinWorkspace } from '../security/pathValidation'
+import { ComposerService } from '../services/ComposerService'
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB limit
 
@@ -33,7 +34,12 @@ export class FileEditTool implements Tool {
       return `[ERROR] ${(error as Error).message}`
     }
 
-    if (!existsSync(filePath)) {
+    const composer = ComposerService.getInstance()
+    const isStaging = composer.isStagingActive()
+    const isStagedDeleted = isStaging && composer.isStagedDeleted(filePath)
+    const stagedContent = isStaging ? composer.getStagedContent(filePath) : undefined
+
+    if (isStagedDeleted || (!stagedContent && !existsSync(filePath))) {
       return `[ERROR] File not found: ${filePath}`
     }
 
@@ -42,12 +48,19 @@ export class FileEditTool implements Tool {
     }
 
     try {
-      const stats = statSync(filePath)
-      if (stats.size > MAX_FILE_SIZE) {
-        return `[ERROR] File too large (${(stats.size / 1024 / 1024).toFixed(1)}MB). Max: 10MB`
+      let content = ''
+      if (stagedContent !== undefined) {
+        if (stagedContent.length > MAX_FILE_SIZE) {
+          return `[ERROR] File too large (${(stagedContent.length / 1024 / 1024).toFixed(1)}MB). Max: 10MB`
+        }
+        content = stagedContent
+      } else {
+        const stats = statSync(filePath)
+        if (stats.size > MAX_FILE_SIZE) {
+          return `[ERROR] File too large (${(stats.size / 1024 / 1024).toFixed(1)}MB). Max: 10MB`
+        }
+        content = readFileSync(filePath, 'utf8')
       }
-
-      const content = readFileSync(filePath, 'utf8')
 
       if (!content.includes(oldString)) {
         return `[ERROR] Could not find the specified text in ${filePath}`
@@ -60,11 +73,16 @@ export class FileEditTool implements Tool {
       }
 
       const newContent = content.replace(oldString, newString)
-      writeFileSync(filePath, newContent, 'utf8')
+
+      if (isStaging) {
+        composer.stageWrite(filePath, newContent)
+      } else {
+        writeFileSync(filePath, newContent, 'utf8')
+      }
 
       // Generate diff for display
       const diff = generateDiff(oldString, newString)
-      return `[OK] File edited successfully.\n\n${diff}`
+      return `[OK] File edited successfully.${isStaging ? ' (staged in memory)' : ''}\n\n${diff}`
     } catch (e) {
       return `[ERROR] Cannot edit file: ${(e as Error).message}`
     }

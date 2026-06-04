@@ -174,9 +174,17 @@ Do NOT write markdown code blocks, explanation, or conversational text. Output O
   }
 
   // Load workspace task definitions automatically when workspace path changes
+  // If no definitions are loaded, auto-sync targets immediately to configure them
   useEffect(() => {
     if (activeSession?.workspacePath) {
-      useTaskStore.getState().loadDefinitions(activeSession.workspacePath)
+      const workspacePath = activeSession.workspacePath
+      useTaskStore.getState().loadDefinitions(workspacePath).then(() => {
+        const currentDefs = useTaskStore.getState().definitions
+        if (currentDefs.length === 0) {
+          console.log('[TaskPanel] No definitions found on load. Triggering auto-sync/discovery...')
+          useTaskStore.getState().syncWorkspace(workspacePath)
+        }
+      })
     }
   }, [activeSession?.workspacePath])
 

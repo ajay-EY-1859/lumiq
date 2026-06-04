@@ -27,6 +27,7 @@ import { registerLspHandlers } from './lspHandlers'
 import { registerPluginHandlers } from './pluginHandlers'
 import { registerSelfHealingHandlers } from './selfHealingHandlers'
 import { registerAutocompleteHandlers } from './autocompleteHandlers'
+import { registerComposerHandlers } from './composerHandlers'
 import { handleWithTimeout, IPC_TIMEOUT } from './handleWithTimeout'
 
 export function registerAllHandlers(): void {
@@ -54,6 +55,7 @@ export function registerAllHandlers(): void {
   registerPluginHandlers()
   registerSelfHealingHandlers()
   registerAutocompleteHandlers()
+  registerComposerHandlers()
 
   // ── Window Control Handlers (for custom titlebar) ──
   ipcMain.on('window:minimize', (event) => {

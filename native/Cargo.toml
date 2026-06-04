@@ -37,6 +37,13 @@ grep-regex = "0.1"
 uuid = { version = "1", features = ["v4"] }
 chrono = "0.4"
 
+# Tree-sitter parsers for code intelligence
+tree-sitter = "0.20"
+tree-sitter-typescript = "0.20"
+tree-sitter-python = "0.20"
+tree-sitter-rust = "0.20"
+tree-sitter-go = "0.20"
+
 [build-dependencies]
 napi-build = "2"
 

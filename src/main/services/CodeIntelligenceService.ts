@@ -6,6 +6,13 @@ import { Worker } from 'worker_threads'
 import { getDatabase } from '../db/database'
 import { SystemCapabilityService } from './SystemCapabilityService'
 
+let native: any
+try {
+  native = require('@lumiq/native')
+} catch (err) {
+  console.error('[CodeIntelligenceService] Failed to load native @lumiq/native module:', err)
+}
+
 export interface IndexStats {
   filesProcessed: number
   symbolsCount: number
@@ -183,13 +190,31 @@ export class CodeIntelligenceService {
       const ext = filePath.split('.').pop()?.toLowerCase() ?? ''
       let parseResult: { symbols: any[]; references: any[] }
 
-      // Route to specialized parser
-      if (['ts', 'tsx', 'js', 'jsx'].includes(ext)) {
-        parseResult = this.parseTypeScript(filePath, content)
-      } else if (ext === 'py') {
-        parseResult = this.parsePython(filePath, content)
+      if (native && native.parseFileAst && ['ts', 'tsx', 'js', 'jsx', 'py', 'rs', 'go'].includes(ext)) {
+        try {
+          const res = native.parseFileAst(filePath, content)
+          parseResult = {
+            symbols: res.symbols || [],
+            references: res.references || []
+          }
+        } catch (err) {
+          console.error(`[CodeIntelligence] Native AST parsing failed for ${filePath}, falling back:`, err)
+          if (['ts', 'tsx', 'js', 'jsx'].includes(ext)) {
+            parseResult = this.parseTypeScript(filePath, content)
+          } else if (ext === 'py') {
+            parseResult = this.parsePython(filePath, content)
+          } else {
+            parseResult = this.parseFallback(filePath, content)
+          }
+        }
       } else {
-        parseResult = this.parseFallback(filePath, content)
+        if (['ts', 'tsx', 'js', 'jsx'].includes(ext)) {
+          parseResult = this.parseTypeScript(filePath, content)
+        } else if (ext === 'py') {
+          parseResult = this.parsePython(filePath, content)
+        } else {
+          parseResult = this.parseFallback(filePath, content)
+        }
       }
 
       this.writeAstToDb(filePath, parseResult.symbols, parseResult.references)
@@ -219,8 +244,8 @@ export class CodeIntelligenceService {
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
         this.insertRefStmt = db.prepare(`
-          INSERT INTO ast_references (id, workspace_path, source_file_path, target_name, kind, line, column)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO ast_references (id, workspace_path, source_file_path, target_name, kind, line, column, module_specifier)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `)
       }
 
@@ -259,7 +284,8 @@ export class CodeIntelligenceService {
             ref.targetName,
             ref.kind,
             ref.line,
-            ref.column
+            ref.column,
+            ref.moduleSpecifier || null
           )
         }
       })
@@ -289,8 +315,8 @@ export class CodeIntelligenceService {
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
         this.insertRefStmt = db.prepare(`
-          INSERT INTO ast_references (id, workspace_path, source_file_path, target_name, kind, line, column)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO ast_references (id, workspace_path, source_file_path, target_name, kind, line, column, module_specifier)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `)
       }
 
@@ -331,7 +357,8 @@ export class CodeIntelligenceService {
               ref.targetName,
               ref.kind,
               ref.line,
-              ref.column
+              ref.column,
+              ref.moduleSpecifier || null
             )
           }
         }
@@ -340,6 +367,26 @@ export class CodeIntelligenceService {
       transaction()
     } catch (err) {
       console.error('[CodeIntelligence] Failed to write batch AST to DB:', err)
+    }
+  }
+
+  /**
+   * Returns AST database stats.
+   */
+  public getIndexStats(): { files: number; symbols: number; references: number } {
+    try {
+      const db = getDatabase()
+      const symbolsRow = db.prepare('SELECT COUNT(*) as count FROM ast_symbols').get() as any
+      const refsRow = db.prepare('SELECT COUNT(*) as count FROM ast_references').get() as any
+      const filesRow = db.prepare('SELECT COUNT(DISTINCT file_path) as count FROM ast_symbols').get() as any
+      return {
+        files: filesRow?.count || 0,
+        symbols: symbolsRow?.count || 0,
+        references: refsRow?.count || 0,
+      }
+    } catch (err) {
+      console.error('[CodeIntelligenceService] Failed to load index stats:', err)
+      return { files: 0, symbols: 0, references: 0 }
     }
   }
 

@@ -1,0 +1,10 @@
+D:\agentic-desktop-app\native\target\debug\deps\napi_derive-c2d41125aa363c2d.d: C:\Users\ajay\ raj\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\napi-derive-2.16.13\src\lib.rs C:\Users\ajay\ raj\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\napi-derive-2.16.13\src\compat_macro.rs C:\Users\ajay\ raj\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\napi-derive-2.16.13\src\expand.rs C:\Users\ajay\ raj\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\napi-derive-2.16.13\src\parser\mod.rs C:\Users\ajay\ raj\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\napi-derive-2.16.13\src\parser\attrs.rs C:\Users\ajay\ raj\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\napi-derive-2.16.13\src\expand\napi.rs
+
+D:\agentic-desktop-app\native\target\debug\deps\napi_derive-c2d41125aa363c2d.dll: C:\Users\ajay\ raj\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\napi-derive-2.16.13\src\lib.rs C:\Users\ajay\ raj\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\napi-derive-2.16.13\src\compat_macro.rs C:\Users\ajay\ raj\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\napi-derive-2.16.13\src\expand.rs C:\Users\ajay\ raj\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\napi-derive-2.16.13\src\parser\mod.rs C:\Users\ajay\ raj\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\napi-derive-2.16.13\src\parser\attrs.rs C:\Users\ajay\ raj\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\napi-derive-2.16.13\src\expand\napi.rs
+
+C:\Users\ajay\ raj\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\napi-derive-2.16.13\src\lib.rs:
+C:\Users\ajay\ raj\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\napi-derive-2.16.13\src\compat_macro.rs:
+C:\Users\ajay\ raj\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\napi-derive-2.16.13\src\expand.rs:
+C:\Users\ajay\ raj\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\napi-derive-2.16.13\src\parser\mod.rs:
+C:\Users\ajay\ raj\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\napi-derive-2.16.13\src\parser\attrs.rs:
+C:\Users\ajay\ raj\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\napi-derive-2.16.13\src\expand\napi.rs:

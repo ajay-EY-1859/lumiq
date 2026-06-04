@@ -135,3 +135,29 @@ export interface SearchResult {
  * that used readdirSync + readFileSync on the main process IPC thread.
  */
 export declare function searchFiles(dir: string, pattern: string, isRegex: boolean, caseSensitive: boolean, includeExts: Array<string>, excludeDirs: Array<string>, maxResults?: number | undefined | null): Promise<SearchResult>
+export interface SymbolData {
+  name: string
+  kind: string
+  containerName?: string
+  startLine: number
+  startColumn: number
+  endLine: number
+  endColumn: number
+  signature?: string
+}
+export interface ReferenceData {
+  targetName: string
+  kind: string
+  line: number
+  column: number
+  moduleSpecifier?: string
+}
+export interface AstParseResult {
+  symbols: Array<SymbolData>
+  references: Array<ReferenceData>
+}
+/**
+ * Parses a source code file using Tree-Sitter or regex fallback.
+ * Extracting symbols and calls/imports natively for sub-millisecond execution.
+ */
+export declare function parseFileAst(filePath: string, content: string): AstParseResult

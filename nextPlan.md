@@ -65,15 +65,15 @@ Bridge the gap between file editing and terminal command execution.
 - [x] **Visual Command Streaming**: Let the AI stream commands directly into the terminal, visually showing command outputs, with single-click human authorization before execution.
 - [x] **Fail-Safe Diagnostics Interceptor**: Intercept compiler, build, and test exceptions in the terminal stream, prompting the user with an instant *"Auto-Fix with Lumiq"* diagnostic button.
 
-### Milestone 13: AST Symbol Graph & Semantic Indexer (Code Intelligence)
+### Milestone 13: AST Symbol Graph & Semantic Indexer (Code Intelligence) [COMPLETED]
 Move beyond regex search to a structural, graph-based understanding of the user's codebase.
-- **Tree-Sitter AST Parsing**: Integrate a background worker that parses code files into Abstract Syntax Trees (AST) using `tree-sitter`.
-- **Global Dependency Symbol Table**: Build a high-fidelity graph database (using SQLite as storage) index mapping classes, interfaces, variables, functions, and import paths.
-- **Symbol Routing Queries**: Provide structural context tools for the AI agent to ask:
+- [x] **Tree-Sitter AST Parsing**: Integrate a background worker that parses code files into Abstract Syntax Trees (AST) using `tree-sitter`.
+- [x] **Global Dependency Symbol Table**: Build a high-fidelity graph database (using SQLite as storage) index mapping classes, interfaces, variables, functions, and import paths.
+- [x] **Symbol Routing Queries**: Provide structural context tools for the AI agent to ask:
   - *"Where is this interface defined?"*
   - *"What are the dependencies or callers of this function?"*
   - *"Find all files implementing this specific class."*
-- **Incremental Index updates**: Efficient file system watchers (`chokidar`) that update the AST graph incrementally on file saves.
+- [x] **Incremental Index updates**: Efficient file system watchers (`chokidar`) that update the AST graph incrementally on file saves.
 
 ### Milestone 14: Composer Mode & Collaborative Multi-Agent Swarm
 Orchestrate high-level, complex coding goals across parallel specialized AI agents.

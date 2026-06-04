@@ -71,9 +71,9 @@ export function registerTaskHandlers(): void {
     return listWorkspaceTasks(safePath)
   })
 
-  handleWithTimeout(IPC.TASK_SYNC_WORKSPACE, IPC_TIMEOUT.short, (_event, workspacePath: string) => {
+  handleWithTimeout(IPC.TASK_SYNC_WORKSPACE, IPC_TIMEOUT.short, async (_event, workspacePath: string) => {
     const safePath = validatePathWithinWorkspace(workspacePath)
-    return syncPackageJsonTasks(safePath)
+    return await syncPackageJsonTasks(safePath)
   })
 
   handleWithTimeout(

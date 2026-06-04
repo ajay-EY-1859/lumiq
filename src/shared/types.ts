@@ -457,6 +457,16 @@ export const IPC = {
   LSP_DOCUMENT_SYMBOLS: 'lsp:document-symbols',
   LSP_WORKSPACE_SYMBOLS: 'lsp:workspace-symbols',
   LSP_DEFINITION: 'lsp:definition',
+  LSP_REFERENCES: 'lsp:references',
+  LSP_INDEX_STATS: 'lsp:index-stats',
+
+  // Composer Mode (Milestone 14)
+  COMPOSER_START: 'composer:start',
+  COMPOSER_STATUS: 'composer:status',
+  COMPOSER_CANCEL: 'composer:cancel',
+  COMPOSER_APPROVE: 'composer:approve',
+  COMPOSER_REJECT: 'composer:reject',
+  COMPOSER_DIFF_PREVIEW: 'composer:diff-preview',
 
   // Traces
   TRACES_LIST: 'traces:list',
@@ -673,6 +683,16 @@ export interface DefinitionResult {
   }
 }
 
+export interface ReferenceResult {
+  uri: string
+  range: {
+    startLineNumber: number
+    startColumn: number
+    endLineNumber: number
+    endColumn: number
+  }
+}
+
 // ─── Git Types ────────────────────────────────────────────────────
 export type GitFileStatus = 'modified' | 'added' | 'deleted' | 'renamed' | 'untracked' | 'conflicted'
 
@@ -758,4 +778,23 @@ export const PROVIDER_CONSOLE_URLS: Record<ProviderType, { label: string; url: s
   openrouter: { label: 'OpenRouter Keys', url: 'https://openrouter.ai/keys' },
   groq: { label: 'Groq Console', url: 'https://console.groq.com/keys' },
   custom: null
+}
+
+// ─── Composer Types ────────────────────────────────────────────────
+export type ComposerState = 'planning' | 'coding' | 'testing' | 'reviewing' | 'awaiting_approval' | 'completed' | 'cancelled' | 'failed' | 'idle'
+export type AgentNodeStatus = 'idle' | 'running' | 'completed' | 'failed'
+
+export interface ComposerAgentNode {
+  id: 'architect' | 'coder' | 'tester' | 'reviewer'
+  label: string
+  status: AgentNodeStatus
+  logs: string[]
+  activeFile?: string
+}
+
+export interface ComposerTaskStatus {
+  goal: string
+  state: ComposerState
+  nodes: ComposerAgentNode[]
+  stagedFiles: { path: string; status: 'modified' | 'created' | 'deleted' }[]
 }

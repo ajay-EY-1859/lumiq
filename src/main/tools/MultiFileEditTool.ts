@@ -6,6 +6,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'fs'
 import type { Tool } from './Tool'
 import { validatePathWithinWorkspace } from '../security/pathValidation'
+import { ComposerService } from '../services/ComposerService'
 
 interface EditOperation {
   path: string
@@ -54,6 +55,9 @@ export class MultiFileEditTool implements Tool {
     // Store backup for rollback
     const backups = new Map<string, string>()
 
+    const composer = ComposerService.getInstance()
+    const isStaging = composer.isStagingActive()
+
     try {
       // Phase 1: Read all files and validate changes
       const changes = new Map<string, string>()
@@ -66,12 +70,17 @@ export class MultiFileEditTool implements Tool {
           throw new Error(`Invalid path ${edit.path}: ${(error as Error).message}`)
         }
 
-        if (!existsSync(filePath)) {
+        const isStagedDeleted = isStaging && composer.isStagedDeleted(filePath)
+        const stagedContent = isStaging ? composer.getStagedContent(filePath) : undefined
+
+        if (isStagedDeleted || (!stagedContent && !existsSync(filePath))) {
           throw new Error(`File not found: ${filePath}`)
         }
 
-        const content = readFileSync(filePath, 'utf8')
-        backups.set(filePath, content)
+        const content = stagedContent !== undefined ? stagedContent : readFileSync(filePath, 'utf8')
+        if (!isStaging) {
+          backups.set(filePath, content)
+        }
 
         // Check if oldString exists
         if (!content.includes(edit.oldString)) {
@@ -85,26 +94,32 @@ export class MultiFileEditTool implements Tool {
 
       // Phase 2: Write all changes (atomic from tool perspective)
       for (const [filePath, newContent] of changes.entries()) {
-        writeFileSync(filePath, newContent, 'utf8')
+        if (isStaging) {
+          composer.stageWrite(filePath, newContent)
+        } else {
+          writeFileSync(filePath, newContent, 'utf8')
+        }
       }
 
-      const summary = `[OK] Edited ${edits.length} file(s) atomically:\n`
+      const summary = `[OK] Edited ${edits.length} file(s) atomically${isStaging ? ' (staged in memory)' : ''}:\n`
       const filesList = Array.from(changes.keys())
         .map((p, i) => `  ${i + 1}. ${p}`)
         .join('\n')
 
       return summary + filesList
     } catch (error) {
-      // Rollback on error
-      for (const [filePath, originalContent] of backups.entries()) {
-        try {
-          writeFileSync(filePath, originalContent, 'utf8')
-        } catch (rollbackError) {
-          console.error(`Failed to rollback ${filePath}:`, rollbackError)
+      if (!isStaging) {
+        // Rollback on error
+        for (const [filePath, originalContent] of backups.entries()) {
+          try {
+            writeFileSync(filePath, originalContent, 'utf8')
+          } catch (rollbackError) {
+            console.error(`Failed to rollback ${filePath}:`, rollbackError)
+          }
         }
       }
 
-      return `[ERROR] Transaction rolled back. ${(error as Error).message}`
+      return `[ERROR] Transaction rolled back ${isStaging ? '(no staged files updated)' : ''}. ${(error as Error).message}`
     }
   }
 

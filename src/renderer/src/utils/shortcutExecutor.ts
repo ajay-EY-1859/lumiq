@@ -14,41 +14,59 @@ function getExecutableOutputPath(filePath: string): string {
   return path.join(parsed.dir, `${parsed.name}${suffix}`)
 }
 
-export function runProjectAction(): void {
+export async function runProjectAction(): Promise<void> {
   const sessionState = useSessionStore.getState()
   const activeSession = sessionState.sessions.find(s => s.id === sessionState.activeSessionId)
   const workspacePath = activeSession?.workspacePath
   if (!workspacePath) return
 
   const taskState = useTaskStore.getState()
-  const runTask = taskState.definitions.find(
+  let runTask = taskState.definitions.find(
     d => d.name.endsWith(':run') || d.name.startsWith('npm:start') || d.name.startsWith('npm:dev') || d.name.startsWith('python:run')
   )
+  
+  if (!runTask) {
+    console.log(`[ShortcutExecutor] No run task found. Auto-syncing workspace...`)
+    await taskState.syncWorkspace(workspacePath)
+    const updatedState = useTaskStore.getState()
+    runTask = updatedState.definitions.find(
+      d => d.name.endsWith(':run') || d.name.startsWith('npm:start') || d.name.startsWith('npm:dev') || d.name.startsWith('python:run')
+    )
+  }
   
   if (runTask) {
     console.log(`[ShortcutExecutor] F5: Running project task "${runTask.name}"...`)
     taskState.runTask(runTask.name, runTask.command, runTask.args, workspacePath)
   } else {
-    alert('No project run configuration discovered. Click the Refresh button in the Runner tab to auto-discover targets.')
+    alert('No project run configuration discovered. Even after auto-discovery, no run scripts were found.')
   }
 }
 
-export function buildProjectAction(): void {
+export async function buildProjectAction(): Promise<void> {
   const sessionState = useSessionStore.getState()
   const activeSession = sessionState.sessions.find(s => s.id === sessionState.activeSessionId)
   const workspacePath = activeSession?.workspacePath
   if (!workspacePath) return
 
   const taskState = useTaskStore.getState()
-  const buildTask = taskState.definitions.find(
+  let buildTask = taskState.definitions.find(
     d => d.name.endsWith(':build') || d.name.endsWith(':compile') || d.name.endsWith(':build-project')
   )
+  
+  if (!buildTask) {
+    console.log(`[ShortcutExecutor] No build task found. Auto-syncing workspace...`)
+    await taskState.syncWorkspace(workspacePath)
+    const updatedState = useTaskStore.getState()
+    buildTask = updatedState.definitions.find(
+      d => d.name.endsWith(':build') || d.name.endsWith(':compile') || d.name.endsWith(':build-project')
+    )
+  }
   
   if (buildTask) {
     console.log(`[ShortcutExecutor] F6: Building project task "${buildTask.name}"...`)
     taskState.runTask(buildTask.name, buildTask.command, buildTask.args, workspacePath)
   } else {
-    alert('No project build configuration discovered. Click the Refresh button in the Runner tab to auto-discover targets.')
+    alert('No project build configuration discovered. Even after auto-discovery, no build/compile scripts were found.')
   }
 }
 

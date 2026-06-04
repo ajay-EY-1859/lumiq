@@ -34,7 +34,9 @@ import type {
   GitStatusResult,
   DocumentSymbol,
   DefinitionResult,
-  SelfHealingAttempt
+  ReferenceResult,
+  SelfHealingAttempt,
+  ComposerTaskStatus
 } from '../shared/types'
 
 // Type for the exposed API
@@ -204,6 +206,16 @@ export interface ElectronAPI {
     getDocumentSymbols: (filePath: string) => Promise<DocumentSymbol[]>
     getWorkspaceSymbols: (workspacePath: string, query: string) => Promise<DocumentSymbol[]>
     getDefinition: (workspacePath: string, filePath: string, line: number, column: number) => Promise<DefinitionResult | null>
+    getReferences: (workspacePath: string, filePath: string, line: number, column: number) => Promise<ReferenceResult[]>
+    getIndexStats: () => Promise<{ files: number; symbols: number; references: number }>
+  }
+  composer: {
+    start: (goal: string, workspacePath: string) => Promise<void>
+    cancel: () => Promise<void>
+    approve: () => Promise<void>
+    reject: () => Promise<void>
+    getDiffPreview: (filePath: string) => Promise<{ original: string; proposed: string }>
+    onStatusUpdate: (callback: (status: ComposerTaskStatus) => void) => () => void
   }
   git: {
     status: (workspacePath: string) => Promise<GitStatusResult>
@@ -455,7 +467,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
   lsp: {
     getDocumentSymbols: (filePath: string) => ipcRenderer.invoke(IPC.LSP_DOCUMENT_SYMBOLS, filePath),
     getWorkspaceSymbols: (workspacePath: string, query: string) => ipcRenderer.invoke(IPC.LSP_WORKSPACE_SYMBOLS, { workspacePath, query }),
-    getDefinition: (workspacePath: string, filePath: string, line: number, column: number) => ipcRenderer.invoke(IPC.LSP_DEFINITION, { workspacePath, filePath, line, column })
+    getDefinition: (workspacePath: string, filePath: string, line: number, column: number) => ipcRenderer.invoke(IPC.LSP_DEFINITION, { workspacePath, filePath, line, column }),
+    getReferences: (workspacePath: string, filePath: string, line: number, column: number) => ipcRenderer.invoke(IPC.LSP_REFERENCES, { workspacePath, filePath, line, column }),
+    getIndexStats: () => ipcRenderer.invoke(IPC.LSP_INDEX_STATS)
+  },
+  composer: {
+    start: (goal: string, workspacePath: string) => ipcRenderer.invoke(IPC.COMPOSER_START, { goal, workspacePath }),
+    cancel: () => ipcRenderer.invoke(IPC.COMPOSER_CANCEL),
+    approve: () => ipcRenderer.invoke(IPC.COMPOSER_APPROVE),
+    reject: () => ipcRenderer.invoke(IPC.COMPOSER_REJECT),
+    getDiffPreview: (filePath: string) => ipcRenderer.invoke(IPC.COMPOSER_DIFF_PREVIEW, { filePath }),
+    onStatusUpdate: (callback: (status: ComposerTaskStatus) => void) => {
+      const handler = (_event: any, status: ComposerTaskStatus) => callback(status)
+      ipcRenderer.on(IPC.COMPOSER_STATUS, handler)
+      return () => { ipcRenderer.removeListener(IPC.COMPOSER_STATUS, handler) }
+    }
   },
 
   // ── Git ──

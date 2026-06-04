@@ -3,6 +3,13 @@ import { join } from 'path'
 import { readFileSync, existsSync, promises as fsPromises } from 'fs'
 import { parentPort, workerData } from 'worker_threads'
 
+let native: any
+try {
+  native = require('@lumiq/native')
+} catch (err) {
+  console.error('[CodeIntelligenceWorker] Failed to load native @lumiq/native module:', err)
+}
+
 interface SymbolRefData {
   symbols: any[]
   references: any[]
@@ -388,12 +395,31 @@ async function runScan() {
       const ext = file.split('.').pop()?.toLowerCase() ?? ''
       let parseResult: SymbolRefData
 
-      if (['ts', 'tsx', 'js', 'jsx'].includes(ext)) {
-        parseResult = parseTypeScript(file, content)
-      } else if (ext === 'py') {
-        parseResult = parsePython(content)
+      if (native && native.parseFileAst && ['ts', 'tsx', 'js', 'jsx', 'py', 'rs', 'go'].includes(ext)) {
+        try {
+          const res = native.parseFileAst(file, content)
+          parseResult = {
+            symbols: res.symbols || [],
+            references: res.references || []
+          }
+        } catch (err) {
+          console.error(`[CodeIntelligenceWorker] Native AST parsing failed for ${file}, falling back:`, err)
+          if (['ts', 'tsx', 'js', 'jsx'].includes(ext)) {
+            parseResult = parseTypeScript(file, content)
+          } else if (ext === 'py') {
+            parseResult = parsePython(content)
+          } else {
+            parseResult = parseFallback(content)
+          }
+        }
       } else {
-        parseResult = parseFallback(content)
+        if (['ts', 'tsx', 'js', 'jsx'].includes(ext)) {
+          parseResult = parseTypeScript(file, content)
+        } else if (ext === 'py') {
+          parseResult = parsePython(content)
+        } else {
+          parseResult = parseFallback(content)
+        }
       }
 
       symbolsCount += parseResult.symbols.length

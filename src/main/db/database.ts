@@ -570,6 +570,7 @@ function runMigrations(database: Database.Database): void {
         kind TEXT NOT NULL,
         line INTEGER NOT NULL,
         column INTEGER NOT NULL,
+        module_specifier TEXT,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
 
@@ -582,6 +583,13 @@ function runMigrations(database: Database.Database): void {
   })
 
   migrate()
+
+  // ── Migration: Add module_specifier to ast_references for Milestone 13 ──
+  try {
+    database.exec(`ALTER TABLE ast_references ADD COLUMN module_specifier TEXT`)
+  } catch (err) {
+    // Column already exists or table doesn't exist yet
+  }
 
   // ── Database self-healing: transition Bedrock defaults to us.anthropic.claude-opus-4-1-20250805-v1:0 ──
   try {

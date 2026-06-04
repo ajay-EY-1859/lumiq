@@ -12,9 +12,11 @@ mod scanner;
 mod chunker;
 mod similarity;
 mod search;
+mod ast;
 
 // Re-export all public NAPI functions
 pub use scanner::*;
 pub use chunker::*;
 pub use similarity::*;
 pub use search::*;
+pub use ast::*;

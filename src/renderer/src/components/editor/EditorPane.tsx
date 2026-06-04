@@ -247,6 +247,18 @@ export function EditorPane(): React.JSX.Element | null {
         } catch { return null }
       }
     })
+    const refProv = monaco.languages.registerReferenceProvider('*', {
+      provideReferences: async (model, position) => {
+        try {
+          const refs = await window.electronAPI.lsp.getReferences('', fixPath(model.uri.path), position.lineNumber, position.column)
+          if (!refs) return []
+          return refs.map((ref) => {
+            const uri = ref.uri.startsWith('file://') ? ref.uri : 'file://' + (ref.uri.startsWith('/') ? ref.uri : '/' + ref.uri)
+            return { uri: monaco.Uri.parse(uri), range: ref.range }
+          })
+        } catch { return [] }
+      }
+    })
 
     // ── Autocomplete / Ghost-Text Inline Completions Provider ──
     let lastQueryTime = 0
@@ -313,6 +325,7 @@ export function EditorPane(): React.JSX.Element | null {
     return () => {
       symProv.dispose()
       defProv.dispose()
+      refProv.dispose()
       inlineProv.dispose()
     }
   }, [monaco, autocompleteEnabled])
@@ -542,17 +555,7 @@ export function EditorPane(): React.JSX.Element | null {
       contextMenuGroupId: 'navigation',
       contextMenuOrder: 4,
       run: () => {
-        const workspacePath = useSessionStore.getState().sessions.find(s => s.id === useSessionStore.getState().activeSessionId)?.workspacePath
-        if (!workspacePath) return
-        
-        const defs = useTaskStore.getState().definitions
-        const buildTask = defs.find(d => d.name.endsWith(':build') || d.name.endsWith(':compile') || d.name.endsWith(':build-project'))
-        
-        if (buildTask) {
-          useTaskStore.getState().runTask(buildTask.name, buildTask.command, buildTask.args, workspacePath)
-        } else {
-          alert('No project build configuration discovered. Please click the Refresh button in the Runner panel to discover scripts.')
-        }
+        buildProjectAction()
       }
     })
 
@@ -563,17 +566,7 @@ export function EditorPane(): React.JSX.Element | null {
       contextMenuGroupId: 'navigation',
       contextMenuOrder: 5,
       run: () => {
-        const workspacePath = useSessionStore.getState().sessions.find(s => s.id === useSessionStore.getState().activeSessionId)?.workspacePath
-        if (!workspacePath) return
-        
-        const defs = useTaskStore.getState().definitions
-        const runTask = defs.find(d => d.name.endsWith(':run') || d.name.startsWith('npm:start') || d.name.startsWith('npm:dev') || d.name.startsWith('python:run'))
-        
-        if (runTask) {
-          useTaskStore.getState().runTask(runTask.name, runTask.command, runTask.args, workspacePath)
-        } else {
-          alert('No project run configuration discovered. Please click the Refresh button in the Runner panel to discover scripts.')
-        }
+        runProjectAction()
       }
     })
   }
