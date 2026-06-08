@@ -60,10 +60,33 @@ describe('DapService - Debug Adapter Protocol Client', () => {
     expect(status.breakpoints.length).toBe(0)
   })
 
-  it('should start debug session and transition state', () => {
+  it('should start debug session and transition state', async () => {
     const service = DapService.getInstance()
     
+    // Mock fetch and WebSocket globally
+    let wsMock: any
+    global.fetch = vi.fn().mockResolvedValue({
+      json: () => Promise.resolve([{ webSocketDebuggerUrl: 'ws://mock' }])
+    })
+    
+    class MockWebSocket {
+      static OPEN = 1
+      send = vi.fn()
+      close = vi.fn()
+      onmessage: any = null
+      onopen: any = null
+      readyState = 1 // OPEN
+      constructor() {
+        wsMock = this
+      }
+    }
+    global.WebSocket = MockWebSocket as any
+
     service.startDebugSession(9229, 'src/main.ts')
+    
+    // Wait for async fetch to resolve
+    await new Promise(r => setTimeout(r, 50))
+    
     let status = service.getStatus()
     expect(status.state).toBe('running')
     expect(status.port).toBe(9229)
@@ -76,45 +99,85 @@ describe('DapService - Debug Adapter Protocol Client', () => {
     expect(status.port).toBe(0)
   })
 
-  it('should handle stepping actions when paused', () => {
+  it('should handle stepping actions when paused via CDP events', async () => {
     const service = DapService.getInstance()
     
-    // Force set state to paused with mock frames for testing
-    service.startDebugSession(9229, 'src/main.ts')
+    // Mock fetch and WebSocket
+    let wsMock: any
+    global.fetch = vi.fn().mockResolvedValue({
+      json: () => Promise.resolve([{ webSocketDebuggerUrl: 'ws://mock' }])
+    })
     
-    // Manually trigger simulated break to avoid waiting for timeout
-    ;(service as any).triggerSimulatedBreak()
+    class MockWebSocket {
+      static OPEN = 1
+      send = vi.fn()
+      close = vi.fn()
+      onmessage: any = null
+      onopen: any = null
+      readyState = 1 // OPEN
+      constructor() {
+        wsMock = this
+      }
+    }
+    global.WebSocket = MockWebSocket as any
+    
+    service.startDebugSession(9229, 'src/main.ts')
+    await new Promise(r => setTimeout(r, 50))
+    
+    // Trigger open
+    if (wsMock && wsMock.onopen) wsMock.onopen()
+    
+    // Simulate Debugger.paused event
+    if (wsMock && wsMock.onmessage) {
+      wsMock.onmessage({
+        data: JSON.stringify({
+          method: 'Debugger.paused',
+          params: {
+            reason: 'other',
+            callFrames: [{
+              callFrameId: '0',
+              functionName: 'testFunc',
+              location: { lineNumber: 17, columnNumber: 5 },
+              url: 'file:///src/main.ts',
+              scopeChain: []
+            }]
+          }
+        })
+      })
+    }
+    
+    await new Promise(r => setTimeout(r, 50))
     
     let status = service.getStatus()
     expect(status.state).toBe('paused')
-    expect(status.stackFrames.length).toBe(3)
-    expect(status.stackFrames[0].line).toBe(18)
+    expect(status.stackFrames.length).toBe(1)
+    expect(status.stackFrames[0].line).toBe(18) // +1 for 1-based indexing
 
     // Step Over
     service.stepOver()
-    status = service.getStatus()
-    expect(status.stackFrames[0].line).toBe(19)
-    
-    // Verify variable mutation during step over
-    const localScope = status.scopes.find(s => s.name === 'Local')
-    const discountVar = localScope?.variables.find(v => v.name === 'discount')
-    expect(discountVar?.value).toBe('0')
+    expect(wsMock.send).toHaveBeenCalledWith(expect.stringContaining('Debugger.stepOver'))
 
     // Step Into
     service.stepInto()
-    status = service.getStatus()
-    expect(status.stackFrames.length).toBe(4)
-    expect(status.activeFrameId).toBe(99)
-    expect(status.stackFrames[0].name).toBe('formatCurrency')
+    expect(wsMock.send).toHaveBeenCalledWith(expect.stringContaining('Debugger.stepInto'))
 
     // Step Out
     service.stepOut()
-    status = service.getStatus()
-    expect(status.stackFrames.length).toBe(3)
-    expect(status.activeFrameId).toBe(0)
+    expect(wsMock.send).toHaveBeenCalledWith(expect.stringContaining('Debugger.stepOut'))
 
     // Continue
     service.continueExecution()
+    expect(wsMock.send).toHaveBeenCalledWith(expect.stringContaining('Debugger.resume'))
+
+    // Simulate Debugger.resumed event
+    if (wsMock && wsMock.onmessage) {
+      wsMock.onmessage({
+        data: JSON.stringify({
+          method: 'Debugger.resumed'
+        })
+      })
+    }
+    
     status = service.getStatus()
     expect(status.state).toBe('running')
     expect(status.stackFrames.length).toBe(0)

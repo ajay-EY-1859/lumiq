@@ -331,11 +331,6 @@ export class ComposerService extends Disposable implements IComposerService {
 
     this.broadcastStatus()
 
-    if (process.env.NODE_ENV === 'test') {
-      this.runSimulatedSwarm(goal)
-      return
-    }
-
     const abortController = new AbortController()
     this.abortController = abortController
     const signal = abortController.signal
@@ -499,91 +494,6 @@ Perform a detailed audit. If everything looks good, state that the changes are a
     } finally {
       this.abortController = null
     }
-  }
-
-  private runSimulatedSwarm(goal: string): void {
-    const delay = (ms: number, fn: () => void) => {
-      const id = setTimeout(fn, ms)
-      this.timeoutIds.push(id)
-    }
-
-    // Step 1: Architect Plan
-    this.addLog('architect', `Architect starting codebase structure analysis for goal: ${goal}`)
-    delay(500, () => {
-      this.addLog('architect', 'Analyzing workspace import graphs and symbol index tables...')
-    })
-
-    delay(1000, () => {
-      this.addLog('architect', 'Identified files for the change plan:')
-      this.addLog('architect', ' - CREATE: src/utils/stringFormatter.ts (new layout utilities)')
-      this.addLog('architect', ' - MODIFY: src/main.ts (register custom parser helpers)')
-      this.setNodeStatus('architect', 'completed')
-      
-      // Transition to Coder
-      this.setTaskState('coding')
-      this.setNodeStatus('coder', 'running')
-      this.addLog('coder', 'Coder starting modifications stage...')
-    })
-
-    // Step 2: Coder Writes proposed changes in parallel
-    delay(1500, () => {
-      this.addLog('coder', 'Spawning parallel Coder agents for 2 files...')
-      this.addLog('coder', '[Agent 1] Structuring src/utils/stringFormatter.ts...')
-      this.addLog('coder', '[Agent 2] Modifying src/main.ts to import formatter helper...')
-      
-      const newFilePath = join(this.activeWorkspacePath, 'src/utils/stringFormatter.ts').replace(/\\/g, '/')
-      const mockFormatterCode = `// String Formatter utilities for Lumiq\nexport function formatSnippet(text: string): string {\n  return text.trim().toLowerCase();\n}\n`
-      this.stagedFiles.set(newFilePath, mockFormatterCode)
-      this.task.stagedFiles.push({ path: newFilePath, status: 'created' })
-      
-      const mainPath = join(this.activeWorkspacePath, 'src/main.ts').replace(/\\/g, '/')
-      let originalMain = '// Lumiq main\nconsole.log("App startup");\n'
-      try {
-        if (existsSync(mainPath)) {
-          originalMain = readFileSync(mainPath, 'utf8')
-        }
-      } catch {
-        // Demo fallback can proceed with default main content.
-      }
-      const proposedMain = `import { formatSnippet } from './utils/stringFormatter';\n${originalMain}\nconsole.log(formatSnippet("  LUMIQ COMPOSER  "));\n`
-      this.stagedFiles.set(mainPath, proposedMain)
-      this.task.stagedFiles.push({ path: mainPath, status: 'modified' })
-      
-      this.broadcastStatus()
-    })
-
-    delay(2500, () => {
-      this.addLog('coder', 'Parallel Coder agents completed their work.')
-      this.setNodeStatus('coder', 'completed')
-
-      // Transition to Tester & Reviewer concurrently
-      this.setTaskState('testing')
-      this.setNodeStatus('tester', 'running')
-      this.setNodeStatus('reviewer', 'running')
-      this.addLog('tester', 'Tester initiating diagnostic check: running test suite...')
-      this.addLog('reviewer', 'Reviewer initiating security and performance audit scan in parallel...')
-    })
-
-    // Step 3 & 4: Tester and Reviewer execute concurrently
-    delay(3500, () => {
-      this.addLog('tester', 'Executing npm test --run...')
-      this.addLog('reviewer', 'Reviewer: Analyzing dependency scopes...')
-      this.addLog('reviewer', 'Reviewer: Checking for potential thread leaks in asynchronous functions...')
-    })
-
-    delay(4500, () => {
-      this.addLog('tester', ' ✓ src/main/services/__tests__/LspReferences.test.ts (2 tests passed)')
-      this.addLog('tester', ' ✓ src/main/services/__tests__/CodeIntelligence.test.ts (4 tests passed)')
-      this.addLog('tester', ' ✓ StringFormatter integrity assertion passed!')
-      this.setNodeStatus('tester', 'completed')
-      
-      this.addLog('reviewer', ' ✓ No security loop backdoors or memory leak paths found. Verification successful!')
-      this.setNodeStatus('reviewer', 'completed')
-
-      // Awaiting user approval
-      this.setTaskState('awaiting_approval')
-      this.broadcastStatus()
-    })
   }
 
   public approveChanges(): void {

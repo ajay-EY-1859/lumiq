@@ -19,7 +19,9 @@ export class DapService extends Disposable implements IDapService {
     activeFrameId: null
   }
 
-  private timeoutIds: NodeJS.Timeout[] = []
+  private ws: WebSocket | null = null
+  private msgId = 1
+  private pendingRequests: Map<number, { resolve: Function, reject: Function }> = new Map()
 
   constructor() {
     super()
@@ -46,12 +48,17 @@ export class DapService extends Disposable implements IDapService {
     
     if (idx !== -1) {
       this.state.breakpoints.splice(idx, 1)
+      this.sendCommand('Debugger.removeBreakpoint', { breakpointId: `bp_${cleanPath}_${line}` }).catch(() => {})
     } else {
       this.state.breakpoints.push({
         filePath: cleanPath,
         line,
         verified: true
       })
+      this.sendCommand('Debugger.setBreakpointByUrl', {
+        urlRegex: '.*' + cleanPath.split('/').pop() + '.*',
+        lineNumber: line - 1
+      }).catch(() => {})
     }
     this.broadcastState()
   }
@@ -73,18 +80,139 @@ export class DapService extends Disposable implements IDapService {
     }
     this.broadcastState()
 
-    // Simulate hitting a breakpoint/exception after 1.5 seconds
-    const id = setTimeout(() => {
-      this.triggerSimulatedBreak()
-    }, 1500)
-    this.timeoutIds.push(id)
+    this.connectInspector(port).catch(err => {
+      console.error('[DapService] Failed to connect to inspector:', err)
+      this.state.errorOutput = `Failed to connect to debugger on port ${port}: ${err.message}`
+      this.state.state = 'inactive'
+      this.broadcastState()
+    })
+  }
+
+  private async connectInspector(port: number): Promise<void> {
+    const res = await fetch(`http://127.0.0.1:${port}/json/list`)
+    const targets = await res.json()
+    if (!targets || targets.length === 0) {
+      throw new Error('No debug targets found.')
+    }
+    const wsUrl = targets[0].webSocketDebuggerUrl
+    if (!wsUrl) throw new Error('No webSocketDebuggerUrl found in target.')
+
+    this.ws = new WebSocket(wsUrl)
+    
+    this.ws.onopen = async () => {
+      console.log(`[DapService] Connected to debugger at ${wsUrl}`)
+      await this.sendCommand('Debugger.enable')
+      await this.sendCommand('Runtime.enable')
+
+      // Sync breakpoints
+      for (const bp of this.state.breakpoints) {
+        if (bp.verified) {
+          try {
+            await this.sendCommand('Debugger.setBreakpointByUrl', {
+              urlRegex: '.*' + bp.filePath.split('/').pop() + '.*',
+              lineNumber: bp.line - 1
+            })
+          } catch(e) {
+            console.error('Failed to set bp', e)
+          }
+        }
+      }
+    }
+
+    this.ws.onmessage = (event: any) => {
+      const msg = JSON.parse(event.data)
+      if (msg.id && this.pendingRequests.has(msg.id)) {
+        if (msg.error) {
+          this.pendingRequests.get(msg.id)!.reject(new Error(msg.error.message))
+        } else {
+          this.pendingRequests.get(msg.id)!.resolve(msg.result)
+        }
+        this.pendingRequests.delete(msg.id)
+      } else if (msg.method) {
+        this.handleEvent(msg.method, msg.params)
+      }
+    }
+
+    this.ws.onclose = () => {
+      console.log('[DapService] Debugger connection closed.')
+      this.stopDebugSession()
+    }
+  }
+
+  private sendCommand(method: string, params?: any): Promise<any> {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return Promise.reject(new Error('WebSocket not connected'))
+    return new Promise((resolve, reject) => {
+      const id = this.msgId++
+      this.pendingRequests.set(id, { resolve, reject })
+      this.ws!.send(JSON.stringify({ id, method, params }))
+    })
+  }
+
+  private async handleEvent(method: string, params: any) {
+    if (method === 'Debugger.paused') {
+      this.state.state = 'paused'
+      this.state.errorOutput = params.reason === 'exception' ? 'Exception hit' : undefined
+      
+      const frames = params.callFrames || []
+      this.state.stackFrames = frames.map((f: any, i: number) => ({
+        id: i,
+        name: f.functionName || '(anonymous)',
+        source: { name: f.url.split('/').pop() || 'unknown', path: f.url.replace('file://', '') },
+        line: f.location.lineNumber + 1,
+        column: f.location.columnNumber + 1
+      }))
+      
+      this.state.activeFrameId = 0
+      
+      if (frames.length > 0) {
+        await this.loadScopes(frames[0])
+      }
+      
+      this.broadcastState()
+    } else if (method === 'Debugger.resumed') {
+      this.state.state = 'running'
+      this.state.stackFrames = []
+      this.state.scopes = []
+      this.state.activeFrameId = null
+      this.broadcastState()
+    }
+  }
+
+  private async loadScopes(callFrame: any) {
+    this.state.scopes = []
+    const scopes = callFrame.scopeChain || []
+    for (let i = 0; i < scopes.length; i++) {
+      const scope = scopes[i]
+      if (scope.type === 'global') continue
+      
+      const res = await this.sendCommand('Runtime.getProperties', {
+        objectId: scope.object.objectId,
+        ownProperties: true
+      }).catch(() => null)
+
+      if (res && res.result) {
+        const variables = res.result.map((prop: any) => ({
+          name: prop.name,
+          value: prop.value ? (prop.value.value !== undefined ? String(prop.value.value) : prop.value.description || prop.value.type) : 'undefined',
+          type: prop.value ? prop.value.type : 'undefined',
+          variablesReference: prop.value?.objectId ? Math.floor(Math.random() * 1000) : 0
+        }))
+
+        this.state.scopes.push({
+          name: scope.type.charAt(0).toUpperCase() + scope.type.slice(1),
+          variablesReference: i + 1,
+          variables
+        })
+      }
+    }
   }
 
   public stopDebugSession(): void {
-    for (const timeoutId of this.timeoutIds) {
-      clearTimeout(timeoutId)
+    if (this.ws) {
+      this.ws.close()
+      this.ws = null
     }
-    this.timeoutIds = []
+    this.pendingRequests.clear()
 
     this.state = {
       ...this.state,
@@ -100,123 +228,24 @@ export class DapService extends Disposable implements IDapService {
     this.broadcastState()
   }
 
-  private triggerSimulatedBreak(): void {
-    this.state.state = 'paused'
-    this.state.activeFrameId = 0
-    this.state.errorOutput = "TypeError: Cannot read properties of null (reading 'toString') at calculateTotal (src/utils/math.ts:18:12)"
-
-    // Load mock stack frames
-    this.state.stackFrames = [
-      {
-        id: 0,
-        name: 'calculateTotal',
-        source: { name: 'math.ts', path: 'src/utils/math.ts' },
-        line: 18,
-        column: 12
-      },
-      {
-        id: 1,
-        name: 'processInvoice',
-        source: { name: 'billing.ts', path: 'src/services/billing.ts' },
-        line: 45,
-        column: 8
-      },
-      {
-        id: 2,
-        name: 'handleCheckout',
-        source: { name: 'main.ts', path: 'src/main.ts' },
-        line: 102,
-        column: 4
-      }
-    ]
-
-    // Load mock scopes
-    this.state.scopes = [
-      {
-        name: 'Local',
-        variablesReference: 1000,
-        variables: [
-          { name: 'items', value: '[ { id: 101, price: null, qty: 2 } ]', type: 'object' },
-          { name: 'taxRate', value: '0.18', type: 'number' },
-          { name: 'discount', value: 'undefined', type: 'undefined' }
-        ]
-      },
-      {
-        name: 'Global',
-        variablesReference: 2000,
-        variables: [
-          { name: 'process', value: '[Object]', type: 'object' },
-          { name: 'LUMIQ_DEBUG_MODE', value: '"true"', type: 'string' }
-        ]
-      }
-    ]
-
-    this.broadcastState()
-  }
-
   public stepOver(): void {
-    if (this.state.state !== 'paused' || this.state.stackFrames.length === 0) return
-
-    // Simulate moving to next line and resolving the variable state
-    const currentFrame = this.state.stackFrames[0]!
-    currentFrame.line = currentFrame.line + 1
-    
-    // Update local variables during stepping to show debugger is "alive"
-    const localScope = this.state.scopes.find(s => s.name === 'Local')
-    if (localScope) {
-      const discountVar = localScope.variables.find(v => v.name === 'discount')
-      if (discountVar) {
-        discountVar.value = '0'
-        discountVar.type = 'number'
-      }
-    }
-    
-    this.broadcastState()
+    if (this.state.state !== 'paused') return
+    this.sendCommand('Debugger.stepOver').catch(console.error)
   }
 
   public stepInto(): void {
-    if (this.state.state !== 'paused' || this.state.stackFrames.length === 0) return
-
-    // Simulate stepping into functions
-    this.state.stackFrames.unshift({
-      id: 99,
-      name: 'formatCurrency',
-      source: { name: 'stringFormatter.ts', path: 'src/utils/stringFormatter.ts' },
-      line: 5,
-      column: 2
-    })
-    this.state.activeFrameId = 99
-
-    this.broadcastState()
+    if (this.state.state !== 'paused') return
+    this.sendCommand('Debugger.stepInto').catch(console.error)
   }
 
   public stepOut(): void {
-    if (this.state.state !== 'paused' || this.state.stackFrames.length < 2) return
-
-    // Pop active frame
-    this.state.stackFrames.shift()
-    this.state.activeFrameId = this.state.stackFrames[0]!.id
-
-    this.broadcastState()
+    if (this.state.state !== 'paused') return
+    this.sendCommand('Debugger.stepOut').catch(console.error)
   }
 
   public continueExecution(): void {
     if (this.state.state !== 'paused') return
-    
-    this.state.state = 'running'
-    this.state.stackFrames = []
-    this.state.scopes = []
-    this.state.activeFrameId = null
-    this.state.errorOutput = undefined
-    
-    this.broadcastState()
-
-    // Trigger another pause after 2 seconds (e.g. hits another line or normal finish)
-    const id = setTimeout(() => {
-      this.state.state = 'inactive'
-      this.broadcastState()
-    }, 2000)
-    this.timeoutIds.push(id)
+    this.sendCommand('Debugger.resume').catch(console.error)
   }
 
   public async explainDebuggerState(goal: string): Promise<string> {
@@ -230,7 +259,6 @@ export class DapService extends Disposable implements IDapService {
     const model = config.defaultModel || 'gpt-4o'
     const provider = ProviderFactory.create(config)
 
-    // Construct detailed context of stack frames and variable scopes
     let frameContext = 'Stack Trace:\n'
     for (const frame of this.state.stackFrames) {
       frameContext += `  at ${frame.name} (${frame.source.path}:${frame.line}:${frame.column})\n`

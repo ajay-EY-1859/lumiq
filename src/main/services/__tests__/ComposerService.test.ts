@@ -34,6 +34,36 @@ vi.mock('../../auth/devMode', () => {
   }
 })
 
+import { listApiConfigs } from '../../db/apiConfigs'
+vi.mock('../../db/apiConfigs', () => ({
+  listApiConfigs: () => [{
+    id: 'test_config',
+    provider: 'custom',
+    isActive: true,
+    defaultModel: 'test-model'
+  }]
+}))
+
+vi.mock('../../providers/ProviderFactory', () => ({
+  ProviderFactory: {
+    create: () => ({
+      sendMessage: async (messages: any[], options: any) => {
+        // Mock architect response
+        if (options.systemPrompt?.includes('Architect agent')) {
+          return {
+            content: '```json\n{"plan": "Test plan", "files": [{"path": "test_file.ts", "action": "create"}]}\n```',
+            toolCalls: []
+          }
+        }
+        // Mock coder/tester/reviewer response
+        return {
+          content: 'Done.',
+          toolCalls: []
+        }
+      }
+    })
+  }
+}))
 
 import { InstantiationService, setActiveContainer } from '@shared/instantiation/instantiationService'
 import { ComposerService } from '../ComposerService'
@@ -61,8 +91,10 @@ describe('ComposerService Orchestration & Staging Diffs', () => {
 
   it('should initialize and start task in planning state', async () => {
     const service = ComposerService.getInstance()
-    await service.startComposerTask('Build string utilities', workspacePath)
-
+    
+    // Do not await, just start and cancel so it stays in planning
+    service.startComposerTask('Build string utilities', workspacePath)
+    
     const diffInfo = service.getStagedFileContent('non_existent_file.ts')
     expect(diffInfo.original).toBe('')
     expect(diffInfo.proposed).toBe('')
@@ -76,7 +108,7 @@ describe('ComposerService Orchestration & Staging Diffs', () => {
     const filePath = join(workspacePath, 'test_file.ts').replace(/\\/g, '/')
 
     // Simulate Coder staging a file write
-    await service.startComposerTask('Task', workspacePath)
+    service.startComposerTask('Task', workspacePath)
     
     // Set mock staged file manually in internal state
     const stagedFilesMap = (service as any).stagedFiles
@@ -93,7 +125,8 @@ describe('ComposerService Orchestration & Staging Diffs', () => {
     const service = ComposerService.getInstance()
     const filePath = join(workspacePath, 'test_write.ts').replace(/\\/g, '/')
 
-    await service.startComposerTask('Task', workspacePath)
+    service.startComposerTask('Task', workspacePath)
+    ;(service as any).task.state = 'awaiting_approval' // mock state to allow approve
 
     // Simulate coder staging a file
     const stagedFilesMap = (service as any).stagedFiles
@@ -119,7 +152,7 @@ describe('ComposerService Orchestration & Staging Diffs', () => {
     const service = ComposerService.getInstance()
     const filePath = join(workspacePath, 'test_reject.ts').replace(/\\/g, '/')
 
-    await service.startComposerTask('Task', workspacePath)
+    service.startComposerTask('Task', workspacePath)
 
     const stagedFilesMap = (service as any).stagedFiles
     stagedFilesMap.set(filePath, 'console.log("Not saved");')
@@ -131,33 +164,19 @@ describe('ComposerService Orchestration & Staging Diffs', () => {
     expect(stagedFilesMap.size).toBe(0)
   })
 
-  it('should transition through simulated swarm states with parallel nodes', async () => {
-    vi.useFakeTimers()
+  it('should transition through swarm states using mocked LLM', async () => {
     const service = ComposerService.getInstance()
     
+    // We wait for the task to finish execution (which uses our mock ProviderFactory)
     await service.startComposerTask('Build utilities', workspacePath)
     
-    // Initially planning
-    expect((service as any).task.state).toBe('planning')
-    expect((service as any).task.nodes.find(n => n.id === 'architect').status).toBe('running')
-    
-    // Advance to coding
-    vi.advanceTimersByTime(1100)
-    expect((service as any).task.state).toBe('coding')
-    expect((service as any).task.nodes.find(n => n.id === 'coder').status).toBe('running')
-    
-    // Advance to parallel testing/reviewing
-    vi.advanceTimersByTime(1500)
-    expect((service as any).task.state).toBe('testing')
-    expect((service as any).task.nodes.find(n => n.id === 'tester').status).toBe('running')
-    expect((service as any).task.nodes.find(n => n.id === 'reviewer').status).toBe('running')
-    
-    // Advance to awaiting_approval
-    vi.advanceTimersByTime(2000)
+    // After mock execution, it should be in awaiting_approval state
     expect((service as any).task.state).toBe('awaiting_approval')
-    expect((service as any).task.nodes.find(n => n.id === 'tester').status).toBe('completed')
-    expect((service as any).task.nodes.find(n => n.id === 'reviewer').status).toBe('completed')
     
-    vi.useRealTimers()
+    // Verify nodes are completed
+    expect((service as any).task.nodes.find((n: any) => n.id === 'architect').status).toBe('completed')
+    expect((service as any).task.nodes.find((n: any) => n.id === 'coder').status).toBe('completed')
+    expect((service as any).task.nodes.find((n: any) => n.id === 'tester').status).toBe('completed')
+    expect((service as any).task.nodes.find((n: any) => n.id === 'reviewer').status).toBe('completed')
   })
 })
