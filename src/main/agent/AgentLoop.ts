@@ -18,7 +18,9 @@ import { listApiConfigs } from '../db/apiConfigs'
 import type { AIProvider } from '../providers/AIProvider'
 import { userProfileManager } from './UserProfileManager'
 import { contextCompactor } from './ContextCompactor'
-import { TraceLogger } from '../services/TraceLogger'
+import { ragQueryEngine } from './RAGQueryEngine'
+import { getService } from '@shared/instantiation/instantiationService'
+import { ITraceLogger } from '@shared/services'
 import { CostManager } from '../services/CostManager'
 
 // Active request tracking for cancellation
@@ -148,7 +150,6 @@ export class AgentLoop {
       let ragSegment = ''
       if (workspacePath && userMessage) {
         try {
-          const { ragQueryEngine } = await import('./RAGQueryEngine')
           ragSegment = await ragQueryEngine.getSemanticPromptSegment(workspacePath, userMessage)
         } catch (err) {
           console.error('[AgentLoop] RAG search failed:', err)
@@ -573,7 +574,7 @@ export class AgentLoop {
 
       // Log request/response audit trace
       try {
-        TraceLogger.log({
+        getService(ITraceLogger).log({
           timestamp: new Date().toISOString(),
           sessionId,
           provider: currentConfig.provider,

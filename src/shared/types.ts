@@ -44,6 +44,7 @@ export type ProviderType =
   | 'openrouter'
   | 'groq'
   | 'custom'
+  | 'nvidia'
 
 export type AuthMethod = 'apikey' | 'oauth'
 
@@ -774,7 +775,13 @@ export const PROVIDER_MODELS: Record<ProviderType, { id: string; label: string }
     { id: 'mixtral-8x7b-32768', label: 'Mixtral 8x7B (Groq)' },
     { id: 'gemma2-9b-it', label: 'Gemma 2 9B (Groq)' }
   ],
-  custom: []
+  custom: [],
+  nvidia: [
+    { id: 'stepfun-ai/step-3.7-flash', label: 'Step 3.7 Flash (Nvidia)' },
+    { id: 'meta/llama-3.1-405b-instruct', label: 'Llama 3.1 405B (Nvidia)' },
+    { id: 'meta/llama-3.1-70b-instruct', label: 'Llama 3.1 70B (Nvidia)' },
+    { id: 'nvidia/nemotron-4-340b-instruct', label: 'Nemotron-4 340B (Nvidia)' }
+  ]
 }
 
 // ─── Provider Console URLs (for "Get API Key" buttons) ──────────────
@@ -788,7 +795,8 @@ export const PROVIDER_CONSOLE_URLS: Record<ProviderType, { label: string; url: s
   github: { label: 'GitHub Tokens', url: 'https://github.com/settings/tokens' },
   openrouter: { label: 'OpenRouter Keys', url: 'https://openrouter.ai/keys' },
   groq: { label: 'Groq Console', url: 'https://console.groq.com/keys' },
-  custom: null
+  custom: null,
+  nvidia: { label: 'Nvidia Build', url: 'https://build.nvidia.com/explore/discover' }
 }
 
 // ─── Composer Types ────────────────────────────────────────────────

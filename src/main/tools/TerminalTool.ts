@@ -6,6 +6,7 @@
 import { spawn, ChildProcess } from 'child_process'
 import { v4 as uuidv4 } from 'uuid'
 import { getWorkspaceRoot, validatePathWithinWorkspace } from '../security/pathValidation'
+import { DiagnosticsWatcher } from '../services/diagnostics/DiagnosticsWatcher'
 import type { Tool } from './Tool'
 import { validateBashCommand } from './BashTool'
 import { validatePowerShellCommand } from './PowerShellTool'
@@ -158,11 +159,11 @@ export class TerminalTool implements Tool {
 
         // Trigger DiagnosticsWatcher to inspect output and self-heal if necessary
         const fullOutput = session.output.join('')
-        import('../services/diagnostics/DiagnosticsWatcher')
-          .then(({ DiagnosticsWatcher }) => {
-            DiagnosticsWatcher.handleCommandOutcome(session.command, code, fullOutput, safeCwd)
-          })
-          .catch((err) => console.error('[TerminalTool] DiagnosticsWatcher trigger failed:', err))
+        try {
+          DiagnosticsWatcher.handleCommandOutcome(session.command, code, fullOutput, safeCwd)
+        } catch (err) {
+          console.error('[TerminalTool] DiagnosticsWatcher trigger failed:', err)
+        }
       })
 
       SESSIONS.set(sessionId, session)

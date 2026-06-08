@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { join } from 'path'
 import { writeFileSync, unlinkSync } from 'fs'
 
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const native = require('@lumiq/native')
 
 describe('CodeIntelligence Native AST Parser', () => {

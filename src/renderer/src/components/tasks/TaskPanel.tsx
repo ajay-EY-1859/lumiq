@@ -4,6 +4,8 @@ import { useSessionStore } from '@renderer/store/sessionStore'
 import { useChatStore } from '@renderer/store/chatStore'
 import { Button } from '@renderer/components/ui/Button'
 import { useProviderStore } from '@renderer/store/providerStore'
+import { Terminal } from 'xterm'
+import { FitAddon } from 'xterm-addon-fit'
 import 'xterm/css/xterm.css'
 
 export function TaskPanel(): React.JSX.Element {
@@ -14,6 +16,7 @@ export function TaskPanel(): React.JSX.Element {
   const [activeTab, setActiveTab] = useState<'tasks' | 'terminal' | 'problems'>('tasks')
   const terminalEndRef = useRef<HTMLDivElement>(null)
   const activeTask = tasks.find(t => t.id === activeTaskId)
+  const activeTaskLogs = activeTask?.logs
 
   // xterm refs & states
   const terminalContainerRef = useRef<HTMLDivElement>(null)
@@ -34,85 +37,90 @@ export function TaskPanel(): React.JSX.Element {
 
   // Initialize & Mount xterm.js instance
   useEffect(() => {
-    if (activeTab !== 'terminal' || !terminalContainerRef.current || !activeTask) {
+    if (activeTab !== 'terminal' || !terminalContainerRef.current || !activeTaskId) {
       return
     }
 
-    let term: any
-    let resizeObserver: ResizeObserver
-    let onDataDisposable: any
+    terminalContainerRef.current.innerHTML = ''
 
-    // Dynamically import xterm to avoid bundler issues
-    Promise.all([
-      import('xterm'),
-      import('xterm-addon-fit')
-    ]).then(([{ Terminal }, { FitAddon }]) => {
-      if (!terminalContainerRef.current) return
+    const term = new Terminal({
+      convertEol: true,
+      cursorBlink: true,
+      fontSize: 13,
+      fontFamily: 'var(--font-mono)',
+      theme: {
+        background: '#0D1117',
+        foreground: '#E6EDF3',
+        cursor: '#58a6ff',
+        selectionBackground: '#264f78',
+        black: '#0d1117',
+        red: '#ff7b72',
+        green: '#3fb950',
+        yellow: '#d29922',
+        blue: '#58a6ff',
+        magenta: '#bc8cff',
+        cyan: '#39c5cf',
+        white: '#e6edf3'
+      },
+      allowProposedApi: true
+    })
 
-      terminalContainerRef.current.innerHTML = ''
+    const fitAddon = new FitAddon()
+    term.loadAddon(fitAddon)
+    term.open(terminalContainerRef.current)
+    
+    xtermInstanceRef.current = term
 
-      term = new Terminal({
-        cursorBlink: true,
-        fontSize: 13,
-        fontFamily: 'var(--font-mono)',
-        theme: {
-          background: '#0D1117',
-          foreground: '#E6EDF3',
-          cursor: '#58a6ff',
-          selectionBackground: '#264f78',
-          black: '#0d1117',
-          red: '#ff7b72',
-          green: '#3fb950',
-          yellow: '#d29922',
-          blue: '#58a6ff',
-          magenta: '#bc8cff',
-          cyan: '#39c5cf',
-          white: '#e6edf3'
-        },
-        allowProposedApi: true
-      })
-
-      const fitAddon = new FitAddon()
-      term.loadAddon(fitAddon)
-      term.open(terminalContainerRef.current)
+    try {
       fitAddon.fit()
-      setTimeout(() => term.focus(), 0)
+    } catch (err) {
+      console.warn('[TaskPanel] Initial fit failed:', err)
+    }
 
-      xtermInstanceRef.current = term
+    setTimeout(() => {
+      try { term.focus() } catch {
+        // xterm focus can fail when the terminal unmounts immediately.
+      }
+    }, 0)
 
-      // Write initial logs
-      activeTask.logs.forEach((log) => {
+    // Write initial logs using fresh state to prevent race conditions during import
+    const latestTask = useTaskStore.getState().tasks.find(t => t.id === activeTaskId)
+    if (latestTask) {
+      latestTask.logs.forEach((log) => {
         term.write(log.data)
       })
-      lastLoggedIndexRef.current = activeTask.logs.length
+      lastLoggedIndexRef.current = latestTask.logs.length
+    }
 
-      // Intercept Escape key in terminal to refocus the editor
-      term.attachCustomKeyEventHandler((arg: KeyboardEvent) => {
-        if (arg.key === 'Escape') {
-          window.dispatchEvent(new CustomEvent('lumiq-focus-editor'))
-          return false
-        }
-        return true
-      })
-
-      // Bind keyboard input to task stdin. xterm handles local rendering; we only forward the bytes.
-      onDataDisposable = term.onData((data) => {
-        if (activeTask.status === 'running') {
-          void window.electronAPI.task.stdin(activeTask.id, data)
-        }
-      })
-
-      // Resize observer to auto-fit terminal on container resizing
-      resizeObserver = new ResizeObserver(() => {
-        try { fitAddon.fit() } catch {}
-      })
-      resizeObserver.observe(terminalContainerRef.current)
+    // Intercept Escape key in terminal to refocus the editor
+    term.attachCustomKeyEventHandler((arg: KeyboardEvent) => {
+      if (arg.key === 'Escape') {
+        window.dispatchEvent(new CustomEvent('lumiq-focus-editor'))
+        return false
+      }
+      return true
     })
+
+    // Bind keyboard input to task stdin. xterm handles local rendering; we only forward the bytes.
+    const onDataDisposable = term.onData((data) => {
+      const latestStatus = useTaskStore.getState().tasks.find(t => t.id === activeTaskId)?.status
+      if (latestStatus === 'running') {
+        void window.electronAPI.task.stdin(activeTaskId, data)
+      }
+    })
+
+    // Resize observer to auto-fit terminal on container resizing
+    const resizeObserver = new ResizeObserver(() => {
+      try { fitAddon.fit() } catch {
+        // Resize can fire while xterm dimensions are temporarily unavailable.
+      }
+    })
+    resizeObserver.observe(terminalContainerRef.current)
 
     return () => {
       if (onDataDisposable) onDataDisposable.dispose()
       if (resizeObserver) resizeObserver.disconnect()
-      if (term) term.dispose()
+      term.dispose()
       xtermInstanceRef.current = null
       lastLoggedIndexRef.current = 0
     }
@@ -121,20 +129,20 @@ export function TaskPanel(): React.JSX.Element {
   // Incremental logs streaming to xterm without resetting
   useEffect(() => {
     const term = xtermInstanceRef.current
-    if (!term || !activeTask) return
+    if (!term || !activeTaskLogs) return
 
     // If logs were reset or task restarted, clear and reset pointer
-    if (activeTask.logs.length < lastLoggedIndexRef.current) {
+    if (activeTaskLogs.length < lastLoggedIndexRef.current) {
       term.clear()
       lastLoggedIndexRef.current = 0
     }
 
-    const newLogs = activeTask.logs.slice(lastLoggedIndexRef.current)
+    const newLogs = activeTaskLogs.slice(lastLoggedIndexRef.current)
     newLogs.forEach((log) => {
       term.write(log.data)
     })
-    lastLoggedIndexRef.current = activeTask.logs.length
-  }, [activeTask?.logs])
+    lastLoggedIndexRef.current = activeTaskLogs.length
+  }, [activeTaskLogs])
 
   // Ctrl+K keyboard shortcut listener inside terminal tab
   useEffect(() => {
@@ -210,7 +218,7 @@ Do NOT write markdown code blocks, explanation, or conversational text. Output O
   const totalProblems = tasks.reduce((acc, t) => acc + t.problems.length, 0)
 
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'var(--bg-primary)', borderTop: '1px solid var(--border)' }}>
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--bg-primary)', borderTop: '1px solid var(--border)' }}>
       {/* Panel Header */}
       <div style={{ display: 'flex', alignItems: 'center', background: 'var(--bg-primary)', borderBottom: '1px solid var(--border)', padding: '0 16px' }}>
         <div style={{ display: 'flex', gap: '24px' }}>

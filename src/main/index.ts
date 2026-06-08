@@ -18,6 +18,32 @@ import { agentLoop } from './agent/AgentLoop'
 import type { ToolSettings } from '@shared/types'
 import type { PermissionMode } from './security/permissions'
 import { mergeToolSettings } from './tools/defaultToolSettings'
+import { InstantiationService, setActiveContainer, getService } from '@shared/instantiation/instantiationService'
+import { IFileService } from '@shared/files/files'
+import { DiskFileSystemProvider } from './services/DiskFileSystemProvider'
+import { IExtensionService } from '@shared/extensions/extensions'
+
+// Force execution of service registry side-effects
+import './services/TraceLogger'
+import './services/SystemCapabilityService'
+import './services/CodeIntelligenceService'
+import './services/DapService'
+import './services/ComposerService'
+import './services/FileService'
+import './services/ConfigurationService'
+import './services/ExtensionManagementService'
+import './services/ExtensionService'
+import './services/mcp/McpGalleryService'
+import './services/mcp/McpManagementService'
+import './services/mcp/McpResourceScannerService'
+import './services/AgentHostService'
+import './services/SessionsProvidersService'
+import './services/CustomizationHarnessService'
+import './services/SkillsService'
+import './services/CodeSmellSweeperService'
+import './services/VisualCanvasService'
+import './services/PerformanceProfilerService'
+import './services/WebSandboxService'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -177,6 +203,21 @@ app.whenReady().then(() => {
   // Initialize database
   const db = initDatabase()
 
+  // Initialize DI Container
+  const container = new InstantiationService()
+  setActiveContainer(container)
+
+  // Register local disk provider with FileService
+  const fileService = container.invokeFunction(accessor => accessor.get(IFileService))
+  const diskProvider = new DiskFileSystemProvider()
+  fileService.registerProvider('file', diskProvider)
+
+  // Start extension host
+  const extensionService = container.invokeFunction(accessor => accessor.get(IExtensionService))
+  extensionService.startExtensionHost().catch(err => {
+    console.error('[ExtensionService] Failed to start extension host:', err)
+  })
+
   // Auto-discover local Ollama instance on startup (Offline-First Mode)
   import('./providers/OllamaAutoDiscovery').then(({ OllamaAutoDiscovery }) => {
     OllamaAutoDiscovery.discover()
@@ -230,6 +271,11 @@ app.whenReady().then(() => {
 
 // Graceful shutdown
 app.on('window-all-closed', () => {
+  try {
+    getService(IExtensionService).stopExtensionHost()
+  } catch {
+    // ignore
+  }
   mcpServerManager.stopAll()
   developerGrpcServer.stop()
   closeDatabase()

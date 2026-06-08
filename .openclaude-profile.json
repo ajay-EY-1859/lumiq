@@ -1,0 +1,9 @@
+{
+  "profile": "openai",
+  "env": {
+    "OPENAI_BASE_URL": "https://integrate.api.nvidia.com/v1",
+    "OPENAI_MODEL": "nvidia/llama-3.1-nemotron-70b-instructstepfun-ai/step-3.7-flash",
+    "OPENAI_API_KEY": "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"
+  },
+  "createdAt": "2026-06-08T09:41:02.853Z"
+}

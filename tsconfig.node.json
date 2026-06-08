@@ -7,9 +7,10 @@
     "src/shared/**/*"
   ],
   "compilerOptions": {
+    "experimentalDecorators": true,
     "composite": true,
     "outDir": "./out",
-  "baseUrl": ".",
+    "baseUrl": ".",
     "moduleResolution": "bundler",
     "paths": {
       "@shared/*": [

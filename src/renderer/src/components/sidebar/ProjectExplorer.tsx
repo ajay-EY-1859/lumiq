@@ -3,14 +3,9 @@ import { useSessionStore } from '@renderer/store/sessionStore'
 import { useEditorStore } from '@renderer/store/editorStore'
 import { useChatStore } from '@renderer/store/chatStore'
 import { useProviderStore } from '@renderer/store/providerStore'
-
+import { normalizePath } from '@renderer/utils/paths'
 
 // ── Helpers ──────────────────────────────────────────────────────────
-const normalizePath = (p: string): string => {
-  let n = p.replace(/\\/g, '/')
-  if (n.match(/^[a-zA-Z]:/)) n = n[0].toLowerCase() + n.slice(1)
-  return n
-}
 
 function getFileIcon(name: string, isDir: boolean, isOpen?: boolean): string {
   if (isDir) return isOpen ? '▾ 📂' : '▸ 📁'
@@ -37,6 +32,16 @@ interface FileNode {
 
 type ContextMenuState = { x: number; y: number; node: FileNode } | null
 type CreatingState = { parentPath: string; type: 'file' | 'folder' } | null
+
+function updateFileTree(
+  nodes: FileNode[], targetPath: string, updates: Partial<FileNode>
+): FileNode[] {
+  return nodes.map((n) => {
+    if (n.path === targetPath) return { ...n, ...updates }
+    if (n.children) return { ...n, children: updateFileTree(n.children, targetPath, updates) }
+    return n
+  })
+}
 
 // ── TreeNode ──────────────────────────────────────────────────────────
 function TreeNode({
@@ -235,13 +240,7 @@ export function ProjectExplorer({ onNavigate, onSelectTab }: ProjectExplorerProp
   // ── Immutable tree updater ────────────────────────────────────────
   const updateTree = useCallback((
     nodes: FileNode[], targetPath: string, updates: Partial<FileNode>
-  ): FileNode[] => {
-    return nodes.map((n) => {
-      if (n.path === targetPath) return { ...n, ...updates }
-      if (n.children) return { ...n, children: updateTree(n.children, targetPath, updates) }
-      return n
-    })
-  }, [])
+  ): FileNode[] => updateFileTree(nodes, targetPath, updates), [])
 
   // ── Toggle folder ─────────────────────────────────────────────────
   const toggleNode = useCallback(async (node: FileNode) => {

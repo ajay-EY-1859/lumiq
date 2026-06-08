@@ -32,6 +32,7 @@ import {
   debugStepIntoAction,
   debugStepOutAction
 } from '@renderer/utils/shortcutExecutor'
+import { normalizePath } from '@renderer/utils/paths'
 
 // ── Language detection ────────────────────────────────────────────────
 function getLanguage(fileName: string): string | undefined {
@@ -474,28 +475,29 @@ export function EditorPane(): React.JSX.Element | null {
         const ext = tab.name.split('.').pop()?.toLowerCase() ?? ''
         let command = ''
         let args: string[] = []
+        const normalizedTabId = normalizePath(tab.id)
 
         if (ext === 'py') {
           command = 'python'
-          args = [tab.id]
+          args = ['-u', normalizedTabId]
         } else if (['js', 'jsx', 'ts', 'tsx'].includes(ext)) {
           command = 'node'
-          args = [tab.id]
+          args = [normalizedTabId]
         } else if (ext === 'go') {
           command = 'go'
-          args = ['run', tab.id]
+          args = ['run', normalizedTabId]
         } else if (ext === 'java') {
           command = 'javac'
-          args = [tab.id]
+          args = [normalizedTabId]
         } else if (ext === 'c') {
           command = 'node'
-          args = ['.lumiq/c-cpp-runner.js', 'gcc', tab.id]
+          args = ['.lumiq/c-cpp-runner.js', 'gcc', normalizedTabId]
         } else if (ext === 'cpp' || ext === 'cc' || ext === 'cxx') {
           command = 'node'
-          args = ['.lumiq/c-cpp-runner.js', 'g++', tab.id]
+          args = ['.lumiq/c-cpp-runner.js', 'g++', normalizedTabId]
         } else if (ext === 'cs') {
           command = 'dotnet'
-          args = ['run', '--project', tab.id]
+          args = ['run', '--project', normalizedTabId]
         }
 
         if (command) {
@@ -521,22 +523,26 @@ export function EditorPane(): React.JSX.Element | null {
         const ext = tab.name.split('.').pop()?.toLowerCase() ?? ''
         let command = ''
         let args: string[] = []
+        const normalizedTabId = normalizePath(tab.id)
 
-        if (ext === 'java') {
+        if (ext === 'py') {
+          command = 'python'
+          args = ['-m', 'py_compile', normalizedTabId]
+        } else if (ext === 'java') {
           command = 'javac'
-          args = [tab.id]
+          args = [normalizedTabId]
         } else if (ext === 'c') {
           command = 'gcc'
-          args = ['-c', tab.id]
+          args = ['-c', normalizedTabId]
         } else if (ext === 'cpp' || ext === 'cc' || ext === 'cxx') {
           command = 'g++'
-          args = ['-c', tab.id]
+          args = ['-c', normalizedTabId]
         } else if (ext === 'go') {
           command = 'go'
-          args = ['build', '-o', tab.name.split('.').slice(0, -1).join('.'), tab.id]
+          args = ['build', '-o', tab.name.split('.').slice(0, -1).join('.'), normalizedTabId]
         } else if (ext === 'cs') {
           command = 'dotnet'
-          args = ['build', tab.id]
+          args = ['build', normalizedTabId]
         }
 
         if (command) {

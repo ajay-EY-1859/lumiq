@@ -2,9 +2,12 @@ import { BrowserWindow } from 'electron'
 import { IPC, DapState } from '@shared/types'
 import { listApiConfigs } from '../db/apiConfigs'
 import { ProviderFactory } from '../providers/ProviderFactory'
+import { Disposable } from '@shared/lifecycle'
+import { registerSingleton, InstantiationType } from '@shared/instantiation/extensions'
+import { getService } from '@shared/instantiation/instantiationService'
+import { IDapService } from '@shared/services'
 
-export class DapService {
-  private static instance: DapService | null = null
+export class DapService extends Disposable implements IDapService {
   
   private state: DapState = {
     state: 'inactive',
@@ -18,11 +21,12 @@ export class DapService {
 
   private timeoutIds: NodeJS.Timeout[] = []
 
+  constructor() {
+    super()
+  }
+
   public static getInstance(): DapService {
-    if (!DapService.instance) {
-      DapService.instance = new DapService()
-    }
-    return DapService.instance
+    return getService(IDapService) as DapService
   }
 
   public getStatus(): DapState {
@@ -273,3 +277,5 @@ Explain:
     }
   }
 }
+
+registerSingleton(IDapService, DapService, InstantiationType.Delayed);

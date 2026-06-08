@@ -1,4 +1,5 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeAll } from 'vitest'
+import { InstantiationService, setActiveContainer } from '@shared/instantiation/instantiationService'
 import { DapService } from '../DapService'
 
 vi.mock('electron', () => {
@@ -27,6 +28,11 @@ vi.mock('../../auth/devMode', () => {
 })
 
 describe('DapService - Debug Adapter Protocol Client', () => {
+  beforeAll(() => {
+    const container = new InstantiationService()
+    setActiveContainer(container)
+  })
+
   it('should initialize with inactive state', () => {
     const service = DapService.getInstance()
     const status = service.getStatus()

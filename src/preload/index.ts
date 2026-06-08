@@ -171,7 +171,7 @@ export interface ElectronAPI {
     onFileModified: (callback: (filePath: string) => void) => () => void
   }
   task: {
-    run: (name: string, command: string, args: string[], cwd: string) => Promise<string>
+    run: (taskId: string, name: string, command: string, args: string[], cwd: string) => Promise<string>
     stop: (taskId: string) => Promise<void>
     stdin: (taskId: string, input: string) => Promise<void>
     listDefinitions: (workspacePath: string) => Promise<WorkspaceTaskDefinition[]>
@@ -435,7 +435,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // ── Tasks ──
   task: {
-    run: (name: string, command: string, args: string[], cwd: string) => ipcRenderer.invoke(IPC.TASK_RUN, { name, command, args, cwd }),
+    run: (taskId: string, name: string, command: string, args: string[], cwd: string) => ipcRenderer.invoke(IPC.TASK_RUN, { taskId, name, command, args, cwd }),
     stop: (taskId: string) => ipcRenderer.invoke(IPC.TASK_STOP, taskId),
     stdin: (taskId: string, input: string) => ipcRenderer.invoke(IPC.TASK_STDIN, { taskId, input }),
     listDefinitions: (workspacePath: string) => ipcRenderer.invoke(IPC.TASK_LIST_DEFINITIONS, workspacePath),

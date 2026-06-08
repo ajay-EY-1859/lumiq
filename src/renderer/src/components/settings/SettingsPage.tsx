@@ -51,7 +51,7 @@ const NAV_GROUPS: NavGroup[] = [
         label: 'API Providers',
         icon: '🔑',
         subtitle: 'Connect AI model providers',
-        keywords: ['api', 'key', 'anthropic', 'openai', 'gemini', 'ollama', 'bedrock', 'groq', 'model', 'provider']
+        keywords: ['api', 'key', 'anthropic', 'openai', 'gemini', 'ollama', 'bedrock', 'groq', 'nvidia', 'model', 'provider']
       },
       {
         id: 'routing',

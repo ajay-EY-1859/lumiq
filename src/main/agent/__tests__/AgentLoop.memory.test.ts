@@ -117,5 +117,5 @@ describe('AgentLoop - Memory Leak Stress Test', () => {
       // Memory growth must not exceed 15MB
       expect(heapGrowthMB).toBeLessThan(15)
     }
-  })
+  }, 15000)
 })

@@ -5,9 +5,12 @@ import { IPC, ComposerTaskStatus, ComposerState, AgentNodeStatus, Message, Provi
 import { listApiConfigs } from '../db/apiConfigs'
 import { ProviderFactory } from '../providers/ProviderFactory'
 import { ToolExecutor } from '../agent/ToolExecutor'
+import { Disposable } from '@shared/lifecycle'
+import { registerSingleton, InstantiationType } from '@shared/instantiation/extensions'
+import { getService } from '@shared/instantiation/instantiationService'
+import { IComposerService } from '@shared/services'
 
-export class ComposerService {
-  private static instance: ComposerService | null = null
+export class ComposerService extends Disposable implements IComposerService {
   private stagedFiles = new Map<string, string>() // filePath -> proposedContent
   private stagedDeletions = new Set<string>() // filePath -> deleted state
   private activeWorkspacePath = ''
@@ -29,11 +32,12 @@ export class ComposerService {
   private backupFiles = new Map<string, string | null>() // filePath -> original content (null if it didn't exist)
   private lastStreamNodeId: string | null = null
 
+  constructor() {
+    super()
+  }
+
   public static getInstance(): ComposerService {
-    if (!ComposerService.instance) {
-      ComposerService.instance = new ComposerService()
-    }
-    return ComposerService.instance
+    return getService(IComposerService) as ComposerService
   }
 
   private broadcastStatus(): void {
@@ -134,7 +138,9 @@ export class ComposerService {
       if (existsSync(cleanPath)) {
         original = readFileSync(cleanPath, 'utf8')
       }
-    } catch {}
+    } catch {
+      // Ignore unreadable original content; proposed content can still be shown.
+    }
     const proposed = this.stagedFiles.get(cleanPath) || ''
     return { original, proposed }
   }
@@ -167,7 +173,9 @@ export class ComposerService {
           } else {
             rmSync(cleanPath, { force: true })
           }
-        } catch {}
+        } catch {
+          // Best-effort rollback data is already captured; continue applying the rest.
+        }
       } else {
         this.backupFiles.set(cleanPath, null)
       }
@@ -187,7 +195,9 @@ export class ComposerService {
               rmSync(cleanPath, { force: true })
             }
           }
-        } catch {}
+        } catch {
+          // Best-effort cleanup during rollback.
+        }
       } else {
         try {
           const parentDir = dirname(cleanPath)
@@ -195,7 +205,9 @@ export class ComposerService {
             mkdirSync(parentDir, { recursive: true })
           }
           writeFileSync(cleanPath, originalContent, 'utf8')
-        } catch {}
+        } catch {
+          // Best-effort restore during rollback.
+        }
       }
     }
     this.backupFiles.clear()
@@ -530,7 +542,9 @@ Perform a detailed audit. If everything looks good, state that the changes are a
         if (existsSync(mainPath)) {
           originalMain = readFileSync(mainPath, 'utf8')
         }
-      } catch {}
+      } catch {
+        // Demo fallback can proceed with default main content.
+      }
       const proposedMain = `import { formatSnippet } from './utils/stringFormatter';\n${originalMain}\nconsole.log(formatSnippet("  LUMIQ COMPOSER  "));\n`
       this.stagedFiles.set(mainPath, proposedMain)
       this.task.stagedFiles.push({ path: mainPath, status: 'modified' })
@@ -634,3 +648,5 @@ Perform a detailed audit. If everything looks good, state that the changes are a
     }
   }
 }
+
+registerSingleton(IComposerService, ComposerService, InstantiationType.Delayed);

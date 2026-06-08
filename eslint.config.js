@@ -91,7 +91,15 @@ module.exports = [
       '@typescript-eslint/no-unused-expressions': 'off',
       'react-hooks/set-state-in-effect': 'off',
       'react/react-in-jsx-scope': 'off',
-      'react/no-unescaped-entities': 'off'
+      'react/no-unescaped-entities': 'off',
+      'no-restricted-imports': ['error', {
+        patterns: [
+          {
+            group: ['**/main/**', '**/renderer/**'],
+            message: 'Layer violation: shared components must not import from main or renderer.'
+          }
+        ]
+      }]
     }
   }
 ]

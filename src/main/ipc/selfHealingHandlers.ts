@@ -9,6 +9,7 @@ import { IPC } from '../../shared/types'
 import { getDatabase } from '../db/database'
 import { SandboxRunner } from '../services/diagnostics/SandboxRunner'
 import { DiagnosticsWatcher, mapRowToSelfHealingAttempt } from '../services/diagnostics/DiagnosticsWatcher'
+import { fixSubagent } from '../services/diagnostics/FixSubagent'
 import type { SelfHealingAttempt } from '../../shared/types'
 
 export function registerSelfHealingHandlers(): void {
@@ -70,8 +71,6 @@ export function registerSelfHealingHandlers(): void {
       // Broadcast update to Renderer
       DiagnosticsWatcher.broadcastToRenderer('self-healing:failure-detected', attempt)
 
-      const { fixSubagent } = await import('../services/diagnostics/FixSubagent')
-      
       // Asynchronously trigger FixSubagent analysis with the reflection logs payload
       setTimeout(() => {
         fixSubagent.analyzeAndFix(attempt).catch((subagentErr) => {

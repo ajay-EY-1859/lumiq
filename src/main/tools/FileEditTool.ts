@@ -5,7 +5,8 @@
 import { existsSync, readFileSync, statSync, writeFileSync } from 'fs'
 import type { Tool } from './Tool'
 import { validatePathWithinWorkspace } from '../security/pathValidation'
-import { ComposerService } from '../services/ComposerService'
+import { getService } from '@shared/instantiation/instantiationService'
+import { IComposerService } from '@shared/services'
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB limit
 
@@ -34,7 +35,7 @@ export class FileEditTool implements Tool {
       return `[ERROR] ${(error as Error).message}`
     }
 
-    const composer = ComposerService.getInstance()
+    const composer = getService(IComposerService)
     const isStaging = composer.isStagingActive()
     const isStagedDeleted = isStaging && composer.isStagedDeleted(filePath)
     const stagedContent = isStaging ? composer.getStagedContent(filePath) : undefined

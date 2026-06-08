@@ -59,7 +59,7 @@ export function AgentBuilderPage({ onNavigate }: AgentBuilderPageProps): React.J
                 <label style={{ fontSize: '13px', fontWeight: 500, color: 'var(--text-secondary)', marginBottom: '4px', display: 'block' }}>Provider</label>
                 <select value={editing.provider || ''} onChange={(e) => setEditing({ ...editing, provider: e.target.value })} style={{ width: '100%', padding: '8px 12px', background: 'var(--bg-tertiary)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '13px', fontFamily: 'var(--font-sans)' }}>
                   <option value="">Use default</option>
-                  {(['anthropic', 'openai', 'gemini', 'ollama', 'deepseek'] as ProviderType[]).map((p) => <option key={p} value={p}>{p}</option>)}
+                  {(['anthropic', 'openai', 'gemini', 'ollama', 'deepseek', 'nvidia'] as ProviderType[]).map((p) => <option key={p} value={p}>{p}</option>)}
                 </select>
               </div>
               <div style={{ flex: 1 }}>

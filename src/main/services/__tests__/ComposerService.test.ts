@@ -35,10 +35,13 @@ vi.mock('../../auth/devMode', () => {
 })
 
 
+import { InstantiationService, setActiveContainer } from '@shared/instantiation/instantiationService'
 import { ComposerService } from '../ComposerService'
 
 describe('ComposerService Orchestration & Staging Diffs', () => {
   beforeAll(() => {
+    const container = new InstantiationService()
+    setActiveContainer(container)
     if (!existsSync(tempUserDataPath)) {
       mkdirSync(tempUserDataPath, { recursive: true })
     }
@@ -51,7 +54,9 @@ describe('ComposerService Orchestration & Staging Diffs', () => {
     try {
       rmSync(tempUserDataPath, { recursive: true, force: true })
       rmSync(workspacePath, { recursive: true, force: true })
-    } catch {}
+    } catch {
+      // Ignore cleanup failures in temp test directories.
+    }
   })
 
   it('should initialize and start task in planning state', async () => {
@@ -105,7 +110,9 @@ describe('ComposerService Orchestration & Staging Diffs', () => {
     // Clean up created file
     try {
       rmSync(filePath, { force: true })
-    } catch {}
+    } catch {
+      // Ignore cleanup failures for temp test files.
+    }
   })
 
   it('should clear staging on reject', async () => {
@@ -154,4 +161,3 @@ describe('ComposerService Orchestration & Staging Diffs', () => {
     vi.useRealTimers()
   })
 })
-

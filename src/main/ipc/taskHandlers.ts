@@ -5,7 +5,6 @@
 import { BrowserWindow } from 'electron'
 import { spawn, ChildProcessWithoutNullStreams } from 'child_process'
 import { basename, resolve } from 'path'
-import { v4 as uuidv4 } from 'uuid'
 import { IPC } from '@shared/types'
 import type { WorkspaceTaskDefinition, TaskSelfHealSuggestion } from '@shared/types'
 import { getWorkspaceRoot, validatePathWithinWorkspace } from '../security/pathValidation'
@@ -58,10 +57,14 @@ function createSelfHealSuggestion(taskId: string, code: number | null, stderrLin
   }
 }
 
-function emitSelfHealSuggestion(taskId: string, code: number | null, stderrLines: string[]): void {
+function emitSelfHealSuggestion(taskId: string, code: number | null, stderrLines: string[], sender?: Electron.WebContents): void {
   const suggestion = createSelfHealSuggestion(taskId, code, stderrLines)
   if (suggestion) {
-    BrowserWindow.getAllWindows()[0]?.webContents.send(IPC.TASK_SELF_HEAL, suggestion)
+    if (sender) {
+      sender.send(IPC.TASK_SELF_HEAL, suggestion)
+    } else {
+      BrowserWindow.getAllWindows()[0]?.webContents.send(IPC.TASK_SELF_HEAL, suggestion)
+    }
   }
 }
 
@@ -95,8 +98,7 @@ export function registerTaskHandlers(): void {
   )
 
   // Run task
-  handleWithTimeout(IPC.TASK_RUN, IPC_TIMEOUT.long, (_event, { command, args, cwd }) => {
-    const taskId = uuidv4()
+  handleWithTimeout(IPC.TASK_RUN, IPC_TIMEOUT.long, (_event, { taskId, command, args, cwd }) => {
     const safeCwd = validatePathWithinWorkspace(cwd || getWorkspaceRoot())
     const safeCommand = typeof command === 'string' ? command : ''
     const safeArgs = Array.isArray(args) ? args.map((arg) => String(arg)) : []
@@ -111,8 +113,8 @@ export function registerTaskHandlers(): void {
 
     const child = spawn(safeCommand, safeArgs, {
       cwd: safeCwd,
-      shell: false,
-      env: { ...process.env, FORCE_COLOR: '1' }
+      shell: process.platform === 'win32',
+      env: { ...process.env, FORCE_COLOR: '1', PYTHONUNBUFFERED: '1' }
     })
 
     activeTasks.set(taskId, child)
@@ -170,6 +172,10 @@ export function registerTaskHandlers(): void {
     if (!child || !child.stdin.writable) {
       throw new Error('Task is not running or stdin is closed')
     }
-    child.stdin.write(data.input)
+    let safeInput = data.input
+    // Translate terminal carriage returns (\r) to standard newlines (\n)
+    // because piped stdin does not perform automatic newline translation like a PTY does.
+    safeInput = safeInput.replace(/\r(?!\n)/g, '\n')
+    child.stdin.write(safeInput)
   })
 }

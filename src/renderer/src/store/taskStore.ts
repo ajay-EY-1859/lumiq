@@ -86,7 +86,8 @@ export const useTaskStore = create<TaskStore>((set, get) => {
     },
 
     runTask: async (name, command, args, cwd) => {
-      const taskId = await window.electronAPI.task.run(name, command, args, cwd)
+      // Generate ID and create task immediately to prevent race conditions with output events
+      const taskId = crypto.randomUUID()
       
       const newTask: TaskState = {
         id: taskId,
@@ -103,6 +104,31 @@ export const useTaskStore = create<TaskStore>((set, get) => {
         tasks: [...state.tasks, newTask],
         activeTaskId: taskId
       }))
+
+      try {
+        await window.electronAPI.task.run(taskId, name, command, args, cwd)
+      } catch (err) {
+        set((state) => {
+          const tasks = [...state.tasks]
+          const taskIdx = tasks.findIndex((t) => t.id === taskId)
+          if (taskIdx > -1) {
+            tasks[taskIdx] = {
+              ...tasks[taskIdx],
+              status: 'error',
+              logs: [
+                ...tasks[taskIdx].logs,
+                {
+                  id: Date.now().toString() + Math.random().toString(),
+                  timestamp: Date.now(),
+                  data: `Failed to start task: ${(err as Error).message}`,
+                  type: 'system'
+                }
+              ]
+            }
+          }
+          return { tasks }
+        })
+      }
     },
 
     stopTask: async (taskId) => {

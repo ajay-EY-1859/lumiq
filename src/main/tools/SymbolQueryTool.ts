@@ -5,7 +5,8 @@
 
 import type { Tool } from './Tool'
 import { getDatabase } from '../db/database'
-import { SystemCapabilityService } from '../services/SystemCapabilityService'
+import { getService } from '@shared/instantiation/instantiationService'
+import { ISystemCapabilityService } from '@shared/services'
 
 export class SymbolQueryTool implements Tool {
   name = 'SymbolQueryTool'
@@ -65,7 +66,7 @@ export class SymbolQueryTool implements Tool {
    */
   private getSystemScope(): string {
     try {
-      const capabilityService = SystemCapabilityService.getInstance()
+      const capabilityService = getService(ISystemCapabilityService)
       const caps = capabilityService.getCapabilities()
 
       if (caps.length === 0) {

@@ -16,7 +16,8 @@ export default defineConfig({
         input: {
           index: resolve('src/main/index.ts'),
           codeIntelligenceWorker: resolve('src/main/services/CodeIntelligenceWorker.ts'),
-          embeddingWorker: resolve('src/main/agent/EmbeddingWorker.ts')
+          embeddingWorker: resolve('src/main/agent/EmbeddingWorker.ts'),
+          extensionHostMain: resolve('src/main/services/extensionHostMain.ts')
         }
       }
     }

@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { normalizePath } from '@renderer/utils/paths'
 
 export interface EditorTab {
   id: string // full path
@@ -25,17 +26,18 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   activeTabId: null,
 
   openFile: async (path, name) => {
+    const normPath = normalizePath(path)
     const { tabs } = get()
-    const existing = tabs.find(t => t.id === path)
+    const existing = tabs.find(t => t.id === normPath)
     if (existing) {
-      set({ activeTabId: path })
+      set({ activeTabId: normPath })
       return
     }
 
     try {
-      const content = await window.electronAPI.fs.readFile(path)
+      const content = await window.electronAPI.fs.readFile(normPath)
       const newTab: EditorTab = {
-        id: path,
+        id: normPath,
         name,
         content,
         originalContent: content,
@@ -43,7 +45,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       }
       set({
         tabs: [...tabs, newTab],
-        activeTabId: path
+        activeTabId: normPath
       })
     } catch (e) {
       console.error('Failed to read file', e)
@@ -51,10 +53,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
 
   closeTab: (id) => {
+    const normId = normalizePath(id)
     set((state) => {
-      const newTabs = state.tabs.filter(t => t.id !== id)
+      const newTabs = state.tabs.filter(t => t.id !== normId)
       let newActiveId = state.activeTabId
-      if (state.activeTabId === id) {
+      if (state.activeTabId === normId) {
         newActiveId = newTabs.length > 0 ? newTabs[newTabs.length - 1].id : null
       }
       return { tabs: newTabs, activeTabId: newActiveId }
@@ -62,13 +65,14 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
 
   setActiveTab: (id) => {
-    set({ activeTabId: id })
+    set({ activeTabId: normalizePath(id) })
   },
 
   updateTabContent: (id, content) => {
+    const normId = normalizePath(id)
     set((state) => ({
       tabs: state.tabs.map(t => 
-        t.id === id 
+        t.id === normId 
           ? { ...t, content, isDirty: content !== t.originalContent }
           : t
       )
@@ -76,14 +80,15 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
 
   saveTab: async (id) => {
-    const tab = get().tabs.find(t => t.id === id)
+    const normId = normalizePath(id)
+    const tab = get().tabs.find(t => t.id === normId)
     if (!tab) return
 
     try {
-      await window.electronAPI.fs.writeFile(id, tab.content)
+      await window.electronAPI.fs.writeFile(normId, tab.content)
       set((state) => ({
         tabs: state.tabs.map(t =>
-          t.id === id
+          t.id === normId
             ? { ...t, originalContent: tab.content, isDirty: false }
             : t
         )
@@ -94,11 +99,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
 
   reloadTab: async (id) => {
+    const normId = normalizePath(id)
     try {
-      const content = await window.electronAPI.fs.readFile(id)
+      const content = await window.electronAPI.fs.readFile(normId)
       set((state) => ({
         tabs: state.tabs.map(t =>
-          t.id === id
+          t.id === normId
             ? { ...t, content, originalContent: content, isDirty: false }
             : t
         )
@@ -108,3 +114,4 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     }
   }
 }))
+

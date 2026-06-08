@@ -587,7 +587,7 @@ function runMigrations(database: Database.Database): void {
   // ── Migration: Add module_specifier to ast_references for Milestone 13 ──
   try {
     database.exec(`ALTER TABLE ast_references ADD COLUMN module_specifier TEXT`)
-  } catch (err) {
+  } catch {
     // Column already exists or table doesn't exist yet
   }
 

@@ -17,7 +17,9 @@ import {
 import { getSessionMessages, clearSessionMessages, compactSessionMessages, deleteMessagesFrom } from '../db/messages'
 import { setWorkspaceRoot, setAllowedExtraPaths, validateWorkspaceRootCandidate, parseAttachedPaths } from '../security/pathValidation'
 import { handleWithTimeout, IPC_TIMEOUT } from './handleWithTimeout'
-import { CodeIntelligenceService } from '../services/CodeIntelligenceService'
+import { getService } from '@shared/instantiation/instantiationService'
+import { ICodeIntelligenceService } from '@shared/services'
+import { IConfigurationService } from '@shared/configuration/configuration'
 
 function setupWorkspaceRunner(workspacePath: string): void {
   try {
@@ -95,13 +97,14 @@ export function registerSessionHandlers(): void {
     
     // Authorize this session's workspace for file operations
     setWorkspaceRoot(session.workspacePath || null)
+    void getService(IConfigurationService).setWorkspacePath(session.workspacePath || null)
     if (session.workspacePath) {
       setupWorkspaceRunner(session.workspacePath)
     }
 
     // Restore the bound workspace without triggering a heavy re-scan on app reopen.
     setTimeout(() => {
-      void CodeIntelligenceService.getInstance().setWorkspace(session.workspacePath || null, { skipIndexing: true })
+      void getService(ICodeIntelligenceService).setWorkspace(session.workspacePath || null, { skipIndexing: true })
     }, 2000)
 
     const messages = getSessionMessages(sessionId)
@@ -152,11 +155,12 @@ export function registerSessionHandlers(): void {
       updateSessionWorkspace(data.sessionId, workspacePath)
       // Immediately authorize the new workspace
       setWorkspaceRoot(workspacePath)
+      void getService(IConfigurationService).setWorkspacePath(workspacePath)
       if (workspacePath) {
         setupWorkspaceRunner(workspacePath)
       }
       // Rebind the workspace without forcing a heavy background scan during the initial bind flow.
-      void CodeIntelligenceService.getInstance().setWorkspace(workspacePath, { skipIndexing: true })
+      void getService(ICodeIntelligenceService).setWorkspace(workspacePath, { skipIndexing: true })
     }
   )
 

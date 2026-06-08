@@ -266,7 +266,7 @@ export default function App(): React.JSX.Element {
                       </div>
 
                       {/* Bottom panel content — fixed height */}
-                      <div style={{ height: '200px', overflow: 'hidden', flexShrink: 0, borderTop: '1px solid var(--border)' }}>
+                      <div style={{ height: '200px', display: 'flex', flexDirection: 'column', overflow: 'hidden', flexShrink: 0, borderTop: '1px solid var(--border)' }}>
                         {bottomPanel === 'tasks' && <TaskPanel />}
                         {bottomPanel === 'search' && <SearchPanel />}
                         {bottomPanel === 'git' && <GitPanel />}

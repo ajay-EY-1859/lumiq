@@ -24,7 +24,7 @@ export function TitleBar(): React.JSX.Element {
       try {
         const stats = await window.electronAPI.lsp.getIndexStats()
         setIndexStats(stats)
-      } catch (err) {
+      } catch {
         // Silent error
       }
     }

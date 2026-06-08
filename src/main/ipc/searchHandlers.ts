@@ -12,6 +12,7 @@ import { getDatabase } from '../db/database'
 // Rust native module for high-performance parallel file search
 let native: any = null
 try {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   native = require('@lumiq/native')
 } catch (err) {
   console.warn('[searchHandlers] Rust native module not available:', err)

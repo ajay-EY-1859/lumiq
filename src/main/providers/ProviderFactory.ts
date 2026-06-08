@@ -15,6 +15,7 @@ import { GitHubProvider } from './GitHubProvider'
 import { OpenRouterProvider } from './OpenRouterProvider'
 import { GroqProvider } from './GroqProvider'
 import { CustomProvider } from './CustomProvider'
+import { NvidiaProvider } from './NvidiaProvider'
 
 export class ProviderFactory {
   /**
@@ -45,6 +46,8 @@ export class ProviderFactory {
         return new GroqProvider(config)
       case 'custom':
         return new CustomProvider(config)
+      case 'nvidia':
+        return new NvidiaProvider(config)
       default:
         throw new Error(`Unknown provider: ${config.provider}`)
     }

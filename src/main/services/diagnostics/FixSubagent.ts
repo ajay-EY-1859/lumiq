@@ -6,6 +6,7 @@
 
 import { getDatabase } from '../../db/database'
 import { getApiConfig } from '../../db/apiConfigs'
+import { ProviderFactory } from '../../providers/ProviderFactory'
 import { DiagnosticsWatcher } from './DiagnosticsWatcher'
 import type { SelfHealingAttempt } from '../../../shared/types'
 
@@ -40,7 +41,6 @@ export class FixSubagent {
         throw new Error(`Provider config for "${providerType}" is not configured or active.`)
       }
 
-      const { ProviderFactory } = await import('../../providers/ProviderFactory')
       const provider = ProviderFactory.create(apiConfig)
 
       // Deserialize file snapshots

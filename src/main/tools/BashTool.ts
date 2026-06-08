@@ -8,6 +8,7 @@
 import { exec } from 'child_process'
 import { sanitizeForLogging } from '../security/encryption'
 import { getWorkspaceRoot, validatePathWithinWorkspace } from '../security/pathValidation'
+import { DiagnosticsWatcher } from '../services/diagnostics/DiagnosticsWatcher'
 import type { Tool } from './Tool'
 
 const MAX_OUTPUT_LENGTH = 10000
@@ -183,11 +184,11 @@ export class BashTool implements Tool {
           const fullOutput = stdout + (stderr ? `\n\n[STDERR]\n${stderr}` : '')
 
           // Trigger DiagnosticsWatcher to inspect output and self-heal if necessary
-          import('../services/diagnostics/DiagnosticsWatcher')
-            .then(({ DiagnosticsWatcher }) => {
-              DiagnosticsWatcher.handleCommandOutcome(command, exitCode, fullOutput, cwd)
-            })
-            .catch((err) => console.error('[BashTool] DiagnosticsWatcher trigger failed:', err))
+          try {
+            DiagnosticsWatcher.handleCommandOutcome(command, exitCode, fullOutput, cwd)
+          } catch (err) {
+            console.error('[BashTool] DiagnosticsWatcher trigger failed:', err)
+          }
 
           if (error) {
             if (error.killed) {

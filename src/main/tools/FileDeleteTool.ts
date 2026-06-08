@@ -6,7 +6,8 @@
 import { existsSync, lstatSync, rmSync, readdirSync } from 'fs'
 import type { Tool } from './Tool'
 import { validatePathWithinWorkspace } from '../security/pathValidation'
-import { ComposerService } from '../services/ComposerService'
+import { getService } from '@shared/instantiation/instantiationService'
+import { IComposerService } from '@shared/services'
 
 export class FileDeleteTool implements Tool {
   name = 'FileDeleteTool'
@@ -36,7 +37,7 @@ export class FileDeleteTool implements Tool {
       return `[ERROR] ${(error as Error).message}`
     }
 
-    const composer = ComposerService.getInstance()
+    const composer = getService(IComposerService)
     const isStaging = composer.isStagingActive()
     const isStagedDeleted = isStaging && composer.isStagedDeleted(targetPath)
     const existsInStagedFiles = isStaging && composer.getStagedContent(targetPath) !== undefined

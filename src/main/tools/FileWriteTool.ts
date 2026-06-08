@@ -6,7 +6,8 @@ import { existsSync, writeFileSync, mkdirSync } from 'fs'
 import { dirname } from 'path'
 import type { Tool } from './Tool'
 import { validatePathWithinWorkspace } from '../security/pathValidation'
-import { ComposerService } from '../services/ComposerService'
+import { getService } from '@shared/instantiation/instantiationService'
+import { IComposerService } from '@shared/services'
 
 const MAX_CONTENT_SIZE = 1 * 1024 * 1024 // 1MB max write size
 
@@ -41,7 +42,7 @@ export class FileWriteTool implements Tool {
       return `[ERROR] ${(error as Error).message}`
     }
 
-    const composer = ComposerService.getInstance()
+    const composer = getService(IComposerService)
     if (composer.isStagingActive()) {
       const existed = existsSync(filePath) || composer.getStagedContent(filePath) !== undefined
       composer.stageWrite(filePath, content)

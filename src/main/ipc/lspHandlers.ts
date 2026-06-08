@@ -5,14 +5,15 @@
 // ═══════════════════════════════════════════════════════════════════
 
 import { readFileSync, existsSync } from 'fs'
+import { dirname, resolve, join } from 'path'
 import { IPC, DocumentSymbol, SymbolKind, DefinitionResult, ReferenceResult } from '@shared/types'
 import { handleWithTimeout, IPC_TIMEOUT } from './handleWithTimeout'
 import { getDatabase } from '../db/database'
-import { CodeIntelligenceService } from '../services/CodeIntelligenceService'
+import { getService } from '@shared/instantiation/instantiationService'
+import { ICodeIntelligenceService } from '@shared/services'
 
 function resolveModulePath(sourceFile: string, moduleSpecifier: string, db: any, workspacePath: string): string {
   if (!moduleSpecifier) return ''
-  const { dirname, resolve, join } = require('path')
   const currentDir = dirname(sourceFile)
   
   if (moduleSpecifier.startsWith('.')) {
@@ -411,7 +412,7 @@ export function registerLspHandlers(): void {
 
   // ── Index Stats ──
   handleWithTimeout(IPC.LSP_INDEX_STATS, IPC_TIMEOUT.short, (): { files: number, symbols: number, references: number } => {
-    return CodeIntelligenceService.getInstance().getIndexStats()
+    return getService(ICodeIntelligenceService).getIndexStats()
   })
 }
 
@@ -429,7 +430,7 @@ function getDocumentSymbols(filePath: string): DocumentSymbol[] {
 
     // On-the-fly parsing fallback if not indexed yet
     if (rows.length === 0) {
-      CodeIntelligenceService.getInstance().indexFile(filePath)
+      getService(ICodeIntelligenceService).indexFile(filePath)
       rows = db.prepare(`
         SELECT name, kind, container_name as containerName, start_line as startLine, start_column as startColumn, end_line as endLine, end_column as endColumn, signature 
         FROM ast_symbols 

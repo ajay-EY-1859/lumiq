@@ -13,6 +13,7 @@ import type { SemanticIndexStatus } from '@shared/types'
 // Rust native module for high-performance file scanning and text chunking
 let native: any = null
 try {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   native = require('@lumiq/native')
   console.log('[CodebaseIndexer] Rust native module loaded successfully')
 } catch (err) {

@@ -1,6 +1,6 @@
 // Lumiq — Settings: Providers Tab
 // Contains: ProvidersTab, ProviderSetupPanel, ModelSelector, ConnectedAccountsSection, OAuthAccountCard
-import React, { useState, useEffect, useMemo, useRef } from 'react'
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useProviderStore } from '@renderer/store/providerStore'
 import { Button } from '@renderer/components/ui/Button'
 import { Input } from '@renderer/components/ui/Input'
@@ -19,6 +19,7 @@ const PROVIDER_INFO: { id: ProviderType; name: string; emoji: string; needsKey: 
   { id: 'github', name: 'GitHub Models', emoji: '⚫', needsKey: true },
   { id: 'openrouter', name: 'OpenRouter', emoji: '🌐', needsKey: true },
   { id: 'groq', name: 'Groq', emoji: '⚡', needsKey: true },
+  { id: 'nvidia', name: 'Nvidia', emoji: '🟩', needsKey: true },
   { id: 'custom', name: 'Custom', emoji: '🔌', needsKey: true }
 ]
 
@@ -150,7 +151,7 @@ function ProviderSetupPanel({ info, existing, onSave, onTest, onDelete, onClose,
     }
   }
 
-  const validateAndFetchModels = async (tempConfig: any): Promise<void> => {
+  const validateAndFetchModels = useCallback(async (tempConfig: any): Promise<void> => {
     if (info.needsKey && tempConfig.authMethod !== 'oauth' && info.id !== 'ollama') {
       if (info.id === 'bedrock') {
         const hasKeys = (tempConfig.awsAccessKeyId && tempConfig.awsSecretAccessKey) || existing?.hasAwsKeys
@@ -202,7 +203,7 @@ function ProviderSetupPanel({ info, existing, onSave, onTest, onDelete, onClose,
     } finally {
       setIsValidating(false)
     }
-  }
+  }, [defaultModel, existing?.hasApiKey, existing?.hasAwsKeys, info.id, info.needsKey])
 
   useEffect(() => {
     setAuthMethod(existing?.authMethod || 'apikey')
@@ -224,7 +225,7 @@ function ProviderSetupPanel({ info, existing, onSave, onTest, onDelete, onClose,
       setValidationError(null)
       setDynamicModels([])
     }
-  }, [existing, info.id, isAlreadyConfigured])
+  }, [existing, info.id, isAlreadyConfigured, validateAndFetchModels])
 
   const handleBlur = () => {
     validateAndFetchModels(getTempConfig())

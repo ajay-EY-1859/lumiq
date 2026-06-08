@@ -6,7 +6,8 @@
 import { existsSync, readFileSync, writeFileSync } from 'fs'
 import type { Tool } from './Tool'
 import { validatePathWithinWorkspace } from '../security/pathValidation'
-import { ComposerService } from '../services/ComposerService'
+import { getService } from '@shared/instantiation/instantiationService'
+import { IComposerService } from '@shared/services'
 
 interface EditOperation {
   path: string
@@ -55,7 +56,7 @@ export class MultiFileEditTool implements Tool {
     // Store backup for rollback
     const backups = new Map<string, string>()
 
-    const composer = ComposerService.getInstance()
+    const composer = getService(IComposerService)
     const isStaging = composer.isStagingActive()
 
     try {

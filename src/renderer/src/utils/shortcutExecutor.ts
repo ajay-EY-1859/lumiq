@@ -3,16 +3,10 @@
 // Centralizes logic for F5, F6, Shift+F5, and step debugging triggers
 // ═══════════════════════════════════════════════════════════════════
 
-import path from 'path'
 import { useTaskStore } from '../store/taskStore'
 import { useEditorStore } from '../store/editorStore'
 import { useSessionStore } from '../store/sessionStore'
-
-function getExecutableOutputPath(filePath: string): string {
-  const parsed = path.parse(filePath)
-  const suffix = process.platform === 'win32' ? '.exe' : ''
-  return path.join(parsed.dir, `${parsed.name}${suffix}`)
-}
+import { normalizePath } from './paths'
 
 export async function runProjectAction(): Promise<void> {
   const sessionState = useSessionStore.getState()
@@ -83,28 +77,29 @@ export function runCurrentFileAction(): void {
   const ext = activeTab.name.split('.').pop()?.toLowerCase() ?? ''
   let command = ''
   let args: string[] = []
+  const normalizedTabId = normalizePath(activeTab.id)
 
   if (ext === 'py') {
     command = 'python'
-    args = [activeTab.id]
+    args = ['-u', normalizedTabId]
   } else if (['js', 'jsx', 'ts', 'tsx'].includes(ext)) {
     command = 'node'
-    args = [activeTab.id]
+    args = [normalizedTabId]
   } else if (ext === 'go') {
     command = 'go'
-    args = ['run', activeTab.id]
+    args = ['run', normalizedTabId]
   } else if (ext === 'java') {
     command = 'javac'
-    args = [activeTab.id]
+    args = [normalizedTabId]
   } else if (ext === 'c') {
-    command = 'gcc'
-    args = [activeTab.id, '-o', getExecutableOutputPath(activeTab.id)]
+    command = 'node'
+    args = ['.lumiq/c-cpp-runner.js', 'gcc', normalizedTabId]
   } else if (ext === 'cpp' || ext === 'cc' || ext === 'cxx') {
-    command = 'g++'
-    args = [activeTab.id, '-o', getExecutableOutputPath(activeTab.id)]
+    command = 'node'
+    args = ['.lumiq/c-cpp-runner.js', 'g++', normalizedTabId]
   } else if (ext === 'cs') {
     command = 'dotnet'
-    args = ['run', '--project', activeTab.id]
+    args = ['run', '--project', normalizedTabId]
   }
 
   if (command) {
@@ -128,22 +123,26 @@ export function compileCurrentFileAction(): void {
   const ext = activeTab.name.split('.').pop()?.toLowerCase() ?? ''
   let command = ''
   let args: string[] = []
+  const normalizedTabId = normalizePath(activeTab.id)
 
-  if (ext === 'java') {
+  if (ext === 'py') {
+    command = 'python'
+    args = ['-m', 'py_compile', normalizedTabId]
+  } else if (ext === 'java') {
     command = 'javac'
-    args = [activeTab.id]
+    args = [normalizedTabId]
   } else if (ext === 'c') {
     command = 'gcc'
-    args = ['-c', activeTab.id]
+    args = ['-c', normalizedTabId]
   } else if (ext === 'cpp' || ext === 'cc' || ext === 'cxx') {
     command = 'g++'
-    args = ['-c', activeTab.id]
+    args = ['-c', normalizedTabId]
   } else if (ext === 'go') {
     command = 'go'
-    args = ['build', '-o', 'temp_build_out', activeTab.id]
+    args = ['build', '-o', 'temp_build_out', normalizedTabId]
   } else if (ext === 'cs') {
     command = 'dotnet'
-    args = ['build', activeTab.id]
+    args = ['build', normalizedTabId]
   }
 
   if (command) {

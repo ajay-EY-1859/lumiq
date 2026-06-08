@@ -3,7 +3,8 @@ import { join } from 'path'
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'fs'
 
 const tempUserDataPath = join(__dirname, 'temp_lsp_references_test')
-const mockHandlers: Record<string, Function> = {}
+type IpcHandler = (...args: any[]) => any
+const mockHandlers: Record<string, IpcHandler> = {}
 
 // Mock electron before importing database/handlers
 vi.mock('electron', () => {
@@ -17,13 +18,14 @@ vi.mock('electron', () => {
       }
     },
     ipcMain: {
-      handle: (channel: string, handler: Function) => {
+      handle: (channel: string, handler: IpcHandler) => {
         mockHandlers[channel] = handler
       }
     }
   }
 })
 
+import { InstantiationService, setActiveContainer } from '@shared/instantiation/instantiationService'
 import { initDatabase, closeDatabase, getDatabase } from '../../db/database'
 import { registerLspHandlers } from '../../ipc/lspHandlers'
 import { IPC } from '../../../shared/types'
@@ -34,6 +36,8 @@ describe('LSP Find All References Handler', () => {
   const mainPath = join(workspacePath, 'main.ts').replace(/\\/g, '/')
 
   beforeAll(() => {
+    const container = new InstantiationService()
+    setActiveContainer(container)
     if (!existsSync(tempUserDataPath)) {
       mkdirSync(tempUserDataPath, { recursive: true })
     }
@@ -52,11 +56,15 @@ describe('LSP Find All References Handler', () => {
   afterAll(() => {
     try {
       closeDatabase()
-    } catch {}
+    } catch {
+      // Database may already be closed in a failed setup path.
+    }
     try {
       rmSync(tempUserDataPath, { recursive: true, force: true })
       rmSync(workspacePath, { recursive: true, force: true })
-    } catch {}
+    } catch {
+      // Ignore cleanup failures in temp test directories.
+    }
   })
 
   it('should find references for imported symbols pointing back to target file', async () => {

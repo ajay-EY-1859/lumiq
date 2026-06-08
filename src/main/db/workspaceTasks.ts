@@ -295,7 +295,7 @@ export async function syncPackageJsonTasks(workspacePath: string): Promise<Works
           if (!line || line.startsWith('#') || line.startsWith('//')) continue
 
           // Remove shell prompt symbols ($ or >) from beginning of line
-          const cleanLine = line.replace(/^[\$\>\s]+/, '').trim()
+          const cleanLine = line.replace(/^[$>\s]+/, '').trim()
           if (!cleanLine) continue
 
           const parts = cleanLine.split(/\s+/)

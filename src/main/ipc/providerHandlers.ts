@@ -24,7 +24,8 @@ const PROVIDERS = new Set<ProviderType>([
   'github',
   'openrouter',
   'groq',
-  'custom'
+  'custom',
+  'nvidia'
 ])
 
 function assertProvider(provider: string): asserts provider is ProviderType {

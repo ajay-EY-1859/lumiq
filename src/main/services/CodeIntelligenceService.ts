@@ -4,10 +4,14 @@ import { join, resolve } from 'path'
 import { readFileSync, existsSync } from 'fs'
 import { Worker } from 'worker_threads'
 import { getDatabase } from '../db/database'
-import { SystemCapabilityService } from './SystemCapabilityService'
+import { getService } from '@shared/instantiation/instantiationService'
+import { ISystemCapabilityService, ICodeIntelligenceService } from '@shared/services'
+import { Disposable } from '@shared/lifecycle'
+import { registerSingleton, InstantiationType } from '@shared/instantiation/extensions'
 
 let native: any
 try {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   native = require('@lumiq/native')
 } catch (err) {
   console.error('[CodeIntelligenceService] Failed to load native @lumiq/native module:', err)
@@ -20,8 +24,7 @@ export interface IndexStats {
   durationMs: number
 }
 
-export class CodeIntelligenceService {
-  private static instance: CodeIntelligenceService | null = null
+export class CodeIntelligenceService extends Disposable implements ICodeIntelligenceService {
   private watcher: FSWatcher | null = null
   private workspacePath: string | null = null
   private originalNoAsar: any = undefined
@@ -33,11 +36,12 @@ export class CodeIntelligenceService {
   private insertSymbolStmt: any = null
   private insertRefStmt: any = null
 
+  constructor() {
+    super()
+  }
+
   public static getInstance(): CodeIntelligenceService {
-    if (!CodeIntelligenceService.instance) {
-      CodeIntelligenceService.instance = new CodeIntelligenceService()
-    }
-    return CodeIntelligenceService.instance
+    return getService(ICodeIntelligenceService) as CodeIntelligenceService
   }
 
   /**
@@ -67,7 +71,7 @@ export class CodeIntelligenceService {
 
     if (!options.skipIndexing) {
       // Trigger SystemCapabilityService scan first in the background
-      SystemCapabilityService.getInstance().scan().catch((err) => {
+      getService(ISystemCapabilityService).scan().catch((err) => {
         console.error('[CodeIntelligence] System capabilities scan failed:', err)
       })
 
@@ -748,3 +752,5 @@ export class CodeIntelligenceService {
     return { symbols, references }
   }
 }
+
+registerSingleton(ICodeIntelligenceService, CodeIntelligenceService, InstantiationType.Delayed);

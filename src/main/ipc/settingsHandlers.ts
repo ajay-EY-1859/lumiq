@@ -5,15 +5,16 @@
 
 import { IPC } from '@shared/types'
 import type { AppSettings, ToolSettings } from '@shared/types'
-import { getDatabase } from '../db/database'
 import { agentLoop } from '../agent/AgentLoop'
 import type { PermissionMode } from '../security/permissions'
 import { DEFAULT_TOOL_SETTINGS, mergeToolSettings } from '../tools/defaultToolSettings'
 import { handleWithTimeout, IPC_TIMEOUT } from './handleWithTimeout'
-import { TraceLogger } from '../services/TraceLogger'
 import { CostManager } from '../services/CostManager'
 import { join, resolve, relative } from 'path'
-import { existsSync, readFileSync, writeFileSync, mkdirSync, realpathSync } from 'fs'
+import { existsSync, readFileSync, realpathSync } from 'fs'
+import { getService } from '@shared/instantiation/instantiationService'
+import { ITraceLogger } from '@shared/services'
+import { IConfigurationService, ConfigurationTarget } from '@shared/configuration/configuration'
 
 const SETTINGS_KEYS = new Set([
   'theme',
@@ -84,26 +85,18 @@ function safeWorkspaceSettingsPath(workspacePath: string): string {
 export function registerSettingsHandlers(): void {
   // ── Get all settings ──
   handleWithTimeout(IPC.SETTINGS_GET, IPC_TIMEOUT.short, (): AppSettings => {
-    const db = getDatabase()
-    const stmt = db.prepare('SELECT key, value FROM settings')
-    const rows = stmt.all() as { key: string; value: string }[]
-
-    const settings: Record<string, string> = {}
-    for (const row of rows) {
-      settings[row.key] = row.value
-    }
-
+    const configService = getService(IConfigurationService)
     return {
-      theme: (settings.theme || 'system') as AppSettings['theme'],
-      fontSize: (settings.fontSize || '14') as AppSettings['fontSize'],
-      defaultProvider: (settings.defaultProvider || 'anthropic') as AppSettings['defaultProvider'],
-      defaultModel: settings.defaultModel || 'claude-sonnet-4-20250514',
-      sidebarVisible: settings.sidebarVisible !== 'false',
-      autoSave: settings.autoSave !== 'false',
-      contextLimit: parseInt(settings.contextLimit || '150', 10),
-      firecrawlApiKey: settings.firecrawlApiKey || '',
-      dailyBudgetCap: parseFloat(settings.dailyBudgetCap || '5.00'),
-      monthlyBudgetCap: parseFloat(settings.monthlyBudgetCap || '50.00')
+      theme: configService.getValue('theme'),
+      fontSize: configService.getValue('fontSize'),
+      defaultProvider: configService.getValue('defaultProvider'),
+      defaultModel: configService.getValue('defaultModel'),
+      sidebarVisible: configService.getValue('sidebarVisible'),
+      autoSave: configService.getValue('autoSave'),
+      contextLimit: configService.getValue('contextLimit'),
+      firecrawlApiKey: configService.getValue('firecrawlApiKey'),
+      dailyBudgetCap: configService.getValue('dailyBudgetCap'),
+      monthlyBudgetCap: configService.getValue('monthlyBudgetCap')
     } as any
   })
 
@@ -113,12 +106,11 @@ export function registerSettingsHandlers(): void {
       throw new Error(`Unsupported setting: ${data.key}`)
     }
     const value = normalizeSettingValue(data.key, data.value)
-    const db = getDatabase()
-    const stmt = db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)')
-    stmt.run(data.key, value)
+    const configService = getService(IConfigurationService)
+    void configService.updateValue(data.key, value, ConfigurationTarget.User)
 
     if (data.key === 'contextLimit') {
-      agentLoop.setContextLimit(parseInt(value, 10))
+      agentLoop.setContextLimit(configService.getValue<number>('contextLimit'))
     }
   })
 
@@ -140,62 +132,29 @@ export function registerSettingsHandlers(): void {
   // ── Set workspace settings ──
   handleWithTimeout(IPC.SETTINGS_WORKSPACE_SET, IPC_TIMEOUT.short, (_event, data: { workspacePath: string, settings: Partial<AppSettings> }) => {
     if (!data.workspacePath) return
-    try {
-      const settingsPath = safeWorkspaceSettingsPath(data.workspacePath)
-      const lumiqDir = join(resolve(data.workspacePath), '.lumiq')
-      if (!existsSync(lumiqDir)) {
-        mkdirSync(lumiqDir, { recursive: true })
-      }
-      
-      let currentSettings = {}
-      if (existsSync(settingsPath)) {
-        try {
-          currentSettings = JSON.parse(readFileSync(settingsPath, 'utf-8'))
-        } catch { /* ignore parse error */ }
-      }
-      
-      const newSettings = { ...currentSettings, ...data.settings }
-      writeFileSync(settingsPath, JSON.stringify(newSettings, null, 2), 'utf-8')
-      
-    } catch (e) {
-      console.error('Failed to write workspace settings:', e)
-      throw new Error(`Failed to save workspace settings: ${(e as Error).message}`)
+    const configService = getService(IConfigurationService)
+    for (const [key, value] of Object.entries(data.settings)) {
+      void configService.updateValue(key, value, ConfigurationTarget.Workspace)
     }
   })
 
   // ── Get tool settings ──
   handleWithTimeout(IPC.SETTINGS_GET_TOOL, IPC_TIMEOUT.short, (): ToolSettings[] => {
-    const db = getDatabase()
-    const stmt = db.prepare("SELECT value FROM settings WHERE key = 'toolSettings'")
-    const row = stmt.get() as { value: string } | undefined
-    if (!row) return DEFAULT_TOOL_SETTINGS
-    try {
-      const saved = JSON.parse(row.value) as ToolSettings[]
-      const merged = mergeToolSettings(saved)
-      if (merged.length !== saved.length) {
-        db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('toolSettings', ?)").run(JSON.stringify(merged))
-      }
-      return merged
-    } catch {
-      return DEFAULT_TOOL_SETTINGS
-    }
+    return getService(IConfigurationService).getValue<ToolSettings[]>('toolSettings') || DEFAULT_TOOL_SETTINGS
   })
 
   // ── Set tool settings ──
   handleWithTimeout(IPC.SETTINGS_SET_TOOL, IPC_TIMEOUT.short, (_event, settings: ToolSettings[]) => {
     if (!Array.isArray(settings)) throw new Error('Invalid tool settings')
     const merged = mergeToolSettings(settings)
-    const db = getDatabase()
-    const stmt = db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('toolSettings', ?)")
-    stmt.run(JSON.stringify(merged))
+    const configService = getService(IConfigurationService)
+    void configService.updateValue('toolSettings', merged, ConfigurationTarget.User)
     agentLoop.getToolExecutor().updateToolSettings(merged)
   })
 
   // ── Get permission mode ──
   handleWithTimeout(IPC.PERMISSION_MODE_GET, IPC_TIMEOUT.short, (): PermissionMode => {
-    const db = getDatabase()
-    const row = db.prepare("SELECT value FROM settings WHERE key = 'permissionMode'").get() as { value: string } | undefined
-    return (row?.value as PermissionMode) || 'MANUAL'
+    return getService(IConfigurationService).getValue<PermissionMode>('permissionMode') || 'MANUAL'
   })
 
   // ── Set permission mode ──
@@ -203,14 +162,14 @@ export function registerSettingsHandlers(): void {
     if (!['MANUAL', 'LIMITED', 'EXTENDED', 'AUTO'].includes(mode)) {
       throw new Error('Invalid permission mode')
     }
-    const db = getDatabase()
-    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('permissionMode', ?)").run(mode)
+    const configService = getService(IConfigurationService)
+    void configService.updateValue('permissionMode', mode, ConfigurationTarget.User)
     agentLoop.getToolExecutor().setPermissionMode(mode)
   })
 
   // ── Get all request/response audit traces ──
   handleWithTimeout(IPC.TRACES_LIST, IPC_TIMEOUT.short, (): Array<{ name: string; sizeBytes: number; createdAt: string }> => {
-    return TraceLogger.listTraces()
+    return getService(ITraceLogger).listTraces()
   })
 
   // ── Get token costs summary for settings dashboard ──

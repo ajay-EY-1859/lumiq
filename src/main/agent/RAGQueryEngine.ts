@@ -9,8 +9,9 @@ import { embeddingManager } from './EmbeddingManager'
 // Rust native module for SIMD-accelerated vector similarity
 let native: any = null
 try {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   native = require('@lumiq/native')
-} catch (err) {
+} catch {
   // Rust module not available, will use JS fallback
 }
 
