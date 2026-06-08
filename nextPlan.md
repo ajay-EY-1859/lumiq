@@ -1,7 +1,7 @@
 # Lumiq — Advanced Vision & Next Phase Roadmap (Deep Architecture Edition)
 
 **Last Updated:** 2026-06-05  
-**Current Status:** 🚀 **Phase 2 & Phase 3 (including Milestone 15) Complete!** Ready to transition to **Phase 4: The Ultimate AI-First IDE Horizon (Milestones 16 - 25)**  
+**Current Status:** 🟢 **Phase 2, 3 & 4 (Milestones 1-25) Complete!** Lumiq is now a fully realized AI-First IDE operating in real mode.
 - **Workspace:** `d:\agentic-desktop-app`  
 - **Reference Architecture:** `D:\vscode` (VS Code source — deep-scanned 2026-06-05)
 
@@ -183,7 +183,7 @@ cli/             → Rust CLI (tunneling, auth, self-update, singleton, RPC, msg
 
 ---
 
-## 🟢 Shipped & Verified Milestones (Phase 1, 2 & 3)
+## 🟢 Shipped & Verified Milestones (Phases 1-4)
 
 - [x] **Milestone 7: Model Context Protocol (MCP) & Dynamic Tooling**
   - Dynamic tool discovery and binding from local/remote MCP servers (SQLite, Brave Search, etc.).
@@ -203,10 +203,30 @@ cli/             → Rust CLI (tunneling, auth, self-update, singleton, RPC, msg
   - Dedicated Composer Workspace, specialized multi-agent parallel/concurrent swarm (Architect, Coder, Tester, Reviewer), and visual parallel flowchart SVG graph.
 - [x] **Milestone 15: DAP Integration & Live Runtime Debugger Binding**
   - DAP Client service implementation, automatic call-stack & local/global variables state capture, keyboard stepping bindings, visual Debugger panel, and integrated state-aware AI Explainer.
+- [x] **Milestone 16: Layered Service Architecture & DI Framework**
+  - VS Code-grade dependency injection, service layering, and Typed Event System.
+- [x] **Milestone 17: Platform File System & Configuration Service**
+  - Universal File System Service and hierarchical configuration cascade.
+- [x] **Milestone 18: Extension Host & Plugin Architecture**
+  - Multi-process extension system and Typed Extension Protocol.
+- [x] **Milestone 19: MCP Gallery & Managed Server Lifecycle**
+  - Marketplace for MCP servers and full lifecycle management.
+- [x] **Milestone 20: Agent Host Protocol & Session Provider Model**
+  - AHP implementation, virtual filesystem, and remote connections.
+- [x] **Milestone 21: AI Customization Framework & Skills System**
+  - Built-in skills, harness system, and agent plugins.
+- [x] **Milestone 22: Semantic Codebase Refactoring & Code Smell Sweeper**
+  - AST-based tree-shaking and automated anti-pattern detection.
+- [x] **Milestone 23: Interactive Visual Canvas Mode & UI Code Generator**
+  - Integrated preview canvas and Webview panel hosting.
+- [x] **Milestone 24: Live Performance Telemetry & Profiling Companion**
+  - Telemetry server bridge and V8 CPU Profiler integration.
+- [x] **Milestone 25: Isolated Web Sandbox & Runtime Preview Engine**
+  - Embedded browser canvas, HMR support, and sandboxed utility processes.
 
 ---
 
-## 🚀 Phase 4: The Ultimate AI-First IDE Horizon (Milestones 16 - 25)
+## 🟢 Phase 4: The Ultimate AI-First IDE Horizon (Milestones 16 - 25) - SHIPPED
 
 > Every milestone below is now deeply informed by specific VS Code architectural patterns discovered during codebase analysis. Implementation references point to exact VS Code systems.
 
