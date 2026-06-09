@@ -51,7 +51,7 @@ export default function WelcomeCard() {
     };
   }
 
-  mapClickToCode(layoutId: string, x: number, y: number): { filePath: string; line: number; range?: MonacoRange } {
+  mapClickToCode(layoutId: string, _x: number, y: number): { filePath: string; line: number; range?: MonacoRange } {
     const mockup = this.activeMockups.get(layoutId) || { filePath: 'src/components/WelcomeCard.tsx', code: '' };
     
     // Simulate sourcemap/AST mapping where higher Y maps to inner elements
@@ -82,9 +82,10 @@ export default function WelcomeCard() {
 
     visit(sourceFile, 0);
 
-    if (targetNode) {
-      const start = sourceFile.getLineAndCharacterOfPosition(targetNode.getStart());
-      const end = sourceFile.getLineAndCharacterOfPosition(targetNode.getEnd());
+    const finalNode = targetNode as ts.Node | null;
+    if (finalNode) {
+      const start = sourceFile.getLineAndCharacterOfPosition(finalNode.getStart());
+      const end = sourceFile.getLineAndCharacterOfPosition(finalNode.getEnd());
       return {
         filePath: mockup.filePath,
         line: start.line + 1,

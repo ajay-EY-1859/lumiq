@@ -23,7 +23,7 @@ export class WebSandboxService implements IWebSandboxService {
     const createServer = (port: number): Promise<http.Server> => {
       return new Promise((resolve, reject) => {
         const server = http.createServer((req, res) => {
-          if (!req.url) return res.end();
+          if (!req.url) { res.end(); return; }
           const filePath = path.join(workspacePath, req.url === '/' ? 'index.html' : req.url);
           fs.readFile(filePath, (err, data) => {
             if (err) {
@@ -83,7 +83,7 @@ export class WebSandboxService implements IWebSandboxService {
     }
   }
 
-  async inspectStyles(serverId: string, selector: string): Promise<Record<string, string>> {
+  async inspectStyles(_serverId: string, selector: string): Promise<Record<string, string>> {
     // In a fully real scenario, this would use Chrome DevTools Protocol to inspect the DOM
     // For now we simulate advanced inspection for known classes.
     if (selector === '.welcome-card') {

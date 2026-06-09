@@ -34,7 +34,6 @@ vi.mock('../../auth/devMode', () => {
   }
 })
 
-import { listApiConfigs } from '../../db/apiConfigs'
 vi.mock('../../db/apiConfigs', () => ({
   listApiConfigs: () => [{
     id: 'test_config',
@@ -47,7 +46,7 @@ vi.mock('../../db/apiConfigs', () => ({
 vi.mock('../../providers/ProviderFactory', () => ({
   ProviderFactory: {
     create: () => ({
-      sendMessage: async (messages: any[], options: any) => {
+      sendMessage: async (_messages: any[], options: any) => {
         // Mock architect response
         if (options.systemPrompt?.includes('Architect agent')) {
           return {

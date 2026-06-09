@@ -1,6 +1,6 @@
 import { BrowserWindow } from 'electron'
 import { existsSync, writeFileSync, mkdirSync, readFileSync, lstatSync, rmSync } from 'fs'
-import { dirname, join } from 'path'
+import { dirname } from 'path'
 import { IPC, ComposerTaskStatus, ComposerState, AgentNodeStatus, Message, ProviderConfig } from '@shared/types'
 import { listApiConfigs } from '../db/apiConfigs'
 import { ProviderFactory } from '../providers/ProviderFactory'

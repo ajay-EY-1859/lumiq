@@ -64,7 +64,6 @@ describe('DapService - Debug Adapter Protocol Client', () => {
     const service = DapService.getInstance()
     
     // Mock fetch and WebSocket globally
-    let wsMock: any
     global.fetch = vi.fn().mockResolvedValue({
       json: () => Promise.resolve([{ webSocketDebuggerUrl: 'ws://mock' }])
     })
@@ -77,7 +76,6 @@ describe('DapService - Debug Adapter Protocol Client', () => {
       onopen: any = null
       readyState = 1 // OPEN
       constructor() {
-        wsMock = this
       }
     }
     global.WebSocket = MockWebSocket as any
@@ -116,6 +114,7 @@ describe('DapService - Debug Adapter Protocol Client', () => {
       onopen: any = null
       readyState = 1 // OPEN
       constructor() {
+        // eslint-disable-next-line @typescript-eslint/no-this-alias
         wsMock = this
       }
     }

@@ -21,7 +21,7 @@ export class DapService extends Disposable implements IDapService {
 
   private ws: WebSocket | null = null
   private msgId = 1
-  private pendingRequests: Map<number, { resolve: Function, reject: Function }> = new Map()
+  private pendingRequests: Map<number, { resolve: (value?: any) => void, reject: (reason?: any) => void }> = new Map()
 
   constructor() {
     super()
