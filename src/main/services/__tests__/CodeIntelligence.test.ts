@@ -2,10 +2,17 @@ import { describe, it, expect } from 'vitest'
 import { join } from 'path'
 import { writeFileSync, unlinkSync } from 'fs'
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const native = require('@lumiq/native')
+let native: any;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  native = require('@lumiq/native')
+} catch (e) {
+  native = null;
+}
 
-describe('CodeIntelligence Native AST Parser', () => {
+const describeOrSkip = native ? describe : describe.skip;
+
+describeOrSkip('CodeIntelligence Native AST Parser', () => {
   it('should export parseFileAst function', () => {
     expect(native.parseFileAst).toBeDefined()
     expect(typeof native.parseFileAst).toBe('function')

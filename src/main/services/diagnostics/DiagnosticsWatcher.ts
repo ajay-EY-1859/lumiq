@@ -153,11 +153,11 @@ export class DiagnosticsWatcher {
       }
     }
 
-    // 2. Try matching compiler file/line headers (e.g. D:\path\file.ts:12:34)
+    // 2. Try matching compiler file/line headers (e.g. /path/to/file.ts:12:34 or D:\path.ts:12)
     if (!filePath) {
-      const fileHeaderMatch = output.match(/([a-zA-Z]:[\\/][^:\n]+):(\d+):(\d+)/)
+      const fileHeaderMatch = output.match(/((?:[a-zA-Z]:)?[\\/][^:\n]+):(\d+):(\d+)/)
       if (fileHeaderMatch && fileHeaderMatch[1]) {
-        const parsedPath = resolve(fileHeaderMatch[1])
+        const parsedPath = resolve(fileHeaderMatch[1].trim())
         if (existsSync(parsedPath)) {
           filePath = parsedPath
           line = parseInt(fileHeaderMatch[2]!, 10)

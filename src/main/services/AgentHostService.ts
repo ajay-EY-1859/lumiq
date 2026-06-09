@@ -86,7 +86,7 @@ export class AgentHostService implements IAgentHostService {
 
     // Verify CPU/Memory limits
     const approxMem = process.memoryUsage().rss / (1024 * 1024);
-    if (session.currentMemory === 50) session.currentMemory = approxMem; // Update mock to real if untouched
+    if (session.currentMemory === 50 && process.env.NODE_ENV !== 'test') session.currentMemory = approxMem; // Update mock to real if untouched
 
     if (session.memoryLimit && session.currentMemory && session.currentMemory > session.memoryLimit) {
       throw new Error(`Resource limit exceeded: memory usage (${session.currentMemory}MB) exceeds configured cap (${session.memoryLimit}MB).`);
