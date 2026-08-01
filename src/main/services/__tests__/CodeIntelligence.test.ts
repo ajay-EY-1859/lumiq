@@ -4,9 +4,9 @@ import { writeFileSync, unlinkSync } from 'fs'
 
 let native: any;
 try {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
+   
   native = require('@lumiq/native')
-} catch (e) {
+} catch {
   native = null;
 }
 

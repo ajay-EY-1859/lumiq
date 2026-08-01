@@ -29,10 +29,19 @@ import { registerSelfHealingHandlers } from './selfHealingHandlers'
 import { registerAutocompleteHandlers } from './autocompleteHandlers'
 import { registerComposerHandlers } from './composerHandlers'
 import { registerDapHandlers } from './dapHandlers'
+import { registerFrameworkHandlers } from './frameworkHandlers'
+import { registerDatabaseHandlers } from './databaseHandlers'
+import { registerTestHandlers } from './testHandlers'
+import { registerDeployHandlers } from './deployHandlers'
+import { registerWikiHandlers } from './wikiHandlers'
+import { registerCollaborationHandlers } from './collaborationHandlers'
+import { registerClipboardHandlers } from './clipboardHandlers'
+import { registerSandboxHandlers } from './sandboxHandlers'
 import { handleWithTimeout, IPC_TIMEOUT } from './handleWithTimeout'
 
 export function registerAllHandlers(): void {
   // Register domain-specific handlers
+  registerClipboardHandlers()
   registerChatHandlers()
   registerSessionHandlers()
   registerProviderHandlers()
@@ -58,6 +67,13 @@ export function registerAllHandlers(): void {
   registerAutocompleteHandlers()
   registerComposerHandlers()
   registerDapHandlers()
+  registerFrameworkHandlers()
+  registerDatabaseHandlers()
+  registerTestHandlers()
+  registerDeployHandlers()
+  registerWikiHandlers()
+  registerCollaborationHandlers()
+  registerSandboxHandlers()
 
   // ── Window Control Handlers (for custom titlebar) ──
   ipcMain.on('window:minimize', (event) => {

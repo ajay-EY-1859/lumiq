@@ -120,6 +120,7 @@ export interface SendOptions {
   model: string
   stream: boolean
   systemPrompt?: string
+  systemPromptSegments?: string[] // For advanced prompt caching context segmentation
   maxTokens?: number
   onChunk?: (chunk: string) => void
   signal?: AbortSignal
@@ -167,6 +168,7 @@ export interface AppSettings {
   firecrawlApiKey?: string
   dailyBudgetCap?: string
   monthlyBudgetCap?: string
+  keybindings?: Record<string, string[]>
 }
 
 export interface ToolSettings {
@@ -317,11 +319,13 @@ export const IPC = {
   CHAT_CANCEL: 'chat:cancel',
   AUTOCOMPLETE_PREDICT: 'autocomplete:predict',
   CHAT_PREDICT_ONE_SHOT: 'chat:predict-one-shot',
+  MESSAGE_UPDATED: 'chat:message-updated',
 
   // Tool approval
   TOOL_APPROVAL_REQUEST: 'tool:approval-request',
   TOOL_APPROVAL_RESPONSE: 'tool:approval-response',
   TOOL_RESULT: 'tool:result',
+  TOOL_ACTIVITY: 'tool:activity',
 
   // Session management
   SESSION_LIST: 'session:list',
@@ -354,6 +358,9 @@ export const IPC = {
   AGENT_LIST: 'agent:list',
   AGENT_SAVE: 'agent:save',
   AGENT_DELETE: 'agent:delete',
+  AGENT_EDIT_HISTORY: 'agent:edit-history',
+  AGENT_EDIT_UNDO: 'agent:edit-undo',
+  AGENT_EDIT_REDO: 'agent:edit-redo',
 
   // OAuth / Authentication
   AUTH_GOOGLE_LOGIN: 'auth:google-login',
@@ -369,6 +376,15 @@ export const IPC = {
 
   // Shell
   SHELL_OPEN_EXTERNAL: 'shell:open-external',
+
+  // Web Sandbox & CDP Inspector
+  SANDBOX_START: 'sandbox:start',
+  SANDBOX_STOP: 'sandbox:stop',
+  SANDBOX_INSPECT_STYLES: 'sandbox:inspect-styles',
+  SANDBOX_UPDATE_STYLE: 'sandbox:update-style',
+  SANDBOX_GET_DOM_TREE: 'sandbox:get-dom-tree',
+  SANDBOX_GET_CONSOLE_LOGS: 'sandbox:get-console-logs',
+  SANDBOX_TAKE_HEAP_SNAPSHOT: 'sandbox:take-heap-snapshot',
 
   // Permission mode
   PERMISSION_MODE_GET: 'permission:mode-get',
@@ -498,7 +514,55 @@ export const IPC = {
   GIT_UNSTAGE: 'git:unstage',
   GIT_DISCARD: 'git:discard',
   GIT_COMMIT: 'git:commit',
-  GIT_IGNORED: 'git:ignored'
+  GIT_IGNORED: 'git:ignored',
+
+  // Framework Call (Milestone 26)
+  FRAMEWORK_CALL: 'ipc:framework-call',
+
+  // Database Explorer (Milestone 28)
+  DATABASE_GET_TABLES: 'database:get-tables',
+  DATABASE_GET_SCHEMA: 'database:get-schema',
+  DATABASE_EXECUTE_QUERY: 'database:execute-query',
+  DATABASE_GENERATE_DECLARATION: 'database:generate-declaration',
+  DATABASE_GENERATE_MOCK_DATA: 'database:generate-mock-data',
+
+  // Test Orchestrator (Milestone 27)
+  TEST_GENERATE_SUITE: 'test:generate-suite',
+  TEST_RUN_SUITE: 'test:run-suite',
+  TEST_REPAIR_LOOP: 'test:repair-loop',
+
+  // Deployment (Milestone 29)
+  DEPLOY_GENERATE_IAC: 'deploy:generate-iac',
+  DEPLOY_VERIFY_BUILD: 'deploy:verify-build',
+
+  // Architect Wiki (Milestone 30)
+  WIKI_ANALYZE: 'wiki:analyze',
+  WIKI_MERMAID: 'wiki:mermaid',
+  WIKI_WRITE: 'wiki:write',
+
+  // Collaboration Room (Milestone 31)
+  COLLABORATION_CREATE_ROOM: 'collaboration:create-room',
+  COLLABORATION_JOIN_ROOM: 'collaboration:join-room',
+  COLLABORATION_LEAVE_ROOM: 'collaboration:leave-room',
+  COLLABORATION_GET_STATE: 'collaboration:get-state',
+  COLLABORATION_SEND_CURSOR: 'collaboration:send-cursor',
+  COLLABORATION_SEND_CHANGE: 'collaboration:send-change',
+  COLLABORATION_GET_TIMELINE: 'collaboration:get-timeline',
+  COLLABORATION_LOG_ACTION: 'collaboration:log-action',
+  COLLABORATION_ENCRYPT: 'collaboration:encrypt',
+  COLLABORATION_DECRYPT: 'collaboration:decrypt',
+
+  // LSP Additional Handlers (Milestone 32)
+  LSP_START_SERVER: 'lsp:start-server',
+  LSP_STOP_SERVER: 'lsp:stop-server',
+  LSP_GET_HOVER: 'lsp:get-hover',
+  LSP_GET_COMPLETION: 'lsp:get-completion',
+  LSP_GET_SIGNATURE_HELP: 'lsp:get-signature-help',
+
+  // Clipboard
+  CLIPBOARD_WRITE_TEXT: 'clipboard:write-text',
+  CLIPBOARD_READ_TEXT: 'clipboard:read-text',
+  CLIPBOARD_SAVE_IMAGE: 'clipboard:save-image'
 } as const
 
 // ─── Self Healing Types ─────────────────────────────────────────────
@@ -859,4 +923,31 @@ export interface DapState {
   activeFrameId: number | null
   errorOutput?: string
 }
+
+// ─── Collaboration Types (Milestone 31) ─────────────────────────────
+export interface CollaborationState {
+  roomId: string
+  roomName: string
+  users: string[]
+  active: boolean
+}
+
+export interface TimelineAction {
+  id: string
+  timestamp: string
+  user: string
+  action: string
+}
+
+// ─── LSP Additional Types (Milestone 32) ────────────────────────────
+export interface HoverResult {
+  contents: string[]
+  range?: {
+    startLineNumber: number
+    startColumn: number
+    endLineNumber: number
+    endColumn: number
+  }
+}
+
 

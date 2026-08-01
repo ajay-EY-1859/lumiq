@@ -6,6 +6,7 @@
 import { IPC } from '@shared/types'
 import type { Agent } from '@shared/types'
 import { saveAgent, listAgents, deleteAgent } from '../db/agents'
+import { agentEditHistoryService } from '../services/AgentEditHistoryService'
 import { handleWithTimeout, IPC_TIMEOUT } from './handleWithTimeout'
 
 export function registerAgentHandlers(): void {
@@ -26,5 +27,20 @@ export function registerAgentHandlers(): void {
   // ── Delete agent ──
   handleWithTimeout(IPC.AGENT_DELETE, IPC_TIMEOUT.short, (_event, agentId: string) => {
     return deleteAgent(agentId)
+  })
+
+  // ── Agent edit history ──
+  handleWithTimeout(IPC.AGENT_EDIT_HISTORY, IPC_TIMEOUT.short, (_event, sessionId?: string) => {
+    return agentEditHistoryService.getHistory(sessionId)
+  })
+
+  // ── Agent edit undo ──
+  handleWithTimeout(IPC.AGENT_EDIT_UNDO, IPC_TIMEOUT.medium, (_event, snapshotId: string) => {
+    return agentEditHistoryService.undoEdit(snapshotId)
+  })
+
+  // ── Agent edit redo ──
+  handleWithTimeout(IPC.AGENT_EDIT_REDO, IPC_TIMEOUT.medium, (_event, snapshotId: string) => {
+    return agentEditHistoryService.redoEdit(snapshotId)
   })
 }

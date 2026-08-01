@@ -104,6 +104,26 @@ export class SandboxRunner {
 
       console.log(`[SandboxRunner] Gated repair SUCCEEDED! Attempt ${attemptId} finalized as APPLIED.`)
       
+      // Auto-record episodic workspace memory
+      try {
+        const { workspaceMemoryService } = require('../WorkspaceMemoryService')
+        workspaceMemoryService.addMemory(
+          attempt.workspacePath,
+          attempt.sessionId,
+          'error_recovery',
+          `Successfully repaired failure on command "${attempt.command}". Bug explanation: ${proposal.explanation}`,
+          {
+            filePath: proposal.filePath,
+            command: attempt.command,
+            errorMessage: attempt.errorMessage,
+            targetContent: proposal.targetContent,
+            replacementContent: proposal.replacementContent
+          }
+        )
+      } catch (memErr) {
+        console.error('[SandboxRunner] Failed to record self-healing episodic memory:', memErr)
+      }
+      
       // Clean up in-memory backups since changes succeeded
       this.fileBackups.delete(fullFilePath)
       DiagnosticsWatcher.clearActiveAttempt()

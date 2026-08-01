@@ -11,7 +11,9 @@ export const DEFAULT_TOOL_SETTINGS: ToolSettings[] = [
   { name: 'WebSearchTool', enabled: true, permission: 'always-allow' },
   { name: 'TodoWriteTool', enabled: true, permission: 'always-allow' },
   { name: 'PowerShellTool', enabled: false, permission: 'always-ask' },
-  { name: 'SleepTool', enabled: true, permission: 'always-allow' }
+  { name: 'SleepTool', enabled: true, permission: 'always-allow' },
+  { name: 'GetEnvironmentTool', enabled: true, permission: 'always-allow' },
+  { name: 'UpdateEnvironmentTool', enabled: true, permission: 'always-ask' }
 ]
 
 export function mergeToolSettings(saved: ToolSettings[]): ToolSettings[] {

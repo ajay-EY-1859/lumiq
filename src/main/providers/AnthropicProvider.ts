@@ -5,6 +5,7 @@
 import type Anthropic from '@anthropic-ai/sdk'
 import type { AIProvider } from './AIProvider'
 import type { Message, ProviderConfig, SendOptions, SendResult, TestResult } from '@shared/types'
+import { sanitizeMessages } from './utils'
 
 export class AnthropicProvider implements AIProvider {
   private client: any = null
@@ -26,7 +27,8 @@ export class AnthropicProvider implements AIProvider {
   }
 
   async sendMessage(messages: Message[], options: SendOptions): Promise<SendResult> {
-    const anthropicMessages = messages
+    const sanitized = sanitizeMessages(messages, options)
+    const anthropicMessages = sanitized
       .filter((m) => m.role !== 'system')
       .map((m) => this.toAnthropicMessage(m))
 
@@ -45,11 +47,15 @@ export class AnthropicProvider implements AIProvider {
       input_schema: tool.inputSchema
     }))
 
+    const systemBlocks = options.systemPromptSegments && options.systemPromptSegments.length > 0
+      ? options.systemPromptSegments.map((text) => ({ type: 'text', text, cache_control: { type: 'ephemeral' } }))
+      : options.systemPrompt ? [{ type: 'text', text: options.systemPrompt, cache_control: { type: 'ephemeral' } }] : undefined
+
     const client = await this.getClient()
     const stream = client.messages.stream({
       model: options.model,
       max_tokens: options.maxTokens ?? 8096,
-      system: options.systemPrompt ? [{ type: 'text', text: options.systemPrompt, cache_control: { type: 'ephemeral' } }] : undefined,
+      system: systemBlocks,
       messages: anthropicMessages,
       tools: tools && tools.length > 0 ? tools : undefined
     } as any)

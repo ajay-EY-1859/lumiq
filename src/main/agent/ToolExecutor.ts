@@ -5,7 +5,9 @@
 // ═══════════════════════════════════════════════════════════════════
 
 import { BrowserWindow } from 'electron'
+import { resolve } from 'path'
 import { v4 as uuidv4 } from 'uuid'
+
 import { IPC } from '@shared/types'
 import type { ToolApprovalRequest, ToolApprovalResponse, ToolSettings } from '@shared/types'
 import type { Tool, ToolResult } from '../tools/Tool'
@@ -40,10 +42,13 @@ import { ArchiveTool } from '../tools/ArchiveTool'
 import { HttpTool } from '../tools/HttpTool'
 import { EnvTool } from '../tools/EnvTool'
 import { SymbolQueryTool } from '../tools/SymbolQueryTool'
-import { setWorkspaceRoot } from '../security/pathValidation'
+import { GetEnvironmentTool } from '../tools/GetEnvironmentTool'
+import { UpdateEnvironmentTool } from '../tools/UpdateEnvironmentTool'
+import { setWorkspaceRoot, normalizeDriveLetter } from '../security/pathValidation'
+import { getToolActivityLabel } from './toolActivity'
 
 // Read-only tools that can run concurrently
-const READ_ONLY_TOOLS = new Set(['FileReadTool', 'GrepTool', 'GlobTool', 'SleepTool', 'ListDirTool', 'GitTool', 'DiffTool', 'ImageReadTool', 'FileSearchTool', 'EnvTool', 'SymbolQueryTool'])
+const READ_ONLY_TOOLS = new Set(['FileReadTool', 'GrepTool', 'GlobTool', 'SleepTool', 'ListDirTool', 'GitTool', 'DiffTool', 'ImageReadTool', 'FileSearchTool', 'EnvTool', 'SymbolQueryTool', 'GetEnvironmentTool'])
 const MAX_CONCURRENCY = 10
 
 // Pending approval requests
@@ -77,9 +82,10 @@ export class ToolExecutor {
    * install directory — not useful and potentially dangerous).
    */
   setWorkspacePath(path: string | null): void {
-    this.workspacePath = path
+    const normalized = path ? resolve(normalizeDriveLetter(path)) : null
+    this.workspacePath = normalized
     // Synchronize with the security validation module
-    setWorkspaceRoot(path)
+    setWorkspaceRoot(normalized)
   }
 
   getWorkspacePath(): string | null {
@@ -119,7 +125,9 @@ export class ToolExecutor {
       new ArchiveTool(),
       new HttpTool(),
       new EnvTool(),
-      new SymbolQueryTool()
+      new SymbolQueryTool(),
+      new GetEnvironmentTool(),
+      new UpdateEnvironmentTool()
     ]
 
     for (const tool of toolInstances) {
@@ -315,14 +323,38 @@ export class ToolExecutor {
       }
     }
 
+    const window = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows().find((candidate) => !candidate.isDestroyed())
+    const activityMessage = getToolActivityLabel(toolName)
+
+    window?.webContents.send(IPC.TOOL_ACTIVITY, {
+      toolName,
+      phase: 'running',
+      message: activityMessage
+    })
+
     // Execute the tool
     try {
       const output = await refreshedTool.execute(enrichedInput, signal)
       const isError = output.startsWith('[ERROR]') || output.startsWith('[SECURITY BLOCKED]') || output.startsWith('[BLOCKED]')
+
+      window?.webContents.send(IPC.TOOL_ACTIVITY, {
+        toolName,
+        phase: 'completed',
+        message: isError ? `Finished ${toolName} with an issue.` : `Finished ${toolName}.`
+      })
+
       return { output, isError, errorCode: isError ? 'EXECUTION_ERROR' : undefined }
     } catch (error) {
+      const message = `Error executing tool "${toolName}": ${(error as Error).message}`
+
+      window?.webContents.send(IPC.TOOL_ACTIVITY, {
+        toolName,
+        phase: 'completed',
+        message: `Finished ${toolName} with an error.`
+      })
+
       return {
-        output: `Error executing tool "${toolName}": ${(error as Error).message}`,
+        output: message,
         isError: true,
         errorCode: 'EXECUTION_ERROR'
       }

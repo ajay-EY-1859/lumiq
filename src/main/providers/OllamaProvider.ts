@@ -6,6 +6,7 @@
 import axios from 'axios'
 import type { AIProvider } from './AIProvider'
 import type { Message, ProviderConfig, SendOptions, SendResult, TestResult } from '@shared/types'
+import { sanitizeMessages } from './utils'
 
 export class OllamaProvider implements AIProvider {
   private baseUrl: string
@@ -15,9 +16,10 @@ export class OllamaProvider implements AIProvider {
   }
 
   async sendMessage(messages: Message[], options: SendOptions): Promise<SendResult> {
+    const sanitized = sanitizeMessages(messages, options)
     const ollamaMessages = [
       ...(options.systemPrompt ? [{ role: 'system' as const, content: options.systemPrompt }] : []),
-      ...messages.map((m) => ({ role: m.role, content: m.content }))
+      ...sanitized.map((m) => ({ role: m.role, content: m.content }))
     ]
 
     const response = await axios.post(
@@ -49,7 +51,17 @@ export class OllamaProvider implements AIProvider {
       }
     }
 
-    return { content, tokensUsed: 0, stopReason: 'stop' }
+    // Fallback token estimation: approx 4 characters per token
+    let promptChars = 0
+    for (const msg of ollamaMessages) {
+      if (typeof msg.content === 'string') {
+        promptChars += msg.content.length
+      }
+    }
+    const responseChars = content.length
+    const tokensUsed = Math.ceil((promptChars + responseChars) / 4)
+
+    return { content, tokensUsed, stopReason: 'stop' }
   }
 
   async listModels(): Promise<string[]> {

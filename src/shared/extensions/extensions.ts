@@ -1,5 +1,6 @@
 /* eslint-disable no-redeclare */
 import { createDecorator } from '../instantiation/instantiation';
+import { IServerChannel } from '../services';
 
 export interface IExtensionDescription {
   readonly id: string;
@@ -81,5 +82,21 @@ export class ProxyChannel {
         };
       }
     }) as T;
+  }
+
+  static fromService<T>(service: T): IServerChannel {
+    return {
+      call: async (command: string, arg?: any): Promise<any> => {
+        const method = (service as any)[command];
+        if (typeof method !== 'function') {
+          throw new Error(`Method '${command}' not found on service.`);
+        }
+        if (Array.isArray(arg)) {
+          return await method.apply(service, arg);
+        } else {
+          return await method.call(service, arg);
+        }
+      }
+    };
   }
 }

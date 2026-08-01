@@ -12,7 +12,7 @@ import { existsSync } from 'fs'
 // Rust native module for SIMD-accelerated vector similarity
 let native: any = null
 try {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
+   
   native = require('@lumiq/native')
 } catch {
   // Rust module not available, will use JS fallback

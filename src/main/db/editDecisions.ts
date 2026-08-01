@@ -51,6 +51,31 @@ export function recordEditDecision(input: {
       now
     )
 
+  // Auto-record episodic workspace memory
+  if (input.decision === 'applied' || input.decision === 'accepted') {
+    try {
+      const session = db.prepare('SELECT workspace_path as workspacePath FROM sessions WHERE id = ?').get(input.sessionId) as { workspacePath: string | null } | undefined
+      const workspacePath = session?.workspacePath
+      if (workspacePath) {
+        const { workspaceMemoryService } = require('../services/WorkspaceMemoryService')
+        const relativeFile = input.targetFile.replace(workspacePath, '').replace(/^[\\/]/, '')
+        workspaceMemoryService.addMemory(
+          workspacePath,
+          input.sessionId,
+          'refactoring',
+          `Applied code modification to file "${relativeFile}".`,
+          {
+            filePath: relativeFile,
+            hunkHeader: input.hunkHeader,
+            patchText: input.patchText
+          }
+        )
+      }
+    } catch (memErr) {
+      console.error('[recordEditDecision] Failed to record episodic memory:', memErr)
+    }
+  }
+
   return {
     id,
     sessionId: input.sessionId,

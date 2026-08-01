@@ -5,6 +5,7 @@
 import type OpenAI from 'openai'
 import type { AIProvider } from './AIProvider'
 import type { Message, ProviderConfig, SendOptions, SendResult, TestResult } from '@shared/types'
+import { sanitizeMessages } from './utils'
 
 export class OpenAIProvider implements AIProvider {
   protected client: any = null
@@ -19,13 +20,15 @@ export class OpenAIProvider implements AIProvider {
       const { default: OpenAI } = await import('openai')
       this.client = new OpenAI({
         apiKey: this.config.apiKey,
-        baseURL: this.config.baseUrl || undefined
+        baseURL: this.config.baseUrl || undefined,
+        timeout: 60000 // 60 seconds connection/response timeout
       })
     }
     return this.client
   }
 
   async sendMessage(messages: Message[], options: SendOptions): Promise<SendResult> {
+    const sanitized = sanitizeMessages(messages, options)
     const openaiMessages: OpenAI.ChatCompletionMessageParam[] = []
 
     if (options.systemPrompt) {
@@ -33,7 +36,7 @@ export class OpenAIProvider implements AIProvider {
     }
 
     openaiMessages.push(
-      ...messages
+      ...sanitized
         .filter((m) => m.role !== 'system')
         .map((m) => this.toOpenAIMessage(m))
     )
@@ -96,6 +99,18 @@ export class OpenAIProvider implements AIProvider {
         toolName: toolCall.name,
         input: this.parseToolArguments(toolCall.arguments)
       }))
+
+    if (tokensUsed === 0) {
+      // Fallback token estimation: approx 4 characters per token
+      let promptChars = 0
+      for (const msg of openaiMessages) {
+        if (typeof msg.content === 'string') {
+          promptChars += msg.content.length
+        }
+      }
+      const responseChars = content.length
+      tokensUsed = Math.ceil((promptChars + responseChars) / 4)
+    }
 
     return {
       content,

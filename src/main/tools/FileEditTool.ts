@@ -7,6 +7,7 @@ import type { Tool } from './Tool'
 import { validatePathWithinWorkspace } from '../security/pathValidation'
 import { getService } from '@shared/instantiation/instantiationService'
 import { IComposerService } from '@shared/services'
+import { agentEditHistoryService } from '../services/AgentEditHistoryService'
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB limit
 
@@ -79,6 +80,7 @@ export class FileEditTool implements Tool {
         composer.stageWrite(filePath, newContent)
       } else {
         writeFileSync(filePath, newContent, 'utf8')
+        agentEditHistoryService.recordEdit('active-session', filePath, content, newContent)
       }
 
       // Generate diff for display

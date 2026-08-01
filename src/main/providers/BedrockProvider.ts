@@ -6,6 +6,7 @@
 
 import type { AIProvider } from './AIProvider'
 import type { Message, ProviderConfig, SendOptions, SendResult, TestResult } from '@shared/types'
+import { sanitizeMessages } from './utils'
 
 interface BedrockMessageBlock {
   role: 'user' | 'assistant'
@@ -71,8 +72,9 @@ export class BedrockProvider implements AIProvider {
   }
 
   async sendMessage(messages: Message[], options: SendOptions): Promise<SendResult> {
+    const sanitized = sanitizeMessages(messages, options)
     // Reconstruct missing toolCalls before sending to either API path
-    const preparedMessages = this.reconstructToolCalls(messages)
+    const preparedMessages = this.reconstructToolCalls(sanitized)
 
     if (this.isAnthropicModel(options.model)) {
       return this.sendViaMessagesApi(preparedMessages, options)

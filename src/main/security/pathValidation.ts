@@ -1,11 +1,21 @@
-import { relative, resolve, sep, dirname } from 'path'
+import { relative, resolve, sep, dirname, isAbsolute } from 'path'
 import { statSync, existsSync, realpathSync } from 'fs'
 
 let dynamicWorkspaceRoot: string | null = null
 let allowedExtraPaths: string[] = []
 
+export function normalizeDriveLetter(p: string): string {
+  if (process.platform === 'win32') {
+    const trimmed = p.trim()
+    if (/^[a-zA-Z]:[/\\]?$/.test(trimmed)) {
+      return trimmed.slice(0, 2) + '\\'
+    }
+  }
+  return p
+}
+
 export function setWorkspaceRoot(path: string | null): void {
-  dynamicWorkspaceRoot = path ? resolve(path) : null
+  dynamicWorkspaceRoot = path ? resolve(normalizeDriveLetter(path)) : null
 }
 
 export function setAllowedExtraPaths(paths: string[]): void {
@@ -22,7 +32,7 @@ export function validateWorkspaceRootCandidate(path: string | null): string | nu
     throw new Error('Invalid workspace path')
   }
 
-  const resolved = resolve(path)
+  const resolved = resolve(normalizeDriveLetter(path))
   const stat = statSync(resolved)
   if (!stat.isDirectory()) {
     throw new Error('Workspace path must be a directory')
@@ -63,11 +73,11 @@ function isPathInside(target: string, parent: string): boolean {
     }
 
     const rel = relative(realParent, checkTarget)
-    return rel === '' || (!rel.startsWith('..') && !rel.includes(`..${sep}`))
+    return rel === '' || (!isAbsolute(rel) && !rel.startsWith('..') && !rel.includes(`..${sep}`))
   } catch {
     // Fall back to simple relative check if file system queries fail
     const rel = relative(resolvedParent, resolvedTarget)
-    return rel === '' || (!rel.startsWith('..') && !rel.includes(`..${sep}`))
+    return rel === '' || (!isAbsolute(rel) && !rel.startsWith('..') && !rel.includes(`..${sep}`))
   }
 }
 
@@ -76,7 +86,8 @@ export function validatePathWithinWorkspace(targetPath: string): string {
     throw new Error('Invalid file path')
   }
 
-  const resolved = resolve(targetPath)
+  const workspaceRoot = getWorkspaceRoot()
+  const resolved = isAbsolute(targetPath) ? resolve(targetPath) : resolve(workspaceRoot, targetPath)
 
   // --- Check against allowed extra paths (e.g. explicitly attached files/folders) ---
   for (const allowedPath of allowedExtraPaths) {
@@ -84,8 +95,6 @@ export function validatePathWithinWorkspace(targetPath: string): string {
       return resolved
     }
   }
-
-  const workspaceRoot = getWorkspaceRoot()
 
   // --- Strict Symlink Traversal Protection ---
   try {

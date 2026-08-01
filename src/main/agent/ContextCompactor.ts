@@ -16,6 +16,7 @@ export interface SessionSummary {
   startMessageId: string
   endMessageId: string
   summaryContent: string
+  knowledgeGraph?: string
   createdAt: string
 }
 
@@ -40,7 +41,7 @@ export class ContextCompactor {
       const stmt = db.prepare(`
         SELECT id, session_id as sessionId, start_message_id as startMessageId,
                end_message_id as endMessageId, summary_content as summaryContent,
-               created_at as createdAt
+               knowledge_graph as knowledgeGraph, created_at as createdAt
         FROM chat_summaries
         WHERE session_id = ?
         ORDER BY created_at ASC
@@ -65,6 +66,15 @@ export class ContextCompactor {
     summaries.forEach((s, idx) => {
       segment += `--- Summary Block #${idx + 1} ---\n${s.summaryContent}\n`
     })
+
+    const graphSummaries = summaries.filter((s) => s.knowledgeGraph)
+    if (graphSummaries.length > 0) {
+      segment += '\nKNOWLEDGE GRAPH (Semantic Entity-Relationship Index of Past Context):\n'
+      graphSummaries.forEach((s, idx) => {
+        segment += `[Graph Segment #${idx + 1}]\n${s.knowledgeGraph}\n`
+      })
+    }
+
     segment += '═══════════════════════════════════════════════════════════════════\n'
     return segment
   }
@@ -87,23 +97,70 @@ export class ContextCompactor {
         const allMessages = getSessionMessages(sessionId)
         const nonSystemMessages = allMessages.filter((m) => m.role !== 'system')
 
-        // Compact if total messages > 20 and there are enough older messages to compact (we keep 5 raw)
+        // Compact if total messages > 20
         const COMPACTION_THRESHOLD = 20
-        const RAW_KEEP_COUNT = 5
 
         if (nonSystemMessages.length <= COMPACTION_THRESHOLD) {
           return // Below threshold
         }
 
-        console.log(`[ContextCompactor] Initiating background history compaction for session ${sessionId} (${nonSystemMessages.length} messages)`)
+        console.log(`[ContextCompactor] Initiating background topic-aware history compaction for session ${sessionId} (${nonSystemMessages.length} messages)`)
 
-        // Split messages:
-        // Older messages to compact = index 0 to (length - 6)
-        const messagesToCompact = nonSystemMessages.slice(0, -RAW_KEEP_COUNT)
+        const { embeddingManager } = require('./EmbeddingManager')
 
-        if (messagesToCompact.length === 0) return
+        // 1. Identify user messages and their indices
+        const userMessages: { index: number; content: string; vector?: number[] }[] = []
+        for (let i = 0; i < nonSystemMessages.length; i++) {
+          if (nonSystemMessages[i].role === 'user') {
+            userMessages.push({ index: i, content: nonSystemMessages[i].content })
+          }
+        }
 
-        // 1. Choose background model (Gemini 1.5 Flash preferred)
+        if (userMessages.length < 2) {
+          return // Not enough topics to segment
+        }
+
+        // 2. Fetch embeddings for user messages
+        await Promise.all(
+          userMessages.map(async (um) => {
+            um.vector = await embeddingManager.getEmbedding(um.content)
+          })
+        )
+
+        // 3. Find boundaries where cosine similarity < 0.45
+        const boundaries: number[] = [0] // Starts of new topics (indices in nonSystemMessages)
+        for (let i = 1; i < userMessages.length; i++) {
+          const prev = userMessages[i - 1]
+          const curr = userMessages[i]
+          if (prev.vector && curr.vector) {
+            const similarity = embeddingManager.cosineSimilarity(prev.vector, curr.vector)
+            if (similarity < 0.45) {
+              boundaries.push(curr.index)
+            }
+          }
+        }
+
+        // 4. Create topic blocks
+        const topics: Message[][] = []
+        for (let i = 0; i < boundaries.length; i++) {
+          const start = boundaries[i]
+          const end = i + 1 < boundaries.length ? boundaries[i + 1] : nonSystemMessages.length
+          topics.push(nonSystemMessages.slice(start, end))
+        }
+
+        // The last topic group is the active topic; we keep it raw
+        const completedTopics = topics.slice(0, -1)
+
+        if (completedTopics.length === 0) {
+          return // No completed topics to compact
+        }
+
+        const completedMessagesCount = completedTopics.flat().length
+        if (completedMessagesCount === 0) return
+
+        console.log(`[ContextCompactor] Found ${completedTopics.length} completed topics containing ${completedMessagesCount} messages. Compacting completed topics...`)
+
+        // 5. Select background model (Gemini 1.5 Flash preferred)
         let summarizerConfig = activeConfig
         let summarizerModel = activeModel
 
@@ -115,72 +172,112 @@ export class ContextCompactor {
 
         const provider = ProviderFactory.create(summarizerConfig)
 
-        // 2. Format older chat logs for the summarizer
-        let chatLogs = ''
-        messagesToCompact.forEach((m) => {
-          const roleLabel = m.role === 'user' ? 'User' : m.role === 'assistant' ? 'Assistant' : 'Tool Result'
-          chatLogs += `[${roleLabel}]: ${m.content.slice(0, 1000)}${m.content.length > 1000 ? '...' : ''}\n`
-          if (m.toolName) {
-            chatLogs += `  Invoked Tool: ${m.toolName} with Input: ${JSON.stringify(m.toolInput)}\n`
-          }
-        })
+        // 6. Summarize each completed topic block
+        for (const topicMessages of completedTopics) {
+          let chatLogs = ''
+          topicMessages.forEach((m) => {
+            const roleLabel = m.role === 'user' ? 'User' : m.role === 'assistant' ? 'Assistant' : 'Tool Result'
+            chatLogs += `[${roleLabel}]: ${m.content.slice(0, 1000)}${m.content.length > 1000 ? '...' : ''}\n`
+            if (m.toolName) {
+              chatLogs += `  Invoked Tool: ${m.toolName} with Input: ${JSON.stringify(m.toolInput)}\n`
+            }
+          })
 
-        const prompt = `You are a background history compactor for a software development AI agent.
-Analyze the following chronological segment of a chat session:
+          const prompt = `You are a background history compactor for a software development AI agent.
+Analyze the following chronological segment of a chat session representing a single topic thread:
 ${chatLogs}
 
-Create a highly detailed, concise bullet-point summary of this chat segment. Make sure to capture:
-1. The primary goals or tasks the user requested.
-2. Any major decisions made or coding preferences stated.
-3. The names of files that were created, viewed, or modified.
-4. Any errors encountered and how they were resolved.
+Create a highly detailed, concise bullet-point summary of this chat segment. Also, extract a Knowledge Graph representing the semantic entity-relationship index of this chat segment.
+You MUST respond in JSON format matching this schema:
+{
+  "summary": "bullet-point summary capturing tasks, goals, preferences, file changes, and errors",
+  "knowledgeGraph": "A text-based graph representation listing key entities (Files, Technologies, Decisions, Bugs, Features) and their relationships. Format it exactly as:
+Nodes:
+- [EntityA]
+- [EntityB]
+Relationships:
+- [EntityA] --(relationship)--> [EntityB]"
+}
 
-Keep the summary precise and highly professional. Avoid generalities.
-Respond ONLY with the bullet points. Do not include introductory or concluding phrases.`
+Ensure the JSON output is valid and contains no other text.`
 
-        const messages: Message[] = [
-          {
-            id: 'summary_task',
-            sessionId: 'summary_task',
-            role: 'user',
-            content: prompt,
-            createdAt: new Date().toISOString()
+          let result: any = null
+          try {
+            result = await provider.sendMessage([
+              {
+                id: 'summary_task',
+                sessionId: 'summary_task',
+                role: 'user',
+                content: prompt,
+                createdAt: new Date().toISOString()
+              }
+            ], {
+              model: summarizerModel,
+              stream: false
+            })
+          } catch (err) {
+            console.warn(`[ContextCompactor] Compaction failed with primary model ${summarizerModel}, trying active model fallback:`, err)
+            if (summarizerConfig.provider !== activeConfig.provider || summarizerModel !== activeModel) {
+              try {
+                const fallbackProvider = ProviderFactory.create(activeConfig)
+                result = await fallbackProvider.sendMessage([
+                  {
+                    id: 'summary_task',
+                    sessionId: 'summary_task',
+                    role: 'user',
+                    content: prompt,
+                    createdAt: new Date().toISOString()
+                  }
+                ], {
+                  model: activeModel,
+                  stream: false
+                })
+              } catch (fallbackErr) {
+                console.error('[ContextCompactor] Fallback compaction model also failed:', fallbackErr)
+                continue
+              }
+            } else {
+              continue
+            }
           }
-        ]
 
-        const result = await provider.sendMessage(messages, {
-          model: summarizerModel,
-          stream: false
-        })
+          const rawContent = result?.content?.trim()
+          if (!rawContent) continue
 
-        const summaryContent = result.content.trim()
+          let parsedResult = { summary: '', knowledgeGraph: '' }
+          try {
+            let cleanContent = rawContent.replace(/```json/g, '').replace(/```/g, '').trim()
+            const parsed = JSON.parse(cleanContent)
+            parsedResult.summary = parsed.summary || ''
+            parsedResult.knowledgeGraph = parsed.knowledgeGraph || ''
+          } catch {
+            parsedResult.summary = rawContent
+          }
 
-        if (!summaryContent) {
-          throw new Error('Summary output was empty')
+          if (!parsedResult.summary) {
+            parsedResult.summary = rawContent
+          }
+
+          const firstMsgId = topicMessages[0]!.id
+          const lastMsgId = topicMessages[topicMessages.length - 1]!.id
+
+          // Write summary and delete messages in a transaction
+          const commitTx = db.transaction(() => {
+            const insertStmt = db.prepare(`
+              INSERT INTO chat_summaries (id, session_id, start_message_id, end_message_id, summary_content, knowledge_graph)
+              VALUES (?, ?, ?, ?, ?, ?)
+            `)
+            insertStmt.run(uuidv4(), sessionId, firstMsgId, lastMsgId, parsedResult.summary, parsedResult.knowledgeGraph)
+
+            const deleteStmt = db.prepare('DELETE FROM messages WHERE id = ?')
+            for (const msg of topicMessages) {
+              deleteStmt.run(msg.id)
+            }
+          })
+          commitTx()
         }
 
-        const firstMsgId = messagesToCompact[0]!.id
-        const lastMsgId = messagesToCompact[messagesToCompact.length - 1]!.id
-
-        // 3. Write summary and delete compacted messages in a single atomic transaction
-        const commitTx = db.transaction(() => {
-          // Insert summary
-          const insertStmt = db.prepare(`
-            INSERT INTO chat_summaries (id, session_id, start_message_id, end_message_id, summary_content)
-            VALUES (?, ?, ?, ?, ?)
-          `)
-          insertStmt.run(uuidv4(), sessionId, firstMsgId, lastMsgId, summaryContent)
-
-          // Delete original compacted messages
-          const deleteStmt = db.prepare('DELETE FROM messages WHERE id = ?')
-          for (const msg of messagesToCompact) {
-            deleteStmt.run(msg.id)
-          }
-        })
-
-        commitTx()
-        console.log(`[ContextCompactor] Successfully compacted ${messagesToCompact.length} messages into a single summary block.`)
-
+        console.log(`[ContextCompactor] Successfully compacted completed topics for session ${sessionId}`)
       } catch (err) {
         console.error('[ContextCompactor] Failed to compact session in background:', err)
       }

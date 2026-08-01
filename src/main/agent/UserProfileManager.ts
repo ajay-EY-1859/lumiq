@@ -19,6 +19,7 @@ export interface ProfileFact {
 
 export class UserProfileManager {
   private static instance: UserProfileManager
+  private daemonInterval: NodeJS.Timeout | null = null
 
   private constructor() {}
 
@@ -186,6 +187,140 @@ Respond ONLY with the raw JSON array. Do not write any markdown codeblocks, expl
         console.error('[UserProfileManager] Fact extraction failed in background:', err)
       }
     }, 1000) // Delay by 1 second to let main chat loop finalize smoothly
+  }
+
+  /**
+   * Consolidates and de-duplicates facts by clustering them semantically using cosine similarity
+   * and asking the AI provider to resolve conflicts and merge updates.
+   */
+  public async consolidateFacts(): Promise<void> {
+    try {
+      const facts = this.getFacts()
+      if (facts.length < 2) return
+
+      const { embeddingManager } = require('./EmbeddingManager')
+      
+      // Get embeddings for all facts
+      const factEmbeddings = await Promise.all(
+        facts.map(async (f) => ({
+          fact: f,
+          vector: await embeddingManager.getEmbedding(f.fact)
+        }))
+      )
+
+      const db = getDatabase()
+      const resolvedPairs = new Set<string>()
+
+      for (let i = 0; i < factEmbeddings.length; i++) {
+        for (let j = i + 1; j < factEmbeddings.length; j++) {
+          const itemA = factEmbeddings[i]
+          const itemB = factEmbeddings[j]
+          
+          const key = [itemA.fact.id, itemB.fact.id].sort().join('-')
+          if (resolvedPairs.has(key)) continue
+
+          const similarity = embeddingManager.cosineSimilarity(itemA.vector, itemB.vector)
+          if (similarity >= 0.65) {
+            resolvedPairs.add(key)
+            console.log(`[UserProfileManager] Found semantically overlapping facts (Similarity: ${(similarity * 100).toFixed(1)}%):
+  - Fact A: "${itemA.fact.fact}"
+  - Fact B: "${itemB.fact.fact}"`)
+
+            // Prompt active provider to consolidate
+            const configs = require('../db/apiConfigs').listApiConfigs()
+            const config = configs.find(c => c.isActive && c.provider === 'gemini') || configs.find(c => c.isActive)
+            if (!config) continue
+            
+            const provider = ProviderFactory.create(config)
+            const prompt = `You are a background fact consolidator for an AI coding assistant.
+Analyze these two developer profile facts:
+Fact A (ID: ${itemA.fact.id}, Category: ${itemA.fact.category}): "${itemA.fact.fact}"
+Fact B (ID: ${itemB.fact.id}, Category: ${itemB.fact.category}): "${itemB.fact.fact}"
+
+Determine if they contain duplicate, redundant, or contradictory information.
+Return a valid JSON object matching this schema:
+{
+  "action": "merge" | "delete_a" | "delete_b" | "none",
+  "explanation": "Brief explanation of the conflict or redundancy",
+  "mergedFact": "The consolidated fact statement if the action is 'merge'",
+  "mergedCategory": "The category for the merged fact"
+}
+
+Ensure the output is ONLY the raw JSON block without markdown code blocks.`
+
+            const response = await provider.sendMessage([
+              {
+                id: 'fact_consolidate',
+                sessionId: 'fact_consolidate',
+                role: 'user',
+                content: prompt,
+                createdAt: new Date().toISOString()
+              }
+            ], {
+              model: config.defaultModel,
+              stream: false
+            })
+
+            const cleanContent = response.content.trim().replace(/```json/g, '').replace(/```/g, '').trim()
+            try {
+              const result = JSON.parse(cleanContent)
+              if (result.action === 'delete_a') {
+                this.deleteFact(itemA.fact.id)
+                console.log(`[UserProfileManager] Deleted redundant Fact A: "${itemA.fact.fact}"`)
+              } else if (result.action === 'delete_b') {
+                this.deleteFact(itemB.fact.id)
+                console.log(`[UserProfileManager] Deleted redundant Fact B: "${itemB.fact.fact}"`)
+              } else if (result.action === 'merge' && result.mergedFact) {
+                // Update Fact A, delete Fact B
+                db.prepare('UPDATE user_profile_knowledge SET fact = ?, category = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+                  .run(result.mergedFact, result.mergedCategory || itemA.fact.category, itemA.fact.id)
+                this.deleteFact(itemB.fact.id)
+                console.log(`[UserProfileManager] Merged facts into: "${result.mergedFact}"`)
+              }
+            } catch (err) {
+              console.error('[UserProfileManager] Failed to parse consolidation action:', err)
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.error('[UserProfileManager] Consolidation sweep failed:', err)
+    }
+  }
+
+  /**
+   * Starts the memory consolidation background daemon.
+   * Runs once on startup after 10 seconds, then sweeps periodically.
+   */
+  public startDaemon(intervalMs: number = 24 * 60 * 60 * 1000): void {
+    if (this.daemonInterval) return
+
+    // Run initial sweep after 10 seconds to avoid interfering with startup
+    setTimeout(() => {
+      this.consolidateFacts().catch((err) => {
+        console.error('[UserProfileManager] Initial consolidation sweep failed:', err)
+      })
+    }, 10000)
+
+    // Schedule periodic sweeps
+    this.daemonInterval = setInterval(() => {
+      this.consolidateFacts().catch((err) => {
+        console.error('[UserProfileManager] Periodic consolidation sweep failed:', err)
+      })
+    }, intervalMs)
+
+    console.log(`[UserProfileManager] Memory Consolidation Daemon started with interval: ${intervalMs}ms`)
+  }
+
+  /**
+   * Stops the memory consolidation background daemon.
+   */
+  public stopDaemon(): void {
+    if (this.daemonInterval) {
+      clearInterval(this.daemonInterval)
+      this.daemonInterval = null
+      console.log('[UserProfileManager] Memory Consolidation Daemon stopped')
+    }
   }
 }
 

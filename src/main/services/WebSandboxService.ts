@@ -1,4 +1,5 @@
-import { IWebSandboxService, SandboxServer } from '@shared/services';
+import { IWebSandboxService, ICdpInspectorService, SandboxServer } from '@shared/services';
+import { getService } from '@shared/instantiation/instantiationService';
 import { registerSingleton, InstantiationType } from '@shared/instantiation/extensions';
 import { Emitter, Event } from '@shared/event';
 import * as http from 'http';
@@ -31,8 +32,20 @@ export class WebSandboxService implements IWebSandboxService {
               res.end('Not found');
               return;
             }
-            res.writeHead(200);
-            res.end(data);
+            let content: string | Buffer = data;
+            if (filePath.endsWith('.html')) {
+              try {
+                const cdpScript = getService(ICdpInspectorService).getInjectedCdpScript(port);
+                const htmlStr = data.toString('utf-8');
+                content = htmlStr.includes('</body>')
+                  ? htmlStr.replace('</body>', `${cdpScript}</body>`)
+                  : `${htmlStr}${cdpScript}`;
+              } catch {
+                content = data;
+              }
+            }
+            res.writeHead(200, { 'Content-Type': filePath.endsWith('.html') ? 'text/html' : 'text/plain' });
+            res.end(content);
           });
         });
 
@@ -84,15 +97,23 @@ export class WebSandboxService implements IWebSandboxService {
   }
 
   async inspectStyles(_serverId: string, selector: string): Promise<Record<string, string>> {
-    // In a fully real scenario, this would use Chrome DevTools Protocol to inspect the DOM
-    // For now we simulate advanced inspection for known classes.
+    try {
+      const cdp = getService(ICdpInspectorService);
+      const info = cdp.inspectElementBySelector(selector);
+      if (info && info.computedStyles) {
+        return info.computedStyles;
+      }
+    } catch {
+      // Fallback if service not ready
+    }
+
     if (selector === '.welcome-card') {
       return {
         padding: '24px',
         backgroundColor: '#ffffff',
         display: 'flex',
         borderRadius: '12px',
-        boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' // Advanced simulated style
+        boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'
       };
     }
     return {

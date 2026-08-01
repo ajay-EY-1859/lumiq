@@ -18,6 +18,7 @@ import { ComposerWorkspace } from './components/composer/ComposerWorkspace'
 import { DebuggerPanel } from './components/debugger/DebuggerPanel'
 import { ToastContainer } from './components/ui/Toast'
 import { ErrorBoundary } from './components/ui/ErrorBoundary'
+import { HubPage } from './components/hub/HubPage'
 import { useSettingsStore } from './store/settingsStore'
 import { useSessionStore } from './store/sessionStore'
 import { useProviderStore } from './store/providerStore'
@@ -34,7 +35,7 @@ import {
   debugStepOutAction
 } from './utils/shortcutExecutor'
 
-type Page = 'chat' | 'settings' | 'agents' | 'composer'
+type Page = 'chat' | 'settings' | 'agents' | 'composer' | 'hub'
 type BottomPanel = 'tasks' | 'search' | 'git' | 'semantic' | 'debug'
 
 // ── Resizable divider between editor and chat ─────────────────────────
@@ -80,6 +81,52 @@ function ResizeDivider({ onDrag }: { onDrag: (dx: number) => void }): React.JSX.
   )
 }
 
+const DEFAULT_KEYBINDINGS: Record<string, string[]> = {
+  newSession: ['Ctrl', 'N'],
+  toggleSidebar: ['Ctrl', 'B'],
+  openSettings: ['Ctrl', ','],
+  toggleEditor: ['Ctrl', 'Shift', 'E'],
+  focusSearch: ['Ctrl', 'Shift', 'F'],
+  focusGit: ['Ctrl', 'Shift', 'G']
+}
+
+function matchesKeybinding(e: KeyboardEvent, keys: string[] | undefined): boolean {
+  if (!keys || keys.length === 0) return false
+
+  const eventKeys = new Set<string>()
+  if (e.ctrlKey || e.metaKey) eventKeys.add('Ctrl')
+  if (e.shiftKey) eventKeys.add('Shift')
+  if (e.altKey) eventKeys.add('Alt')
+
+  let primaryKey = e.key.toUpperCase()
+  if (['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) {
+    return false
+  }
+
+  if (e.key === ',') primaryKey = ','
+  if (e.key === '.') primaryKey = '.'
+  if (e.key === '/') primaryKey = '/'
+  if (e.key === ';') primaryKey = ';'
+  if (e.key === "'") primaryKey = "'"
+  if (e.key === '[') primaryKey = '['
+  if (e.key === ']') primaryKey = ']'
+  if (e.key === '`') primaryKey = '`'
+  if (e.key === '\\') primaryKey = '\\'
+  if (e.key === '-') primaryKey = '-'
+  if (e.key === '=') primaryKey = '='
+  if (e.key === ' ') primaryKey = 'Space'
+
+  const bindingModifiers = keys.filter((k) => ['Ctrl', 'Shift', 'Alt'].includes(k))
+  const bindingPrimaryKey = keys.find((k) => !['Ctrl', 'Shift', 'Alt'].includes(k))
+
+  if (bindingModifiers.length !== eventKeys.size) return false
+  for (const mod of bindingModifiers) {
+    if (!eventKeys.has(mod)) return false
+  }
+
+  return bindingPrimaryKey?.toUpperCase() === primaryKey.toUpperCase()
+}
+
 export default function App(): React.JSX.Element {
   const [currentPage, setCurrentPage] = useState<Page>('chat')
   const [sidebarVisible, setSidebarVisible] = useState(true)
@@ -88,7 +135,7 @@ export default function App(): React.JSX.Element {
   const [editorWidth, setEditorWidth] = useState(420)
   const [editorVisible, setEditorVisible] = useState(true)
   const [isElectronAvailable, setIsElectronAvailable] = useState(true)
-  const { loadSettings, loadWorkspaceSettings } = useSettingsStore()
+  const { settings, loadSettings, loadWorkspaceSettings } = useSettingsStore()
   const { loadSessions, activeSessionId, sessions } = useSessionStore()
   const { loadProviders } = useProviderStore()
   const searchMode = useSearchStore(s => s.mode)
@@ -128,6 +175,7 @@ export default function App(): React.JSX.Element {
         } else {
           runProjectAction()
         }
+        return
       }
       if (e.key === 'F6') {
         e.preventDefault()
@@ -136,10 +184,12 @@ export default function App(): React.JSX.Element {
         } else {
           buildProjectAction()
         }
+        return
       }
       if (e.key === 'F10') {
         e.preventDefault()
         debugStepOverAction()
+        return
       }
       if (e.key === 'F11') {
         e.preventDefault()
@@ -148,19 +198,39 @@ export default function App(): React.JSX.Element {
         } else {
           debugStepIntoAction()
         }
+        return
       }
 
-      if (e.ctrlKey || e.metaKey) {
-        if (e.key === 'b') { e.preventDefault(); setSidebarVisible((v) => !v) }
-        if (e.key === ',') { e.preventDefault(); setCurrentPage('settings') }
-        if (e.shiftKey && e.key === 'E') { e.preventDefault(); setEditorVisible((v) => !v) }
-        if (e.shiftKey && e.key === 'F') { e.preventDefault(); setBottomPanel('search') }
-        if (e.shiftKey && e.key === 'G') { e.preventDefault(); setBottomPanel('git') }
+      const kb = { ...DEFAULT_KEYBINDINGS, ...settings.keybindings }
+
+      if (matchesKeybinding(e, kb.toggleSidebar)) {
+        e.preventDefault()
+        setSidebarVisible((v) => !v)
+      } else if (matchesKeybinding(e, kb.openSettings)) {
+        e.preventDefault()
+        setCurrentPage('settings')
+      } else if (matchesKeybinding(e, kb.newSession)) {
+        e.preventDefault()
+        const { createSession, setActiveSession } = useSessionStore.getState()
+        const { activeProvider, activeModel } = useProviderStore.getState()
+        createSession(activeProvider, activeModel).then((session) => {
+          setActiveSession(session.id)
+          setCurrentPage('chat')
+        })
+      } else if (matchesKeybinding(e, kb.toggleEditor)) {
+        e.preventDefault()
+        setEditorVisible((v) => !v)
+      } else if (matchesKeybinding(e, kb.focusSearch)) {
+        e.preventDefault()
+        setBottomPanel('search')
+      } else if (matchesKeybinding(e, kb.focusGit)) {
+        e.preventDefault()
+        setBottomPanel('git')
       }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [])
+  }, [settings.keybindings])
 
   const handleNavigate = useCallback((page: Page) => setCurrentPage(page), [])
 
@@ -305,6 +375,7 @@ export default function App(): React.JSX.Element {
             {currentPage === 'settings' && <SettingsPage onNavigate={handleNavigate} />}
             {currentPage === 'agents' && <AgentBuilderPage onNavigate={handleNavigate} />}
             {currentPage === 'composer' && <ComposerWorkspace onNavigate={handleNavigate} />}
+            {currentPage === 'hub' && <HubPage onNavigate={handleNavigate} />}
           </main>
         </div>
         <ToastContainer />

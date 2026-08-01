@@ -1,6 +1,6 @@
 /* eslint-disable no-redeclare */
 import { createDecorator } from './instantiation/instantiation';
-import { DapState, McpServer, McpToolDefinition, McpStatusChange } from './types';
+import { DapState, McpServer, McpToolDefinition, McpStatusChange, CollaborationState, TimelineAction, HoverResult } from './types';
 
 // ── TraceLogger Service ──
 export interface TracePayload {
@@ -277,5 +277,105 @@ export interface IWebSandboxService {
   startServer(workspacePath: string): Promise<SandboxServer>;
   stopServer(serverId: string): Promise<void>;
   inspectStyles(serverId: string, selector: string): Promise<Record<string, string>>;
+}
+
+// ── CDP Inspector Service ──
+export const ICdpInspectorService = createDecorator<ICdpInspectorService>('cdpInspectorService');
+export interface ICdpInspectorService {
+  getDomTree(workspacePath: string, htmlContent?: string): any;
+  inspectElementBySelector(selector: string, htmlContent?: string): any;
+  updateElementStyle(selector: string, property: string, value: string): boolean;
+  getConsoleLogs(): any[];
+  logMessage(level: 'info' | 'warn' | 'error' | 'log', message: string, source?: string): void;
+  takeHeapSnapshot(): { totalJSHeapSize: number; usedJSHeapSize: number; timestamp: number };
+  getInjectedCdpScript(port: number): string;
+}
+
+// ── IpcFramework Service (Milestone 26) ──
+export interface IChannel {
+  call(command: string, arg?: any): Promise<any>;
+}
+export interface IServerChannel {
+  call(command: string, arg: any): Promise<any>;
+}
+export const IIpcFrameworkService = createDecorator<IIpcFrameworkService>('ipcFrameworkService');
+export interface IIpcFrameworkService {
+  registerChannel(channelName: string, channel: IServerChannel): void;
+  getChannel(channelName: string): IChannel;
+}
+
+// ── TestOrchestrator Service (Milestone 27) ──
+export interface TestRunResult {
+  passed: boolean;
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+}
+export const ITestOrchestratorService = createDecorator<ITestOrchestratorService>('testOrchestratorService');
+export interface ITestOrchestratorService {
+  generateTestSuite(filePath: string, testContent: string): Promise<string>;
+  runTestSuite(testFilePath: string): Promise<TestRunResult>;
+  autonomousRepairLoop(testFilePath: string, sourceFilePath: string, maxRetries?: number): Promise<boolean>;
+}
+
+// ── DatabaseExplorer Service (Milestone 28) ──
+export interface DBTableInfo {
+  name: string;
+  type: string;
+}
+export interface DBColumnInfo {
+  name: string;
+  type: string;
+  notnull: boolean;
+  dflt_value: any;
+  pk: boolean;
+}
+export const IDatabaseExplorerService = createDecorator<IDatabaseExplorerService>('databaseExplorerService');
+export interface IDatabaseExplorerService {
+  getTables(): Promise<DBTableInfo[]>;
+  getTableSchema(tableName: string): Promise<DBColumnInfo[]>;
+  executeQuery(sql: string): Promise<any[]>;
+  generateSchemaDeclaration(format: 'prisma' | 'drizzle'): Promise<string>;
+  generateMockData(tableName: string, count: number): Promise<any[]>;
+}
+
+// ── Deployment Service (Milestone 29) ──
+export const IDeploymentService = createDecorator<IDeploymentService>('deploymentService');
+export interface IDeploymentService {
+  generateIaC(workspacePath: string, target: 'docker' | 'serverless'): Promise<{ filePath: string; content: string }>;
+  verifyPreDeployBuild(workspacePath: string): Promise<{ success: boolean; log: string }>;
+}
+
+// ── ArchitectWiki Service (Milestone 30) ──
+export const IArchitectWikiService = createDecorator<IArchitectWikiService>('architectWikiService');
+export interface IArchitectWikiService {
+  analyzeCodebase(workspacePath: string): Promise<{ filesParsed: number; importsMap: Record<string, string[]> }>;
+  generateMermaidDiagram(workspacePath: string): Promise<string>;
+  writeWikiFile(workspacePath: string): Promise<string>;
+}
+
+// ── Collaboration Service (Milestone 31) ──
+export const ICollaborationService = createDecorator<ICollaborationService>('collaborationService');
+export interface ICollaborationService {
+  createRoom(roomName: string, passcode?: string): Promise<{ roomId: string; inviteCode: string }>;
+  joinRoom(inviteCode: string, user: string): Promise<boolean>;
+  leaveRoom(): Promise<void>;
+  getRoomState(): CollaborationState;
+  broadcastCursor(filePath: string, line: number, column: number): void;
+  sendChangePacket(filePath: string, changeText: string, range: any): void;
+  getTimeline(): TimelineAction[];
+  logTimelineAction(user: string, action: string): void;
+  encryptPayload(payload: string): string;
+  decryptPayload(cipher: string): string;
+}
+
+// ── LSP Engine Service (Milestone 32) ──
+export const ILspService = createDecorator<ILspService>('lspService');
+export interface ILspService {
+  startLanguageServer(languageId: string, workspacePath: string): Promise<boolean>;
+  stopLanguageServer(languageId: string): Promise<void>;
+  getHover(filePath: string, line: number, column: number, content?: string): Promise<HoverResult | null>;
+  getCompletion(filePath: string, line: number, column: number, content?: string): Promise<any[]>;
+  getSignatureHelp(filePath: string, line: number, column: number, content?: string): Promise<any | null>;
 }
 

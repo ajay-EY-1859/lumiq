@@ -5,7 +5,8 @@ import {
   setWorkspaceRoot,
   setAllowedExtraPaths,
   getAllowedExtraPaths,
-  validatePathWithinWorkspace
+  validatePathWithinWorkspace,
+  validateWorkspaceRootCandidate
 } from '../pathValidation'
 
 describe('pathValidation - Extra Allowed Paths (Attachments)', () => {
@@ -44,6 +45,11 @@ describe('pathValidation - Extra Allowed Paths (Attachments)', () => {
     expect(resolve(result)).toBe(resolve(insidePath))
   })
 
+  it('should resolve and validate relative paths relative to the workspace root, not process.cwd()', () => {
+    const result = validatePathWithinWorkspace('file.txt')
+    expect(resolve(result)).toBe(resolve(join(workspaceRoot, 'file.txt')))
+  })
+
   it('should throw an error for paths outside the workspace by default', () => {
     const outsidePath = join(externalDir, 'file.txt')
     expect(() => validatePathWithinWorkspace(outsidePath)).toThrow(/outside.*workspace/i)
@@ -68,4 +74,19 @@ describe('pathValidation - Extra Allowed Paths (Attachments)', () => {
     const unauthorizedPath = join(testRoot, 'unauthorized_file.txt')
     expect(() => validatePathWithinWorkspace(unauthorizedPath)).toThrow()
   })
+
+  if (process.platform === 'win32') {
+    it('should normalize Windows drive letter candidate (e.g. "D:", "D:/", "d:\\") to drive root', () => {
+      const currentDriveLetter = __dirname.substring(0, 2) // e.g. "d:" or "c:"
+      const formats = [
+        currentDriveLetter,
+        currentDriveLetter + '/',
+        currentDriveLetter + '\\'
+      ]
+      for (const format of formats) {
+        const resolved = validateWorkspaceRootCandidate(format)
+        expect(resolved).toBe(resolve(currentDriveLetter + '\\'))
+      }
+    })
+  }
 })

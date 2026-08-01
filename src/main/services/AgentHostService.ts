@@ -4,6 +4,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { normalizeDriveLetter } from '../security/pathValidation';
+
 
 const execAsync = promisify(exec);
 
@@ -29,7 +31,7 @@ export class AgentHostService implements IAgentHostService {
 
   async spawnHost(workspacePath: string, sandboxConfig: AgentSandboxConfig = {}): Promise<AgentHostSession> {
     const sessionId = Math.random().toString(36).substring(2, 9);
-    const resolvedWorkspace = path.resolve(workspacePath);
+    const resolvedWorkspace = path.resolve(normalizeDriveLetter(workspacePath));
     
     // Setup virtual workspace directory inside the workspace
     const lumiqDir = path.join(resolvedWorkspace, '.lumiq');

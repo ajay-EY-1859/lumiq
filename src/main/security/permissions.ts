@@ -17,7 +17,8 @@ const LIMITED_AUTO_APPROVE = new Set([
   'WebSearchTool',
   'WebFetchTool',
   'TodoWriteTool',
-  'SleepTool'
+  'SleepTool',
+  'GetEnvironmentTool'
 ])
 
 // Tools that are safe to auto-approve in EXTENDED mode

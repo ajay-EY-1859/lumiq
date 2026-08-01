@@ -46,6 +46,17 @@ export function registerFsHandlers(): void {
     try {
       const safePath = validatePathWithinWorkspace(data.filePath)
       await writeFile(safePath, data.content, 'utf-8')
+
+      // Non-blocking background DevOps validation sweep
+      try {
+        const { devOpsAgentService } = require('../services/DevOpsAgentService')
+        devOpsAgentService.onFileSave(safePath).catch((err) => {
+          console.error('[fsHandlers] DevOps background sweep failed:', err)
+        })
+      } catch (devOpsErr) {
+        console.error('[fsHandlers] Failed to load DevOpsAgentService:', devOpsErr)
+      }
+
       return true
     } catch (error) {
       console.error(`Failed to write file: ${data.filePath}`, error)

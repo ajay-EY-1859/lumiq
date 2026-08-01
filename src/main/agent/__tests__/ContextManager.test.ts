@@ -86,11 +86,12 @@ describe('ContextManager & Memory Injection Tests', () => {
 
     const result = contextManager.trimMessages(messages, 'test-session')
 
-    // Find the system prompt in the result
-    const systemPrompt = result.find((m) => m.role === 'system')
-    expect(systemPrompt).toBeDefined()
-    expect(systemPrompt?.content).toContain('[TECH_STACK] Prefers TypeScript over Javascript')
-    expect(systemPrompt?.content).toContain('[OS] Runs Windows 11')
+    // Find the system prompts in the result
+    const systemPrompts = result.filter((m) => m.role === 'system')
+    expect(systemPrompts.length).toBeGreaterThan(0)
+    const fullSystemContent = systemPrompts.map(m => m.content).join('\n\n')
+    expect(fullSystemContent).toContain('[TECH_STACK] Prefers TypeScript over Javascript')
+    expect(fullSystemContent).toContain('[OS] Runs Windows 11')
 
     // Clean up facts
     const db = getDatabase()
@@ -125,10 +126,11 @@ describe('ContextManager & Memory Injection Tests', () => {
 
     const result = contextManager.trimMessages(messages, sessionId)
 
-    const systemPrompt = result.find((m) => m.role === 'system')
-    expect(systemPrompt).toBeDefined()
-    expect(systemPrompt?.content).toContain('COMPRESSED HISTORY SUMMARIES')
-    expect(systemPrompt?.content).toContain('Selected SQLite for db.')
+    const systemPrompts = result.filter((m) => m.role === 'system')
+    expect(systemPrompts.length).toBeGreaterThan(0)
+    const fullSystemContent = systemPrompts.map(m => m.content).join('\n\n')
+    expect(fullSystemContent).toContain('COMPRESSED HISTORY SUMMARIES')
+    expect(fullSystemContent).toContain('Selected SQLite for db.')
 
     // Clean up summaries
     db.prepare('DELETE FROM chat_summaries').run()

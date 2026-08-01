@@ -6,6 +6,8 @@ import { listApiConfigs } from '../db/apiConfigs'
 import { ProviderFactory } from '../providers/ProviderFactory'
 import { ToolExecutor } from '../agent/ToolExecutor'
 import { Disposable } from '@shared/lifecycle'
+import { normalizeDriveLetter } from '../security/pathValidation'
+
 import { registerSingleton, InstantiationType } from '@shared/instantiation/extensions'
 import { getService } from '@shared/instantiation/instantiationService'
 import { IComposerService } from '@shared/services'
@@ -315,7 +317,7 @@ export class ComposerService extends Disposable implements IComposerService {
     this.cancelActiveTask()
     this.stagedFiles.clear()
     this.stagedDeletions.clear()
-    this.activeWorkspacePath = workspacePath.replace(/\\/g, '/')
+    this.activeWorkspacePath = normalizeDriveLetter(workspacePath).replace(/\\/g, '/')
 
     this.task = {
       goal,

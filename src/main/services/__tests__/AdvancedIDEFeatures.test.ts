@@ -32,6 +32,14 @@ vi.mock('electron', () => {
   };
 });
 
+vi.mock('@electron-toolkit/utils', () => {
+  return {
+    is: {
+      dev: true
+    }
+  };
+});
+
 import { initDatabase, closeDatabase, getDatabase } from '../../db/database';
 import { McpGalleryService } from '../mcp/McpGalleryService';
 import { McpManagementService } from '../mcp/McpManagementService';
@@ -46,8 +54,14 @@ import { CodeSmellSweeperService } from '../CodeSmellSweeperService';
 import { VisualCanvasService } from '../VisualCanvasService';
 import { PerformanceProfilerService } from '../PerformanceProfilerService';
 import { WebSandboxService } from '../WebSandboxService';
+import { IpcFrameworkService } from '../IpcFrameworkService';
+import { TestOrchestratorService } from '../TestOrchestratorService';
+import { DatabaseExplorerService } from '../DatabaseExplorerService';
+import { DeploymentService } from '../DeploymentService';
+import { ArchitectWikiService } from '../ArchitectWikiService';
+// import { ConfigurationService } from '../ConfigurationService';
 
-describe('Advanced IDE Features & Advancements (Milestones 19 - 25)', () => {
+describe('Advanced IDE Features & Advancements (Milestones 19 - 30)', () => {
   beforeAll(() => {
     if (existsSync(tempUserDataPath)) {
       rmSync(tempUserDataPath, { recursive: true, force: true });
@@ -295,6 +309,98 @@ Prefer small focused changes.
       const skillsWithInstructions = await skillsService.discoverSkills(testWorkspacePath);
       expect(skillsWithInstructions.find(s => s.name === 'team instructions')).toBeDefined();
     });
+
+    it('should allow AI to manage settings and database entities via Environment Tools', async () => {
+      // Import the classes dynamically to avoid static module loading order issues with mocked electron
+      const { ToolExecutor } = await import('../../agent/ToolExecutor');
+      await import('../ConfigurationService');
+
+      const executor = new ToolExecutor();
+      executor.setPermissionMode('AUTO'); // bypass approval dialogs
+
+      // 1. Test GetEnvironmentTool (settings)
+      const settingsRes = await executor.executeTool('GetEnvironmentTool', { resource: 'settings' });
+      expect(settingsRes.isError).toBe(false);
+      expect(settingsRes.output).toContain('appSettings');
+      expect(settingsRes.output).toContain('permissionMode');
+
+      // 2. Test GetEnvironmentTool (all)
+      const allRes = await executor.executeTool('GetEnvironmentTool', { resource: 'all' });
+      expect(allRes.isError).toBe(false);
+      expect(allRes.output).toContain('skills');
+      expect(allRes.output).toContain('commands');
+
+      // 3. Test UpdateEnvironmentTool (settings)
+      const updateSettingsRes = await executor.executeTool('UpdateEnvironmentTool', {
+        resource: 'settings',
+        action: 'save',
+        data: JSON.stringify({ key: 'theme', value: 'dark' })
+      });
+      expect(updateSettingsRes.isError).toBe(false);
+      expect(updateSettingsRes.output).toContain('Updated setting "theme"');
+
+      // 4. Test UpdateEnvironmentTool (skill - save)
+      const saveSkillRes = await executor.executeTool('UpdateEnvironmentTool', {
+        resource: 'skill',
+        action: 'save',
+        data: JSON.stringify({
+          name: 'test-env-skill',
+          description: 'A test skill created via UpdateEnvironmentTool',
+          promptTemplate: 'Inject this prompt instruction.'
+        })
+      });
+      expect(saveSkillRes.isError).toBe(false);
+      expect(saveSkillRes.output).toContain('Custom skill saved successfully');
+
+      // 5. Test GetEnvironmentTool (skills - verify saved)
+      const listSkillsRes = await executor.executeTool('GetEnvironmentTool', { resource: 'skills' });
+      expect(listSkillsRes.isError).toBe(false);
+      expect(listSkillsRes.output).toContain('test-env-skill');
+
+      const skillsArray = JSON.parse(listSkillsRes.output);
+      const testSkill = skillsArray.find((s: any) => s.name === 'test-env-skill');
+      expect(testSkill).toBeDefined();
+
+      // 6. Test UpdateEnvironmentTool (skill - delete)
+      const deleteSkillRes = await executor.executeTool('UpdateEnvironmentTool', {
+        resource: 'skill',
+        action: 'delete',
+        data: JSON.stringify(testSkill.id)
+      });
+      expect(deleteSkillRes.isError).toBe(false);
+      expect(deleteSkillRes.output).toContain('deleted successfully');
+
+      // 7. Test UpdateEnvironmentTool (agent - save)
+      const saveAgentRes = await executor.executeTool('UpdateEnvironmentTool', {
+        resource: 'agent',
+        action: 'save',
+        data: JSON.stringify({
+          name: 'test-env-agent',
+          description: 'A test agent created via UpdateEnvironmentTool',
+          systemPrompt: 'You are a specialized helper agent.'
+        })
+      });
+      expect(saveAgentRes.isError).toBe(false);
+      expect(saveAgentRes.output).toContain('Custom agent saved successfully');
+
+      // 8. Test GetEnvironmentTool (agents - verify saved)
+      const listAgentsRes = await executor.executeTool('GetEnvironmentTool', { resource: 'agents' });
+      expect(listAgentsRes.isError).toBe(false);
+      expect(listAgentsRes.output).toContain('test-env-agent');
+
+      const agentsArray = JSON.parse(listAgentsRes.output);
+      const testAgent = agentsArray.find((a: any) => a.name === 'test-env-agent');
+      expect(testAgent).toBeDefined();
+
+      // 9. Test UpdateEnvironmentTool (agent - delete)
+      const deleteAgentRes = await executor.executeTool('UpdateEnvironmentTool', {
+        resource: 'agent',
+        action: 'delete',
+        data: JSON.stringify(testAgent.id)
+      });
+      expect(deleteAgentRes.isError).toBe(false);
+      expect(deleteAgentRes.output).toContain('deleted successfully');
+    });
   });
 
   describe('Milestone 22: Advanced Semantic Sweeper & AST Scanner', () => {
@@ -432,6 +538,129 @@ export class EventLeak {
 
       await sandboxService.stopServer(server.id);
       await sandboxService.stopServer(secondServer.id);
+    });
+  });
+
+  describe('Milestone 26: IPC Framework & Multi-Process Architecture', () => {
+    const ipcService = new IpcFrameworkService();
+
+    it('should register and retrieve named channels correctly', async () => {
+      ipcService.registerChannel('mock-service', {
+        call: async (command, arg) => `Echo: ${command} with ${arg}`
+      });
+      const channel = ipcService.getChannel('mock-service');
+      const res = await channel.call('greet', 'World');
+      expect(res).toBe('Echo: greet with World');
+    });
+  });
+
+  describe('Milestone 27: Autonomous Test Case Generation & TDD Orchestrator', () => {
+    const orchestrator = new TestOrchestratorService();
+
+    it('should run a test suite and execute an autonomous self-healing loop', async () => {
+      const srcFile = join(testWorkspacePath, 'math_utils.ts');
+      const testFile = join(testWorkspacePath, 'math_utils.test.ts');
+
+      writeFileSync(srcFile, `export const VALUE = 'buggy_value';`, 'utf8');
+
+      writeFileSync(testFile, `
+import { describe, it, expect } from 'vitest';
+import { VALUE } from './math_utils';
+
+describe('Math Utils', () => {
+  it('should equal healed_value', () => {
+    expect(VALUE).toBe('healed_value');
+  });
+});
+      `, 'utf8');
+
+      const healed = await orchestrator.autonomousRepairLoop(testFile, srcFile, 2);
+      expect(healed).toBe(true);
+
+      const healedContent = readFileSync(srcFile, 'utf8');
+      expect(healedContent).toContain('healed_value');
+    }, 20000);
+  });
+
+  describe('Milestone 28: Universal Database Schema Explorer & SQL Agent', () => {
+    const dbExplorer = new DatabaseExplorerService();
+
+    it('should inspect database tables and run raw queries', async () => {
+      const tables = await dbExplorer.getTables();
+      expect(tables.length).toBeGreaterThan(0);
+      expect(tables.some(t => t.name === 'sessions')).toBe(true);
+
+      const columns = await dbExplorer.getTableSchema('sessions');
+      expect(columns.some(c => c.name === 'id')).toBe(true);
+      expect(columns.some(c => c.name === 'title')).toBe(true);
+
+      const rows = await dbExplorer.executeQuery('SELECT COUNT(*) as count FROM sessions');
+      expect(rows[0].count).toBeDefined();
+    });
+
+    it('should generate schemas and insert mock data', async () => {
+      const prismaSchema = await dbExplorer.generateSchemaDeclaration('prisma');
+      expect(prismaSchema).toContain('model Sessions');
+
+      const drizzleSchema = await dbExplorer.generateSchemaDeclaration('drizzle');
+      expect(drizzleSchema).toContain('export const sessions');
+
+      const mockRows = await dbExplorer.generateMockData('sessions', 1);
+      expect(mockRows.length).toBe(1);
+      expect(mockRows[0].title).toBeDefined();
+
+      const verifyQuery = await dbExplorer.executeQuery(`SELECT * FROM sessions WHERE title = '${mockRows[0].title}'`);
+      expect(verifyQuery.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('Milestone 29: Zero-Config Cloud Deployment & Infrastructure-as-Code (IaC)', () => {
+    const deploymentService = new DeploymentService();
+
+    it('should generate a valid Dockerfile and yml configuration', async () => {
+      const dockerRes = await deploymentService.generateIaC(testWorkspacePath, 'docker');
+      expect(existsSync(dockerRes.filePath)).toBe(true);
+      expect(dockerRes.content).toContain('FROM node');
+
+      const slsRes = await deploymentService.generateIaC(testWorkspacePath, 'serverless');
+      expect(existsSync(slsRes.filePath)).toBe(true);
+      expect(slsRes.content).toContain('provider:');
+    });
+
+    it('should verify workspace compile build and return logs', async () => {
+      writeFileSync(join(testWorkspacePath, 'package.json'), JSON.stringify({
+        name: 'test-app',
+        scripts: {
+          build: "echo 'build success'"
+        }
+      }), 'utf8');
+
+      const check = await deploymentService.verifyPreDeployBuild(testWorkspacePath);
+      expect(check.success).toBe(true);
+      expect(check.log).toContain('build success');
+    });
+  });
+
+  describe('Milestone 30: Codebase Architect Wiki & Mermaid Diagrammer', () => {
+    const wikiService = new ArchitectWikiService();
+
+    it('should analyze workspace imports, generate diagrams and write wikis', async () => {
+      const fileA = join(testWorkspacePath, 'componentA.ts');
+      const fileB = join(testWorkspacePath, 'componentB.ts');
+
+      writeFileSync(fileA, `import { funcB } from './componentB';\nexport const funcA = () => {};`, 'utf8');
+      writeFileSync(fileB, `export const funcB = () => {};`, 'utf8');
+
+      const { importsMap } = await wikiService.analyzeCodebase(testWorkspacePath);
+      expect(importsMap['componentA.ts']).toContain('./componentB');
+
+      const diagram = await wikiService.generateMermaidDiagram(testWorkspacePath);
+      expect(diagram).toContain('componentA_ts');
+      expect(diagram).toContain('componentB_ts');
+
+      const wikiFile = await wikiService.writeWikiFile(testWorkspacePath);
+      expect(existsSync(wikiFile)).toBe(true);
+      expect(readFileSync(wikiFile, 'utf8')).toContain('Codebase Architecture Wiki');
     });
   });
 });

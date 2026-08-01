@@ -7,6 +7,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai'
 import type { AIProvider } from './AIProvider'
 import type { Message, ProviderConfig, SendOptions, SendResult, TestResult } from '@shared/types'
 import { getValidGoogleToken } from '../auth/googleOAuth'
+import { sanitizeMessages } from './utils'
 
 export class GeminiProvider implements AIProvider {
   private config: ProviderConfig
@@ -37,21 +38,54 @@ export class GeminiProvider implements AIProvider {
   }
 
   async sendMessage(messages: Message[], options: SendOptions): Promise<SendResult> {
+    const sanitized = sanitizeMessages(messages, options)
     const genAI = await this.getGenAI()
     const model = genAI.getGenerativeModel({
       model: options.model,
       systemInstruction: options.systemPrompt
     })
 
-    const history = messages.slice(0, -1).map((m) => ({
-      role: m.role === 'assistant' ? 'model' : 'user',
-      parts: [{ text: m.content }]
-    }))
+    // Filter out system messages and map roles to user/model
+    const mapped = sanitized
+      .filter((m) => m.role !== 'system')
+      .map((m) => {
+        let contentText = m.content || ''
+        if (m.role === 'tool') {
+          // Format tool results nicely so the model can understand them clearly
+          contentText = `[Tool Result: ${m.toolName || 'unknown'}]\n${m.content || ''}`
+        }
+        return {
+          role: (m.role === 'assistant' ? 'model' : 'user') as 'user' | 'model',
+          parts: [{ text: contentText }]
+        }
+      })
+
+    // Merge consecutive messages with the same role
+    const contents: typeof mapped = []
+    for (const msg of mapped) {
+      if (contents.length > 0 && contents[contents.length - 1].role === msg.role) {
+        contents[contents.length - 1].parts[0].text += '\n\n' + msg.parts[0].text
+      } else {
+        contents.push(msg)
+      }
+    }
+
+    // Gemini requires the conversation history to start with a user message
+    while (contents.length > 0 && contents[0].role !== 'user') {
+      contents.shift()
+    }
+
+    // If contents is empty, add a default user message
+    if (contents.length === 0) {
+      contents.push({ role: 'user', parts: [{ text: '' }] })
+    }
+
+    // Separate history (all but last) and last message
+    const history = contents.slice(0, -1)
+    const lastMessage = contents[contents.length - 1]
 
     const chat = model.startChat({ history })
-    const lastMessage = messages[messages.length - 1]!
-
-    const result = await chat.sendMessageStream(lastMessage.content)
+    const result = await chat.sendMessageStream(lastMessage.parts[0].text)
 
     let content = ''
     for await (const chunk of result.stream) {
@@ -63,7 +97,27 @@ export class GeminiProvider implements AIProvider {
       if (options.signal?.aborted) break
     }
 
-    return { content, tokensUsed: 0, stopReason: 'stop' }
+    let tokensUsed = 0
+    try {
+      const response = await result.response
+      if (response.usageMetadata) {
+        tokensUsed = response.usageMetadata.totalTokenCount || 0
+      }
+    } catch (e) {
+      console.warn('[GeminiProvider] Failed to fetch usage metadata:', e)
+    }
+
+    if (tokensUsed === 0) {
+      // Fallback token estimation: approx 4 characters per token
+      let promptChars = 0
+      for (const msg of contents) {
+        promptChars += msg.parts[0].text.length
+      }
+      const responseChars = content.length
+      tokensUsed = Math.ceil((promptChars + responseChars) / 4)
+    }
+
+    return { content, tokensUsed, stopReason: 'stop' }
   }
 
   async listModels(): Promise<string[]> {

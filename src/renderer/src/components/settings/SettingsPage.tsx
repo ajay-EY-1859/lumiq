@@ -1,5 +1,8 @@
-// Lumiq — Settings Page (Modern Redesign)
-// Left sidebar navigation + content panel layout
+// ═══════════════════════════════════════════════════════════════════
+// Lumiq — Settings Page (Enterprise Dashboard v2)
+// Glass navigation · Animated content transitions · Premium cards
+// ═══════════════════════════════════════════════════════════════════
+
 import React, { useState, useMemo } from 'react'
 import { ProvidersTab } from './tabs/ProvidersTab'
 import { AppearanceTab } from './tabs/AppearanceTab'
@@ -195,15 +198,28 @@ export function SettingsPage({ onNavigate }: SettingsPageProps): React.JSX.Eleme
               aria-label="Back to Chat"
               className={styles.backButton}
             >
-              ← Back
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="15 18 9 12 15 6"/>
+              </svg>
+              Back
             </button>
           )}
-          <span className={styles.topBarTitle}>Settings</span>
+          <span className={styles.topBarTitle}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: 'middle', marginRight: '6px', opacity: 0.5 }}>
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+            </svg>
+            Settings
+          </span>
           <div className={styles.topBarSearch}>
-            <span className={styles.topBarSearchIcon}>⌕</span>
+            <span className={styles.topBarSearchIcon}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              </svg>
+            </span>
             <input
               className={styles.topBarSearchInput}
-              placeholder="Search settings..."
+              placeholder="Search settings…"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               aria-label="Search settings"
@@ -237,14 +253,26 @@ export function SettingsPage({ onNavigate }: SettingsPageProps): React.JSX.Eleme
             </div>
           ))}
           {filteredGroups.length === 0 && (
-            <div style={{ padding: '20px 10px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '12px' }}>
+            <div style={{
+              padding: '24px 12px',
+              textAlign: 'center',
+              color: 'var(--text-muted)',
+              fontSize: '12px',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '8px',
+            }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.4 }}>
+                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              </svg>
               No settings found
             </div>
           )}
         </nav>
 
         {/* ── Content ── */}
-        <main className={styles.content}>
+        <main className={styles.content} key={activeTab}>
           {activeItem && (
             <div className={styles.contentHeader}>
               <h1 className={styles.contentTitle}>

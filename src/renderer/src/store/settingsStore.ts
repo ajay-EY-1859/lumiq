@@ -15,7 +15,7 @@ interface SettingsState {
   // Actions
   loadSettings: () => Promise<void>
   loadWorkspaceSettings: (workspacePath: string | null) => Promise<void>
-  updateSetting: (key: keyof AppSettings, value: string) => Promise<void>
+  updateSetting: (key: keyof AppSettings, value: any) => Promise<void>
   updateWorkspaceSetting: (workspacePath: string, key: keyof AppSettings, value: any) => Promise<void>
   setTheme: (theme: ThemeMode) => void
   setFontSize: (size: FontSize) => void
@@ -31,7 +31,8 @@ const defaultSettings: AppSettings = {
   sidebarVisible: true,
   autoSave: true,
   contextLimit: 150,
-  firecrawlApiKey: ''
+  firecrawlApiKey: '',
+  keybindings: {}
 }
 
 // Apply theme to DOM

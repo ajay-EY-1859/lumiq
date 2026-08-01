@@ -30,6 +30,7 @@ interface DiffViewerProps {
   diffContent: string
   sessionId: string
   messageId?: string
+  toolInputPath?: string
 }
 
 // ─── Parser ─────────────────────────────────────────────────────────
@@ -110,8 +111,30 @@ function parseMultiFileDiff(raw: string): FileDiff[] {
 }
 
 // ─── Component ──────────────────────────────────────────────────────
-export function DiffViewer({ diffContent, sessionId, messageId }: DiffViewerProps): React.JSX.Element | null {
-  const parsedFiles = useMemo(() => parseMultiFileDiff(diffContent), [diffContent])
+export function DiffViewer({ diffContent, sessionId, messageId, toolInputPath }: DiffViewerProps): React.JSX.Element | null {
+  const parsedFiles = useMemo(() => {
+    const files = parseMultiFileDiff(diffContent)
+    if (toolInputPath) {
+      return files.map(f => {
+        const isPlaceholderA = !f.fileA || f.fileA === 'original' || f.fileA === 'text-a' || f.fileA === 'a'
+        const isPlaceholderB = !f.fileB || f.fileB === 'modified' || f.fileB === 'text-b' || f.fileB === 'b'
+        
+        const fileAName = f.fileA.split(/[/\\]/).pop() || ''
+        const fileBName = f.fileB.split(/[/\\]/).pop() || ''
+        const targetName = toolInputPath.split(/[/\\]/).pop() || ''
+
+        const matchA = isPlaceholderA || fileAName === targetName
+        const matchB = isPlaceholderB || fileBName === targetName
+
+        return {
+          ...f,
+          fileA: matchA ? toolInputPath : f.fileA,
+          fileB: matchB ? toolInputPath : f.fileB
+        }
+      })
+    }
+    return files
+  }, [diffContent, toolInputPath])
   
   // React state storing statuses of all hunks indexed by `${fileIndex}_${hunkId}`
   const [fileHunks, setFileHunks] = useState<Record<string, 'pending' | 'accepted' | 'rejected'>>({})
@@ -160,7 +183,7 @@ export function DiffViewer({ diffContent, sessionId, messageId }: DiffViewerProp
   }, [parsedFiles, recordDecision])
 
   const handleCopyPatch = useCallback(() => {
-    navigator.clipboard.writeText(diffContent)
+    window.electronAPI.clipboard.writeText(diffContent)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }, [diffContent])

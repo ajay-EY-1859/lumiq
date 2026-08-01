@@ -33,6 +33,7 @@ import {
   debugStepOutAction
 } from '@renderer/utils/shortcutExecutor'
 import { normalizePath } from '@renderer/utils/paths'
+import { shouldStopTabKeyPropagation } from './tabKeyboard'
 
 // ── Language detection ────────────────────────────────────────────────
 function getLanguage(fileName: string): string | undefined {
@@ -44,6 +45,8 @@ function getLanguage(fileName: string): string | undefined {
     sh: 'shell', bash: 'shell', ps1: 'powershell', rs: 'rust',
     go: 'go', java: 'java', kt: 'kotlin', rb: 'ruby', php: 'php',
     c: 'c', cpp: 'cpp', cs: 'csharp', swift: 'swift', toml: 'ini',
+    vue: 'vue', svelte: 'svelte', dart: 'dart', lua: 'lua', r: 'r',
+    scala: 'scala', zig: 'zig', tf: 'hcl', hcl: 'hcl', env: 'shell'
   }
   return ext ? map[ext] : undefined
 }
@@ -187,7 +190,15 @@ export function EditorPane(): React.JSX.Element | null {
   const [wordWrap, setWordWrap]   = useState<'off' | 'on'>('off')
   const [minimap, setMinimap]     = useState(true)
   const [autocompleteEnabled, setAutocompleteEnabled] = useState(true)
+  const autocompleteEnabledRef = useRef(autocompleteEnabled)
+  useEffect(() => {
+    autocompleteEnabledRef.current = autocompleteEnabled
+  }, [autocompleteEnabled])
   const [errorSuggestion, setErrorSuggestion] = useState<TaskSelfHealSuggestion | null>(null)
+  const [breakpoints, setBreakpoints] = useState<any[]>([])
+  const decorationsMap = useRef<Map<string, string[]>>(new Map())
+  const activeDecorationIdsRef = useRef<string[]>([])
+
 
   useEffect(() => {
     const cleanup = window.electronAPI.task.onSelfHeal((suggestion: TaskSelfHealSuggestion) => {
@@ -206,6 +217,8 @@ export function EditorPane(): React.JSX.Element | null {
     return () => window.removeEventListener('lumiq-focus-editor', handleFocusEditor)
   }, [])
 
+
+
   // Stable IDs for ARIA relationships
   const uid        = useId()
   const tablistId  = `${uid}-tablist`
@@ -218,8 +231,17 @@ export function EditorPane(): React.JSX.Element | null {
     const cleanup = window.electronAPI.fs.onFileModified((filePath: string) => {
       const norm = filePath.replace(/\\/g, '/')
       const snap = useEditorStore.getState().tabs
-      const tab  = snap.find((t) => t.id.replace(/\\/g, '/') === norm)
-      if (tab) useEditorStore.getState().reloadTab(tab.id)
+      const tab = snap.find((t) => t.id.replace(/\\/g, '/') === norm)
+      if (!tab) return
+
+      if (tab.isDirty) {
+        if (window.confirm(`"${tab.name}" has unsaved changes. Reload from disk?`)) {
+          void useEditorStore.getState().reloadTab(tab.id, true)
+        }
+        return
+      }
+
+      void useEditorStore.getState().reloadTab(tab.id)
     })
     return cleanup
   }, [])
@@ -229,6 +251,7 @@ export function EditorPane(): React.JSX.Element | null {
   useEffect(() => {
     if (!monaco) return
     const fixPath = (p: string) => (p.startsWith('/') && p.includes(':')) ? p.slice(1) : p
+    let lastRequestToken = 0
 
     const symProv = monaco.languages.registerDocumentSymbolProvider('*', {
       provideDocumentSymbols: async (model) => {
@@ -241,7 +264,8 @@ export function EditorPane(): React.JSX.Element | null {
     const defProv = monaco.languages.registerDefinitionProvider('*', {
       provideDefinition: async (model, position) => {
         try {
-          const def = await window.electronAPI.lsp.getDefinition('', fixPath(model.uri.path), position.lineNumber, position.column)
+          const workspacePath = useSessionStore.getState().sessions.find(s => s.id === useSessionStore.getState().activeSessionId)?.workspacePath || ''
+          const def = await window.electronAPI.lsp.getDefinition(workspacePath, fixPath(model.uri.path), position.lineNumber, position.column, model.getValue())
           if (!def) return null
           const uri = def.uri.startsWith('file://') ? def.uri : 'file://' + (def.uri.startsWith('/') ? def.uri : '/' + def.uri)
           return { uri: monaco.Uri.parse(uri), range: def.range }
@@ -251,7 +275,8 @@ export function EditorPane(): React.JSX.Element | null {
     const refProv = monaco.languages.registerReferenceProvider('*', {
       provideReferences: async (model, position) => {
         try {
-          const refs = await window.electronAPI.lsp.getReferences('', fixPath(model.uri.path), position.lineNumber, position.column)
+          const workspacePath = useSessionStore.getState().sessions.find(s => s.id === useSessionStore.getState().activeSessionId)?.workspacePath || ''
+          const refs = await window.electronAPI.lsp.getReferences(workspacePath, fixPath(model.uri.path), position.lineNumber, position.column, model.getValue())
           if (!refs) return []
           return refs.map((ref) => {
             const uri = ref.uri.startsWith('file://') ? ref.uri : 'file://' + (ref.uri.startsWith('/') ? ref.uri : '/' + ref.uri)
@@ -261,33 +286,81 @@ export function EditorPane(): React.JSX.Element | null {
       }
     })
 
+    const hoverProv = monaco.languages.registerHoverProvider('*', {
+      provideHover: async (model, position) => {
+        try {
+          const hover = await window.electronAPI.lsp.getHover(fixPath(model.uri.path), position.lineNumber, position.column, model.getValue())
+          if (!hover) return null
+          return {
+            contents: hover.contents.map((content) => ({ value: content })),
+            range: hover.range
+          }
+        } catch { return null }
+      }
+    })
+
+    const completionProv = monaco.languages.registerCompletionItemProvider('*', {
+      provideCompletionItems: async (model, position) => {
+        try {
+          const completions = await window.electronAPI.lsp.getCompletion(fixPath(model.uri.path), position.lineNumber, position.column, model.getValue())
+          if (!completions) return { suggestions: [] }
+          const wordInfo = model.getWordUntilPosition(position)
+          const range = new monaco.Range(
+            position.lineNumber,
+            wordInfo.startColumn,
+            position.lineNumber,
+            wordInfo.endColumn
+          )
+          return {
+            suggestions: completions.map((c) => ({
+              label: c.label,
+              kind: c.kind,
+              detail: c.detail,
+              insertText: c.insertText,
+              range
+            }))
+          }
+        } catch { return { suggestions: [] } }
+      }
+    })
+
+    const sigHelpProv = monaco.languages.registerSignatureHelpProvider('*', {
+      signatureHelpTriggerCharacters: ['(', ','],
+      provideSignatureHelp: async (model, position) => {
+        try {
+          const sigHelp = await window.electronAPI.lsp.getSignatureHelp(fixPath(model.uri.path), position.lineNumber, position.column, model.getValue())
+          if (!sigHelp) return null
+          return {
+            value: sigHelp,
+            dispose: () => {}
+          }
+        } catch { return null }
+      }
+    })
+
     // ── Autocomplete / Ghost-Text Inline Completions Provider ──
-    let lastQueryTime = 0
     const inlineProv = monaco.languages.registerInlineCompletionsProvider('*', {
       provideInlineCompletions: async (model, position, _context, token) => {
-        // 1. Guard: Check if autocomplete is enabled
-        if (!autocompleteEnabled) return { items: [] }
+        if (!autocompleteEnabledRef.current) return { items: [] }
 
-        // 2. Guard: Get active provider and model
         const providerName = useProviderStore.getState().activeProvider
         const modelName = useProviderStore.getState().activeModel
         if (!providerName || !modelName) return { items: [] }
 
-        // 3. Debounce: Wait 200ms for typing pause to minimize API requests and lag
-        const now = Date.now()
-        lastQueryTime = now
+        const requestToken = ++lastRequestToken
         await new Promise((resolve) => setTimeout(resolve, 200))
-        if (lastQueryTime !== now || token.isCancellationRequested) {
+        if (requestToken !== lastRequestToken || token.isCancellationRequested) {
           return { items: [] }
         }
 
-        // Get context around cursor position
         const text = model.getValue()
         const offset = model.getOffsetAt(position)
-        const prefix = text.slice(0, offset)
-        const suffix = text.slice(offset)
+        
+        const prefixFull = text.slice(0, offset)
+        const prefixLines = prefixFull.split('\n')
+        const prefix = prefixLines.slice(-100).join('\n') // Limit to last 100 lines
+        const suffix = text.slice(offset, offset + 2000)
 
-        // Only query if we have prefix content
         if (!prefix.trim()) return { items: [] }
 
         try {
@@ -328,8 +401,48 @@ export function EditorPane(): React.JSX.Element | null {
       defProv.dispose()
       refProv.dispose()
       inlineProv.dispose()
+      hoverProv.dispose()
+      completionProv.dispose()
+      sigHelpProv.dispose()
     }
-  }, [monaco, autocompleteEnabled])
+  }, [monaco])
+
+  // ── Real-Time LSP Diagnostics ──
+  useEffect(() => {
+    if (!monaco) return
+    const cleanup = window.electronAPI.lsp.onPublishDiagnostics((data: { languageId: string; uri: string; diagnostics: any[] }) => {
+      const uriStr = data.uri
+      const model = monaco.editor.getModels().find(m => {
+        const path = m.uri.toString()
+        return path.toLowerCase() === uriStr.toLowerCase()
+      })
+
+      if (model) {
+        const markers = data.diagnostics.map((d: any) => {
+          const severityMap: Record<number, number> = {
+            1: monaco.MarkerSeverity.Error,
+            2: monaco.MarkerSeverity.Warning,
+            3: monaco.MarkerSeverity.Info,
+            4: monaco.MarkerSeverity.Hint
+          }
+          const severity = severityMap[d.severity] || monaco.MarkerSeverity.Error
+          
+          return {
+            message: d.message,
+            severity,
+            startLineNumber: d.range.start.line + 1,
+            startColumn: d.range.start.character + 1,
+            endLineNumber: d.range.end.line + 1,
+            endColumn: d.range.end.character + 1,
+            source: 'LSP (' + data.languageId + ')'
+          }
+        })
+
+        monaco.editor.setModelMarkers(model, 'lsp-' + data.languageId, markers)
+      }
+    })
+    return cleanup
+  }, [monaco])
 
   // ── Close tab (with dirty check) ─────────────────────────────────
   const handleCloseTab = useCallback((id: string, e: React.MouseEvent | React.KeyboardEvent) => {
@@ -342,9 +455,6 @@ export function EditorPane(): React.JSX.Element | null {
   }, [closeTab])
 
   // ── Keyboard navigation inside tablist (ARIA pattern) ────────────
-  // Left/Right arrows move focus between tabs.
-  // Delete / Backspace closes the focused tab.
-  // Enter / Space activates the focused tab.
   const handleTablistKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
     const allTabs = Array.from(
       tablistRef.current?.querySelectorAll<HTMLElement>('[role="tab"]') ?? []
@@ -372,11 +482,81 @@ export function EditorPane(): React.JSX.Element | null {
 
   const activeTab = tabs.find((t) => t.id === activeTabId)
 
-  // ── Monaco mount ─────────────────────────────────────────────────
+  // Listen to DAP state updates (breakpoints)
+  useEffect(() => {
+    if (window.electronAPI && window.electronAPI.dap) {
+      const cleanup = window.electronAPI.dap.onStateUpdate((updatedState) => {
+        setBreakpoints(updatedState.breakpoints || [])
+      })
+      return cleanup
+    }
+    return undefined
+  }, [])
+
+  // Render breakpoints in Monaco editor
+  useEffect(() => {
+    const editor = editorRef.current
+    if (!editor || !monaco || !activeTab) return
+
+    const currentModel = editor.getModel()
+    if (!currentModel) return
+
+    const cleanPath = activeTab.id.replace(/\\/g, '/')
+    const fileBreakpoints = breakpoints.filter(bp => bp.filePath.replace(/\\/g, '/') === cleanPath)
+
+    const newDecorations = fileBreakpoints.map(bp => ({
+      range: new monaco.Range(bp.line, 1, bp.line, 1),
+      options: {
+        isWholeLine: false,
+        glyphMarginClassName: 'monaco-breakpoint-margin',
+        glyphMarginHoverMessage: { value: 'Breakpoint' }
+      }
+    }))
+
+    const uri = currentModel.uri.toString()
+    const previousDecorationIds = decorationsMap.current.get(uri) || []
+    try {
+      const nextDecorationIds = editor.deltaDecorations(previousDecorationIds, newDecorations)
+      decorationsMap.current.set(uri, nextDecorationIds)
+      activeDecorationIdsRef.current = nextDecorationIds
+    } catch {
+      decorationsMap.current.delete(uri)
+      activeDecorationIdsRef.current = []
+    }
+  }, [breakpoints, activeTab, monaco])
+
+
   const handleMount: OnMount = (editor, monacoInstance) => {
     editorRef.current = editor
     setupTheme(editor, monacoInstance)
     editor.focus()
+
+    const currentModel = editor.getModel()
+    if (currentModel) {
+      const uri = currentModel.uri.toString()
+      const existingDecorationIds = decorationsMap.current.get(uri)
+      if (existingDecorationIds?.length) {
+        try {
+          editor.deltaDecorations(existingDecorationIds, [])
+        } catch {
+          decorationsMap.current.delete(uri)
+        }
+      }
+    }
+
+    // Gutter click listener for breakpoint toggling
+    editor.onMouseDown((e: any) => {
+      if (e.target.type === monacoInstance.editor.MouseTargetType.GUTTER_GLYPH_MARGIN) {
+        const line = e.target.position?.lineNumber
+        if (line) {
+          const currentTabId = activeTabIdRef.current
+          if (currentTabId) {
+            window.electronAPI.dap.toggleBreakpoint(currentTabId, line)
+          }
+        }
+      }
+    })
+
 
     // Ctrl+S — save active tab
     editor.addCommand(monacoInstance.KeyMod.CtrlCmd | monacoInstance.KeyCode.KeyS, () => {
@@ -395,11 +575,16 @@ export function EditorPane(): React.JSX.Element | null {
       setTimeout(() => tablistRef.current?.querySelector<HTMLElement>('[role="tab"]')?.focus(), 0)
     })
 
-    // Escape — move focus back to tab bar so screen reader users can navigate tabs
+    // Escape — move focus back to tab bar only when suggestions and ghost text are NOT visible
     editor.addCommand(monacoInstance.KeyCode.Escape, () => {
       const focused = tablistRef.current?.querySelector<HTMLElement>('[aria-selected="true"]')
       focused?.focus()
-    })
+    }, '!suggestWidgetVisible && !inlineSuggestionVisible')
+
+    // Enter — accept inline suggestion (ghost text) when visible
+    editor.addCommand(monacoInstance.KeyCode.Enter, () => {
+      editor.trigger('keyboard', 'editor.action.inlineSuggest.commit', {})
+    }, 'inlineSuggestionVisible')
 
     // F5 — run project
     editor.addCommand(monacoInstance.KeyCode.F5, () => {
@@ -640,14 +825,24 @@ export function EditorPane(): React.JSX.Element | null {
               title={tab.id}
               onClick={() => { setActiveTab(tab.id); setTimeout(() => editorRef.current?.focus(), 50) }}
               onKeyDown={(e) => {
-                // Enter/Space activates the tab
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault()
                   setActiveTab(tab.id)
                   setTimeout(() => editorRef.current?.focus(), 50)
+                  e.stopPropagation()
+                  return
                 }
-                // Stop propagation so app-level shortcuts don't fire
-                e.stopPropagation()
+
+                if (e.key === 'Delete' || e.key === 'Backspace') {
+                  e.preventDefault()
+                  handleCloseTab(tab.id, e as any)
+                  return
+                }
+
+                if (shouldStopTabKeyPropagation(e.nativeEvent)) {
+                  e.stopPropagation()
+                  return
+                }
               }}
               style={{
                 padding: '0 10px 0 12px', height: '36px', fontSize: '13px', cursor: 'pointer',
@@ -679,7 +874,16 @@ export function EditorPane(): React.JSX.Element | null {
                 title="Close tab (Ctrl+W)"
                 tabIndex={-1}          /* tablist arrow-key nav handles focus */
                 onClick={(e) => handleCloseTab(tab.id, e)}
-                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleCloseTab(tab.id, e as any) } e.stopPropagation() }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    handleCloseTab(tab.id, e as any)
+                    return
+                  }
+                  if (shouldStopTabKeyPropagation(e.nativeEvent)) {
+                    e.stopPropagation()
+                  }
+                }}
                 style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '11px', padding: '2px 3px', borderRadius: '3px', flexShrink: 0, lineHeight: 1, display: 'flex', alignItems: 'center' }}
                 onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-tertiary)'; e.currentTarget.style.color = 'var(--text-primary)' }}
                 onMouseLeave={(e) => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = 'var(--text-muted)' }}
@@ -721,7 +925,6 @@ export function EditorPane(): React.JSX.Element | null {
           style={{ flex: 1, position: 'relative', overflow: 'hidden' }}
         >
           <Editor
-            key={activeTab.id}
             value={activeTab.content}
             path={activeTab.id}
             language={getLanguage(activeTab.name)}
@@ -730,6 +933,7 @@ export function EditorPane(): React.JSX.Element | null {
             onChange={(value) => updateTabContent(activeTab.id, value ?? '')}
             options={{
               automaticLayout: true,
+              glyphMargin: true,
               // Full screen-reader support in Monaco
               accessibilitySupport: 'on',
               // Announce inline suggestions to screen readers
@@ -745,8 +949,23 @@ export function EditorPane(): React.JSX.Element | null {
               cursorBlinking: 'smooth',
               cursorSmoothCaretAnimation: 'on',
               padding: { top: 8, bottom: 8 },
-              suggest: { showIcons: true },
-              quickSuggestions: { other: true, comments: false, strings: false },
+              suggest: {
+                showIcons: true,
+                insertMode: 'insert',
+                filterGraceful: true,
+                snippetsPreventQuickSuggestions: false,
+                localityBonus: true,
+                shareSuggestSelections: true,
+              },
+              quickSuggestions: { other: true, comments: true, strings: true },
+              suggestOnTriggerCharacters: true,
+              acceptSuggestionOnCommitCharacter: false,
+              acceptSuggestionOnEnter: 'on',
+              inlineSuggest: {
+                enabled: true,
+                showToolbar: 'never',
+                mode: 'prefix'
+              },
               tabSize: 2,
               insertSpaces: true,
               formatOnPaste: true,
@@ -773,16 +992,9 @@ export function EditorPane(): React.JSX.Element | null {
               display: 'flex',
               flexDirection: 'column',
               gap: '12px',
-              animation: 'slideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+              animation: 'slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
               color: 'var(--text-primary)',
             }}>
-              <style dangerouslySetInnerHTML={{__html: `
-                @keyframes slideIn {
-                  from { transform: translateY(20px); opacity: 0; }
-                  to { transform: translateY(0); opacity: 1; }
-                }
-              `}} />
-
               {/* Title & Close */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '8px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#ff7b72', fontWeight: 600, fontSize: '13px' }}>

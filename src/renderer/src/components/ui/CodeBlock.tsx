@@ -13,7 +13,7 @@ export function CodeBlock({ language, children }: CodeBlockProps): React.JSX.Ele
   const [copied, setCopied] = useState(false)
 
   const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(children)
+    window.electronAPI.clipboard.writeText(children)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }, [children])

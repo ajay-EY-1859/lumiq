@@ -9,7 +9,7 @@ import { embeddingManager } from './EmbeddingManager'
 // Rust native module for SIMD-accelerated vector similarity
 let native: any = null
 try {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
+   
   native = require('@lumiq/native')
 } catch {
   // Rust module not available, will use JS fallback
@@ -131,6 +131,49 @@ export class RAGQueryEngine {
       segment += `--- Snippet #${idx + 1} | File: ${m.filePath} (Chunk #${m.chunkIndex + 1}) | Match Relevance: ${(m.score * 100).toFixed(1)}% ---\n`
       segment += `${m.content}\n\n`
     })
+
+    // AST Call Graph Augmentation Step
+    try {
+      const db = getDatabase()
+      const dependencySignatures: string[] = []
+      const processedFiles = new Set<string>()
+
+      for (const m of matches) {
+        // Find symbols referenced by the matched file
+        const refs = db.prepare(`
+          SELECT DISTINCT target_name as targetName FROM ast_references 
+          WHERE workspace_path = ? AND source_file_path = ?
+        `).all(workspacePath, m.filePath) as { targetName: string }[]
+
+        for (const ref of refs) {
+          // Find where this symbol is defined
+          const defs = db.prepare(`
+            SELECT DISTINCT file_path as filePath, name, kind, signature FROM ast_symbols
+            WHERE workspace_path = ? AND name = ? AND file_path != ?
+            LIMIT 2
+          `).all(workspacePath, ref.targetName, m.filePath) as { filePath: string, name: string, kind: string, signature: string | null }[]
+
+          for (const def of defs) {
+            const depKey = `${def.filePath}-${def.name}`
+            if (processedFiles.has(depKey)) continue
+            processedFiles.add(depKey)
+
+            const sig = def.signature || `${def.kind} ${def.name}`
+            dependencySignatures.push(`- Symbol: "${def.name}" (${def.kind}) defined in [${def.filePath.replace(workspacePath, '').replace(/^[\\/]/, '')}]
+  Signature: ${sig}`)
+          }
+        }
+      }
+
+      if (dependencySignatures.length > 0) {
+        segment += '🕸️ AST CODE CALL GRAPH DEPENDENCY SIGNATURES\n'
+        segment += 'The following are type/function signatures of modules imported or called by the matched code above:\n'
+        segment += dependencySignatures.join('\n') + '\n\n'
+      }
+    } catch (graphErr) {
+      console.error('[RAGQueryEngine] Failed to resolve AST Graph-RAG dependencies:', graphErr)
+    }
+
     segment += '═══════════════════════════════════════════════════════════════════\n'
     return segment
   }

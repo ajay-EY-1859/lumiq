@@ -22,6 +22,8 @@ export class DapService extends Disposable implements IDapService {
   private ws: WebSocket | null = null
   private msgId = 1
   private pendingRequests: Map<number, { resolve: (value?: any) => void, reject: (reason?: any) => void }> = new Map()
+  private objectIdToRef: Map<string, number> = new Map()
+  private nextRefId = 1000
 
   constructor() {
     super()
@@ -90,12 +92,36 @@ export class DapService extends Disposable implements IDapService {
 
   private async connectInspector(port: number): Promise<void> {
     const res = await fetch(`http://127.0.0.1:${port}/json/list`)
-    const targets = await res.json()
-    if (!targets || targets.length === 0) {
+    if (res.ok !== undefined && !res.ok) {
+      throw new Error(`Failed to fetch debug targets. HTTP status: ${res.status} ${res.statusText}`)
+    }
+    let targets: any
+    try {
+      targets = await res.json()
+    } catch (err: any) {
+      throw new Error(`Invalid JSON response from debug endpoint: ${err.message}`)
+    }
+    if (!Array.isArray(targets) || targets.length === 0) {
       throw new Error('No debug targets found.')
     }
-    const wsUrl = targets[0].webSocketDebuggerUrl
-    if (!wsUrl) throw new Error('No webSocketDebuggerUrl found in target.')
+
+    // Safer target selection:
+    // 1. Prioritize targets with a valid webSocketDebuggerUrl that match our script path or are node type
+    const scriptFilename = this.state.scriptPath ? this.state.scriptPath.split('/').pop() : ''
+    let selectedTarget = targets.find((t: any) => 
+      t.webSocketDebuggerUrl && 
+      (t.type === 'node' || (scriptFilename && (t.title?.includes(scriptFilename) || t.url?.includes(scriptFilename))))
+    )
+    
+    // 2. Fallback to any target that has a webSocketDebuggerUrl
+    if (!selectedTarget) {
+      selectedTarget = targets.find((t: any) => t.webSocketDebuggerUrl)
+    }
+
+    if (!selectedTarget) {
+      throw new Error('No target with a valid webSocketDebuggerUrl was found.')
+    }
+    const wsUrl = selectedTarget.webSocketDebuggerUrl
 
     this.ws = new WebSocket(wsUrl)
     
@@ -178,6 +204,15 @@ export class DapService extends Disposable implements IDapService {
     }
   }
 
+  private getVariablesReference(objectId: string): number {
+    let ref = this.objectIdToRef.get(objectId)
+    if (ref === undefined) {
+      ref = this.nextRefId++
+      this.objectIdToRef.set(objectId, ref)
+    }
+    return ref
+  }
+
   private async loadScopes(callFrame: any) {
     this.state.scopes = []
     const scopes = callFrame.scopeChain || []
@@ -195,7 +230,7 @@ export class DapService extends Disposable implements IDapService {
           name: prop.name,
           value: prop.value ? (prop.value.value !== undefined ? String(prop.value.value) : prop.value.description || prop.value.type) : 'undefined',
           type: prop.value ? prop.value.type : 'undefined',
-          variablesReference: prop.value?.objectId ? Math.floor(Math.random() * 1000) : 0
+          variablesReference: prop.value?.objectId ? this.getVariablesReference(prop.value.objectId) : 0
         }))
 
         this.state.scopes.push({
@@ -213,6 +248,8 @@ export class DapService extends Disposable implements IDapService {
       this.ws = null
     }
     this.pendingRequests.clear()
+    this.objectIdToRef.clear()
+    this.nextRefId = 1000
 
     this.state = {
       ...this.state,

@@ -20,8 +20,17 @@ import type { PermissionMode } from './security/permissions'
 import { mergeToolSettings } from './tools/defaultToolSettings'
 import { InstantiationService, setActiveContainer, getService } from '@shared/instantiation/instantiationService'
 import { IFileService } from '@shared/files/files'
+import { IExtensionService, ProxyChannel } from '@shared/extensions/extensions'
 import { DiskFileSystemProvider } from './services/DiskFileSystemProvider'
-import { IExtensionService } from '@shared/extensions/extensions'
+import {
+  IIpcFrameworkService,
+  IDatabaseExplorerService,
+  ITestOrchestratorService,
+  IDeploymentService,
+  IArchitectWikiService,
+  ICollaborationService,
+  ILspService
+} from '@shared/services'
 
 // Force execution of service registry side-effects
 import './services/TraceLogger'
@@ -44,6 +53,13 @@ import './services/CodeSmellSweeperService'
 import './services/VisualCanvasService'
 import './services/PerformanceProfilerService'
 import './services/WebSandboxService'
+import './services/IpcFrameworkService'
+import './services/TestOrchestratorService'
+import './services/DatabaseExplorerService'
+import './services/DeploymentService'
+import './services/ArchitectWikiService'
+import './services/CollaborationService'
+import './services/LspService'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -218,6 +234,15 @@ app.whenReady().then(() => {
     console.error('[ExtensionService] Failed to start extension host:', err)
   })
 
+  // Register named channels for Milestones 27-30
+  const ipcFramework = container.invokeFunction(accessor => accessor.get(IIpcFrameworkService))
+  ipcFramework.registerChannel('database', ProxyChannel.fromService(container.invokeFunction(a => a.get(IDatabaseExplorerService))))
+  ipcFramework.registerChannel('test', ProxyChannel.fromService(container.invokeFunction(a => a.get(ITestOrchestratorService))))
+  ipcFramework.registerChannel('deploy', ProxyChannel.fromService(container.invokeFunction(a => a.get(IDeploymentService))))
+  ipcFramework.registerChannel('wiki', ProxyChannel.fromService(container.invokeFunction(a => a.get(IArchitectWikiService))))
+  ipcFramework.registerChannel('collaboration', ProxyChannel.fromService(container.invokeFunction(a => a.get(ICollaborationService))))
+  ipcFramework.registerChannel('lsp', ProxyChannel.fromService(container.invokeFunction(a => a.get(ILspService))))
+
   // Auto-discover local Ollama instance on startup (Offline-First Mode)
   import('./providers/OllamaAutoDiscovery').then(({ OllamaAutoDiscovery }) => {
     OllamaAutoDiscovery.discover()
@@ -267,10 +292,24 @@ app.whenReady().then(() => {
     // macOS: re-create window when dock icon is clicked
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
+
+  // Start User Profile memory consolidation daemon
+  try {
+    const { userProfileManager } = require('./agent/UserProfileManager')
+    userProfileManager.startDaemon()
+  } catch (err) {
+    console.error('[index.ts] Failed to start UserProfileManager daemon:', err)
+  }
 })
 
 // Graceful shutdown
 app.on('window-all-closed', () => {
+  try {
+    const { userProfileManager } = require('./agent/UserProfileManager')
+    userProfileManager.stopDaemon()
+  } catch {
+    // ignore
+  }
   try {
     getService(IExtensionService).stopExtensionHost()
   } catch {

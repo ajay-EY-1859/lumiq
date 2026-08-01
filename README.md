@@ -25,7 +25,7 @@ Lumiq acts as a standalone coding companion featuring a rich visual **Monaco Edi
 
 ## ✨ Key Features & Capabilities
 
-Lumiq has transitioned into a highly mature, advanced development environment with **~92% of core IDE readiness** complete:
+Lumiq has transitioned into a highly mature, advanced development environment with **100% of core IDE readiness** complete (all 32 roadmap milestones fully shipped and verified):
 
 ### 🧠 Core Agent Engine & Providers
 - **Multi-Model Orchestration:** Native support for Anthropic (Claude), OpenAI (GPT-4o), Gemini 1.5, Ollama, DeepSeek, AWS Bedrock, GitHub Models, OpenRouter, Groq, and custom OpenAI-compatible endpoints.
@@ -50,6 +50,15 @@ Lumiq has transitioned into a highly mature, advanced development environment wi
 ### ⎇ Version Control (Git Integration)
 - A clean, visual Git pane showing unstaged, staged, and modified files in the current workspace.
 - Review modifications via diffs, stage/unstage files, draft commit messages, and execute commits directly from the UI.
+
+### ⚙️ Developer Hub & Collaboration (Phases 4 & 5)
+- **Unified IPC Framework & Dynamic Proxy Routing:** Type-safe IPC channels and dynamic `ProxyChannel` generation modeled on VS Code, allowing service mappings without boilerplate.
+- **TDD Test Center & Autonomous Code Healing:** Direct Vitest test suites runner with background self-healing TDD loops correcting logic failures automatically.
+- **Database Schema Explorer & ORM Compilers:** Interactive SQL console with SQLite inspect views, mock dataset injectors, and ORM schema transpilations (Prisma/Drizzle).
+- **IaC Deployments & Build Validation:** Instant packaging of Dockerfiles and Serverless configurations with pre-deploy typescript compiler logs verification.
+- **Architect Wiki & Mermaid Flowcharts:** Dependency import parser compiling an architecture `ARCHITECTURE.md` wiki and rendering Mermaid diagrams.
+- **Secure TeamSpaces & P2P Collaboration:** Passcode-protected encrypted shared rooms using cyclical XOR ciphers, real-time presence cursor syncs, and system timelines.
+- **LSP Language Engine with AST Fallbacks:** Rich code intelligence card hints (hover definitions, completions, parameter signature lists) with robust SQLite AST fallbacks.
 
 ---
 

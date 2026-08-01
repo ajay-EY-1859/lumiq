@@ -2,7 +2,7 @@ import { fork } from 'child_process';
 import path from 'path';
 import fs from 'node:fs';
 import { BrowserWindow } from 'electron';
-import { IExtensionService, IExtensionManagementService, IExtHostMessage } from '@shared/extensions/extensions';
+import { IExtensionService, IExtensionManagementService, ProxyChannel } from '@shared/extensions/extensions';
 import { registerSingleton, InstantiationType } from '@shared/instantiation/extensions';
 import { IFileService } from '@shared/files/files';
 import { URI } from '@shared/uri';
@@ -10,10 +10,10 @@ import { saveMcpServer } from '../db/mcpServers';
 import { mcpServerManager } from './mcp/McpServerManager';
 import { agentLoop } from '../agent/AgentLoop';
 import { getDatabase } from '../db/database';
+import { IPCServer } from './IpcFrameworkService';
 
 export class ExtensionService implements IExtensionService {
   private hostProcess: any = null;
-  private pendingRequests = new Map<string, { resolve: (value: any) => void; reject: (error: Error) => void }>();
   
   // Extension State
   private activatedExtensions = new Set<string>(); // extensionId
@@ -26,8 +26,7 @@ export class ExtensionService implements IExtensionService {
   // Crash Loop Prevention
   private crashTimes: number[] = [];
 
-  // Dynamic dispatch channels map
-  private readonly apiChannels = new Map<string, any>();
+  private readonly ipcServer = new IPCServer();
 
   constructor(
     @IExtensionManagementService private readonly extensionManagementService: IExtensionManagementService,
@@ -37,7 +36,7 @@ export class ExtensionService implements IExtensionService {
   }
 
   private setupApiChannels(): void {
-    this.apiChannels.set('fs', {
+    const fsChannel = {
       readFile: async (uriStr: string) => {
         const data = await this.fileService.readFile(URI.parse(uriStr));
         return Array.from(data);
@@ -63,18 +62,20 @@ export class ExtensionService implements IExtensionService {
           isDirectory: stat.isDirectory
         };
       }
-    });
+    };
+    this.ipcServer.registerChannel('fs', ProxyChannel.fromService(fsChannel));
 
-    this.apiChannels.set('commands', {
+    const commandsChannel = {
       registerCommand: async (commandId: string, extId: string) => {
         this.registeredCommands.set(commandId, extId);
       },
       executeCommand: async (commandId: string, ...args: any[]) => {
         return await this.executeCommand(commandId, ...args);
       }
-    });
+    };
+    this.ipcServer.registerChannel('commands', ProxyChannel.fromService(commandsChannel));
 
-    this.apiChannels.set('window', {
+    const windowChannel = {
       showInformationMessage: async (message: string) => {
         console.log(`[ExtensionHost Window Message] ${message}`);
         for (const win of BrowserWindow.getAllWindows()) {
@@ -90,18 +91,20 @@ export class ExtensionService implements IExtensionService {
       createTerminal: async (options: any) => {
         console.log(`[ExtensionHost Terminal Request] Options:`, options);
       }
-    });
+    };
+    this.ipcServer.registerChannel('window', ProxyChannel.fromService(windowChannel));
 
-    this.apiChannels.set('languages', {
+    const languagesChannel = {
       registerHoverProvider: async (extId: string) => {
         this.activeHoverProviders.add(extId);
       },
       registerCompletionItemProvider: async (extId: string) => {
         this.activeCompletionProviders.add(extId);
       }
-    });
+    };
+    this.ipcServer.registerChannel('languages', ProxyChannel.fromService(languagesChannel));
 
-    this.apiChannels.set('mcp', {
+    const mcpChannel = {
       registerMcpServer: async (serverConfig: any) => {
         saveMcpServer({
           id: serverConfig.name,
@@ -116,13 +119,15 @@ export class ExtensionService implements IExtensionService {
         await mcpServerManager.start(serverConfig.name);
         agentLoop.getToolExecutor().refreshMcpTools();
       }
-    });
+    };
+    this.ipcServer.registerChannel('mcp', ProxyChannel.fromService(mcpChannel));
 
-    this.apiChannels.set('chat', {
+    const chatChannel = {
       registerChatAgent: async (agentId: string, extId: string) => {
         this.activeChatAgents.set(agentId, extId);
       }
-    });
+    };
+    this.ipcServer.registerChannel('chat', ProxyChannel.fromService(chatChannel));
   }
 
   async startExtensionHost(): Promise<void> {
@@ -146,14 +151,14 @@ export class ExtensionService implements IExtensionService {
       console.error(`[ExtensionHost stderr] ${data.toString().trim()}`);
     });
 
-    this.hostProcess.on('message', (msg: IExtHostMessage) => {
-      this.handleIncomingMessage(msg);
-    });
+    // Add connection to our new multi-process IPCServer
+    this.ipcServer.addConnection(this.hostProcess);
 
     this.hostProcess.on('exit', (code: number, signal: string) => {
       console.warn(`[ExtensionService] Extension host process exited with code ${code}, signal ${signal}`);
       this.hostProcess = null;
-      this.cleanupPendingRequests();
+      this.ipcServer.rejectAllPending(new Error('Extension host process exited.'));
+      this.cleanup();
 
       // If it crashed, attempt crash recovery
       if (code !== 0 && code !== null) {
@@ -221,15 +226,7 @@ export class ExtensionService implements IExtensionService {
     this.cleanup();
   }
 
-  private cleanupPendingRequests(): void {
-    for (const pending of this.pendingRequests.values()) {
-      pending.reject(new Error('Extension host terminated.'));
-    }
-    this.pendingRequests.clear();
-  }
-
   private cleanup(): void {
-    this.cleanupPendingRequests();
     this.activatedExtensions.clear();
     this.registeredCommands.clear();
     this.lazyCommands.clear();
@@ -330,54 +327,8 @@ export class ExtensionService implements IExtensionService {
     if (!this.hostProcess) {
       return Promise.reject(new Error('Extension host is not running.'));
     }
-
-    const id = Math.random().toString(36).substring(2, 9);
-    return new Promise((resolve, reject) => {
-      this.pendingRequests.set(id, { resolve, reject });
-      this.hostProcess.send({
-        type: 'request',
-        id,
-        method,
-        args
-      });
-    });
-  }
-
-  private async handleIncomingMessage(msg: IExtHostMessage): Promise<void> {
-    if (msg.type === 'response' || msg.type === 'apiResponse') {
-      const pending = this.pendingRequests.get(msg.id);
-      if (pending) {
-        this.pendingRequests.delete(msg.id);
-        if (msg.error) {
-          pending.reject(new Error(msg.error));
-        } else {
-          pending.resolve(msg.result);
-        }
-      }
-    } else if (msg.type === 'apiCall') {
-      const { id, channel, method, args } = msg;
-      try {
-        let result: any;
-        const handler = this.apiChannels.get(channel);
-        if (handler && typeof handler[method] === 'function') {
-          result = await handler[method](...args);
-        } else {
-          throw new Error(`Method ${method} on channel ${channel} not supported.`);
-        }
-
-        this.hostProcess.send({
-          type: 'apiResponse',
-          id,
-          result
-        });
-      } catch (err) {
-        this.hostProcess.send({
-          type: 'apiResponse',
-          id,
-          error: (err as Error).message
-        });
-      }
-    }
+    const clientChannel = this.ipcServer.getChannel('extensionHost', this.hostProcess);
+    return clientChannel.call(method, args);
   }
 }
 

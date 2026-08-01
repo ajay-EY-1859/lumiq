@@ -18,7 +18,7 @@ interface EditorState {
   setActiveTab: (id: string) => void
   updateTabContent: (id: string, content: string) => void
   saveTab: (id: string) => Promise<void>
-  reloadTab: (id: string) => Promise<void>
+  reloadTab: (id: string, force?: boolean) => Promise<void>
 }
 
 export const useEditorStore = create<EditorState>((set, get) => ({
@@ -84,22 +84,38 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const tab = get().tabs.find(t => t.id === normId)
     if (!tab) return
 
+    const writtenContent = tab.content
     try {
-      await window.electronAPI.fs.writeFile(normId, tab.content)
-      set((state) => ({
-        tabs: state.tabs.map(t =>
-          t.id === normId
-            ? { ...t, originalContent: tab.content, isDirty: false }
-            : t
-        )
-      }))
+      await window.electronAPI.fs.writeFile(normId, writtenContent)
+      set((state) => {
+        const currentTab = state.tabs.find(t => t.id === normId)
+        if (!currentTab) return state
+
+        const hasUnsavedChanges = currentTab.content !== writtenContent
+
+        return {
+          tabs: state.tabs.map(t =>
+            t.id === normId
+              ? { ...t, originalContent: writtenContent, isDirty: hasUnsavedChanges }
+              : t
+          )
+        }
+      })
     } catch (e) {
       console.error('Failed to save file', e)
     }
   },
 
-  reloadTab: async (id) => {
+  reloadTab: async (id, force = false) => {
     const normId = normalizePath(id)
+    const tab = get().tabs.find(t => t.id === normId)
+    if (!tab) return
+
+    if (tab.isDirty && !force) {
+      console.warn(`[editorStore] Skipping reload of ${normId} because it has unsaved changes.`)
+      return
+    }
+
     try {
       const content = await window.electronAPI.fs.readFile(normId)
       set((state) => ({

@@ -37,8 +37,12 @@ import type {
   ReferenceResult,
   SelfHealingAttempt,
   ComposerTaskStatus,
-  DapState
+  DapState,
+  CollaborationState,
+  TimelineAction,
+  HoverResult
 } from '../shared/types'
+import type { DBTableInfo, DBColumnInfo, TestRunResult } from '../shared/services'
 
 // Type for the exposed API
 export interface ElectronAPI {
@@ -48,6 +52,7 @@ export interface ElectronAPI {
     onChunk: (callback: (chunk: string) => void) => () => void
     onEnd: (callback: (data: { content: string; tokensUsed: number }) => void) => () => void
     onError: (callback: (error: string) => void) => () => void
+    onMessageUpdated: (callback: () => void) => () => void
     predictOneShot: (prompt: string, systemPrompt: string, provider: string, model: string) => Promise<string>
   }
   autocomplete: {
@@ -57,6 +62,7 @@ export interface ElectronAPI {
     onApprovalRequest: (callback: (request: ToolApprovalRequest) => void) => () => void
     respond: (requestId: string, approved: boolean, alwaysAllow: boolean) => Promise<void>
     onResult: (callback: (result: { toolName: string; result: string }) => void) => () => void
+    onActivity: (callback: (activity: { toolName: string; phase: 'running' | 'completed'; message?: string }) => void) => () => void
   }
   session: {
     list: () => Promise<Session[]>
@@ -93,6 +99,9 @@ export interface ElectronAPI {
     list: () => Promise<Agent[]>
     save: (agent: Partial<Agent>) => Promise<Agent>
     delete: (agentId: string) => Promise<boolean>
+    getEditHistory: (sessionId?: string) => Promise<any[]>
+    undoEdit: (snapshotId: string) => Promise<boolean>
+    redoEdit: (snapshotId: string) => Promise<boolean>
   }
   mcp: {
     list: () => Promise<McpServer[]>
@@ -206,9 +215,31 @@ export interface ElectronAPI {
   lsp: {
     getDocumentSymbols: (filePath: string) => Promise<DocumentSymbol[]>
     getWorkspaceSymbols: (workspacePath: string, query: string) => Promise<DocumentSymbol[]>
-    getDefinition: (workspacePath: string, filePath: string, line: number, column: number) => Promise<DefinitionResult | null>
-    getReferences: (workspacePath: string, filePath: string, line: number, column: number) => Promise<ReferenceResult[]>
+    getDefinition: (workspacePath: string, filePath: string, line: number, column: number, content?: string) => Promise<DefinitionResult | null>
+    getReferences: (workspacePath: string, filePath: string, line: number, column: number, content?: string) => Promise<ReferenceResult[]>
     getIndexStats: () => Promise<{ files: number; symbols: number; references: number }>
+    startServer: (languageId: string, workspacePath: string) => Promise<boolean>
+    stopServer: (languageId: string) => Promise<void>
+    getHover: (filePath: string, line: number, column: number, content?: string) => Promise<HoverResult | null>
+    getCompletion: (filePath: string, line: number, column: number, content?: string) => Promise<any[]>
+    getSignatureHelp: (filePath: string, line: number, column: number, content?: string) => Promise<any | null>
+    onPublishDiagnostics: (callback: (data: { languageId: string; uri: string; diagnostics: any[] }) => void) => () => void
+  }
+  collaboration: {
+    createRoom: (roomName: string, passcode?: string) => Promise<{ roomId: string; inviteCode: string }>
+    joinRoom: (inviteCode: string, user: string) => Promise<boolean>
+    leaveRoom: () => Promise<void>
+    getRoomState: () => Promise<CollaborationState>
+    broadcastCursor: (filePath: string, line: number, column: number) => void
+    sendChangePacket: (filePath: string, changeText: string, range: any) => void
+    getTimeline: () => Promise<TimelineAction[]>
+    logTimelineAction: (user: string, action: string) => void
+    encrypt: (payload: string) => Promise<string>
+    decrypt: (cipher: string) => Promise<string>
+    onStateUpdate: (callback: (state: CollaborationState) => void) => () => void
+    onCursorSync: (callback: (presence: { user: string; filePath: string; line: number; column: number }) => void) => () => void
+    onChangePacket: (callback: (packet: { user: string; filePath: string; changeText: string; range: any }) => void) => () => void
+    onTimelineUpdate: (callback: (action: TimelineAction) => void) => () => void
   }
   composer: {
     start: (goal: string, workspacePath: string) => Promise<void>
@@ -229,6 +260,15 @@ export interface ElectronAPI {
     explainState: (goal: string) => Promise<string>
     onStateUpdate: (callback: (state: DapState) => void) => () => void
   }
+  sandbox: {
+    start: (workspacePath: string) => Promise<any>
+    stop: (serverId: string) => Promise<boolean>
+    inspectStyles: (serverId: string, selector: string) => Promise<Record<string, string>>
+    updateStyle: (selector: string, property: string, value: string) => Promise<boolean>
+    getDomTree: (workspacePath: string, htmlContent?: string) => Promise<any>
+    getConsoleLogs: () => Promise<any[]>
+    takeHeapSnapshot: () => Promise<{ totalJSHeapSize: number; usedJSHeapSize: number; timestamp: number }>
+  }
   git: {
     status: (workspacePath: string) => Promise<GitStatusResult>
     branches: (workspacePath: string) => Promise<string[]>
@@ -238,6 +278,35 @@ export interface ElectronAPI {
     discard: (workspacePath: string, files: string[]) => Promise<boolean>
     commit: (workspacePath: string, message: string) => Promise<boolean>
     getIgnored: (workspacePath: string) => Promise<string[]>
+  }
+  ipc: {
+    call: (channel: string, method: string, args: any[]) => Promise<any>
+  }
+  database: {
+    getTables: () => Promise<DBTableInfo[]>
+    getTableSchema: (tableName: string) => Promise<DBColumnInfo[]>
+    executeQuery: (sql: string) => Promise<any[]>
+    generateSchemaDeclaration: (format: 'prisma' | 'drizzle') => Promise<string>
+    generateMockData: (tableName: string, count: number) => Promise<any[]>
+  }
+  test: {
+    generateTestSuite: (filePath: string, testContent: string) => Promise<string>
+    runTestSuite: (testFilePath: string) => Promise<TestRunResult>
+    autonomousRepairLoop: (testFilePath: string, sourceFilePath: string, maxRetries?: number) => Promise<boolean>
+  }
+  deploy: {
+    generateIaC: (workspacePath: string, target: 'docker' | 'serverless') => Promise<{ filePath: string; content: string }>
+    verifyPreDeployBuild: (workspacePath: string) => Promise<{ success: boolean; log: string }>
+  }
+  wiki: {
+    analyzeCodebase: (workspacePath: string) => Promise<{ filesParsed: number; importsMap: Record<string, string[]> }>
+    generateMermaidDiagram: (workspacePath: string) => Promise<string>
+    writeWikiFile: (workspacePath: string) => Promise<string>
+  }
+  clipboard: {
+    writeText: (text: string) => Promise<void>
+    readText: () => Promise<string>
+    saveImage: () => Promise<string | null>
   }
   // Menu event listeners
   onMenuNewSession: (callback: () => void) => () => void
@@ -268,6 +337,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onChunk: (cb: (chunk: string) => void) => createListener(IPC.CHAT_STREAM_CHUNK, cb),
     onEnd: (cb: (data: { content: string; tokensUsed: number }) => void) => createListener(IPC.CHAT_STREAM_END, cb),
     onError: (cb: (error: string) => void) => createListener(IPC.CHAT_ERROR, cb),
+    onMessageUpdated: (cb: () => void) => createListener(IPC.MESSAGE_UPDATED, cb),
     predictOneShot: (prompt: string, systemPrompt: string, provider: string, model: string) =>
       ipcRenderer.invoke(IPC.CHAT_PREDICT_ONE_SHOT, { prompt, systemPrompt, provider, model })
   },
@@ -285,7 +355,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     respond: (requestId: string, approved: boolean, alwaysAllow: boolean) =>
       ipcRenderer.invoke(IPC.TOOL_APPROVAL_RESPONSE, { requestId, approved, alwaysAllow }),
     onResult: (cb: (result: { toolName: string; result: string }) => void) =>
-      createListener(IPC.TOOL_RESULT, cb)
+      createListener(IPC.TOOL_RESULT, cb),
+    onActivity: (cb: (activity: { toolName: string; phase: 'running' | 'completed'; message?: string }) => void) =>
+      createListener(IPC.TOOL_ACTIVITY, cb)
   },
 
   // ── Sessions ──
@@ -336,7 +408,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   agent: {
     list: () => ipcRenderer.invoke(IPC.AGENT_LIST),
     save: (agent: Partial<Agent>) => ipcRenderer.invoke(IPC.AGENT_SAVE, agent),
-    delete: (agentId: string) => ipcRenderer.invoke(IPC.AGENT_DELETE, agentId)
+    delete: (agentId: string) => ipcRenderer.invoke(IPC.AGENT_DELETE, agentId),
+    getEditHistory: (sessionId?: string) => ipcRenderer.invoke(IPC.AGENT_EDIT_HISTORY, sessionId),
+    undoEdit: (snapshotId: string) => ipcRenderer.invoke(IPC.AGENT_EDIT_UNDO, snapshotId),
+    redoEdit: (snapshotId: string) => ipcRenderer.invoke(IPC.AGENT_EDIT_REDO, snapshotId)
   },
 
   mcp: {
@@ -479,9 +554,31 @@ contextBridge.exposeInMainWorld('electronAPI', {
   lsp: {
     getDocumentSymbols: (filePath: string) => ipcRenderer.invoke(IPC.LSP_DOCUMENT_SYMBOLS, filePath),
     getWorkspaceSymbols: (workspacePath: string, query: string) => ipcRenderer.invoke(IPC.LSP_WORKSPACE_SYMBOLS, { workspacePath, query }),
-    getDefinition: (workspacePath: string, filePath: string, line: number, column: number) => ipcRenderer.invoke(IPC.LSP_DEFINITION, { workspacePath, filePath, line, column }),
-    getReferences: (workspacePath: string, filePath: string, line: number, column: number) => ipcRenderer.invoke(IPC.LSP_REFERENCES, { workspacePath, filePath, line, column }),
-    getIndexStats: () => ipcRenderer.invoke(IPC.LSP_INDEX_STATS)
+    getDefinition: (workspacePath: string, filePath: string, line: number, column: number, content?: string) => ipcRenderer.invoke(IPC.LSP_DEFINITION, { workspacePath, filePath, line, column, content }),
+    getReferences: (workspacePath: string, filePath: string, line: number, column: number, content?: string) => ipcRenderer.invoke(IPC.LSP_REFERENCES, { workspacePath, filePath, line, column, content }),
+    getIndexStats: () => ipcRenderer.invoke(IPC.LSP_INDEX_STATS),
+    startServer: (languageId: string, workspacePath: string) => ipcRenderer.invoke(IPC.LSP_START_SERVER, { languageId, workspacePath }),
+    stopServer: (languageId: string) => ipcRenderer.invoke(IPC.LSP_STOP_SERVER, languageId),
+    getHover: (filePath: string, line: number, column: number, content?: string) => ipcRenderer.invoke(IPC.LSP_GET_HOVER, { filePath, line, column, content }),
+    getCompletion: (filePath: string, line: number, column: number, content?: string) => ipcRenderer.invoke(IPC.LSP_GET_COMPLETION, { filePath, line, column, content }),
+    getSignatureHelp: (filePath: string, line: number, column: number, content?: string) => ipcRenderer.invoke(IPC.LSP_GET_SIGNATURE_HELP, { filePath, line, column, content }),
+    onPublishDiagnostics: (cb: (data: { languageId: string; uri: string; diagnostics: any[] }) => void) => createListener('lsp:publish-diagnostics', cb)
+  },
+  collaboration: {
+    createRoom: (roomName: string, passcode?: string) => ipcRenderer.invoke(IPC.COLLABORATION_CREATE_ROOM, { roomName, passcode }),
+    joinRoom: (inviteCode: string, user: string) => ipcRenderer.invoke(IPC.COLLABORATION_JOIN_ROOM, { inviteCode, user }),
+    leaveRoom: () => ipcRenderer.invoke(IPC.COLLABORATION_LEAVE_ROOM),
+    getRoomState: () => ipcRenderer.invoke(IPC.COLLABORATION_GET_STATE),
+    broadcastCursor: (filePath: string, line: number, column: number) => ipcRenderer.send(IPC.COLLABORATION_SEND_CURSOR, { filePath, line, column }),
+    sendChangePacket: (filePath: string, changeText: string, range: any) => ipcRenderer.send(IPC.COLLABORATION_SEND_CHANGE, { filePath, changeText, range }),
+    getTimeline: () => ipcRenderer.invoke(IPC.COLLABORATION_GET_TIMELINE),
+    logTimelineAction: (user: string, action: string) => ipcRenderer.send(IPC.COLLABORATION_LOG_ACTION, { user, action }),
+    encrypt: (payload: string) => ipcRenderer.invoke(IPC.COLLABORATION_ENCRYPT, { payload }),
+    decrypt: (cipher: string) => ipcRenderer.invoke(IPC.COLLABORATION_DECRYPT, { cipher }),
+    onStateUpdate: (cb: (state: CollaborationState) => void) => createListener('collaboration:state-update', cb),
+    onCursorSync: (cb: (presence: { user: string; filePath: string; line: number; column: number }) => void) => createListener('collaboration:cursor-sync', cb),
+    onChangePacket: (cb: (packet: { user: string; filePath: string; changeText: string; range: any }) => void) => createListener('collaboration:change-packet', cb),
+    onTimelineUpdate: (cb: (action: TimelineAction) => void) => createListener('collaboration:timeline-update', cb)
   },
   composer: {
     start: (goal: string, workspacePath: string) => ipcRenderer.invoke(IPC.COMPOSER_START, { goal, workspacePath }),
@@ -527,6 +624,51 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke(IPC.GIT_COMMIT, { workspacePath, message }),
     getIgnored: (workspacePath: string) =>
       ipcRenderer.invoke(IPC.GIT_IGNORED, workspacePath)
+  },
+  ipc: {
+    call: (channel: string, method: string, args: any[]) =>
+      ipcRenderer.invoke(IPC.FRAMEWORK_CALL, { channel, method, args })
+  },
+  database: {
+    getTables: () => ipcRenderer.invoke(IPC.DATABASE_GET_TABLES),
+    getTableSchema: (tableName: string) => ipcRenderer.invoke(IPC.DATABASE_GET_SCHEMA, tableName),
+    executeQuery: (sql: string) => ipcRenderer.invoke(IPC.DATABASE_EXECUTE_QUERY, sql),
+    generateSchemaDeclaration: (format: 'prisma' | 'drizzle') =>
+      ipcRenderer.invoke(IPC.DATABASE_GENERATE_DECLARATION, format),
+    generateMockData: (tableName: string, count: number) =>
+      ipcRenderer.invoke(IPC.DATABASE_GENERATE_MOCK_DATA, { tableName, count })
+  },
+  test: {
+    generateTestSuite: (filePath: string, testContent: string) =>
+      ipcRenderer.invoke(IPC.TEST_GENERATE_SUITE, { filePath, testContent }),
+    runTestSuite: (testFilePath: string) => ipcRenderer.invoke(IPC.TEST_RUN_SUITE, testFilePath),
+    autonomousRepairLoop: (testFilePath: string, sourceFilePath: string, maxRetries?: number) =>
+      ipcRenderer.invoke(IPC.TEST_REPAIR_LOOP, { testFilePath, sourceFilePath, maxRetries })
+  },
+  deploy: {
+    generateIaC: (workspacePath: string, target: 'docker' | 'serverless') =>
+      ipcRenderer.invoke(IPC.DEPLOY_GENERATE_IAC, { workspacePath, target }),
+    verifyPreDeployBuild: (workspacePath: string) =>
+      ipcRenderer.invoke(IPC.DEPLOY_VERIFY_BUILD, workspacePath)
+  },
+  wiki: {
+    analyzeCodebase: (workspacePath: string) => ipcRenderer.invoke(IPC.WIKI_ANALYZE, workspacePath),
+    generateMermaidDiagram: (workspacePath: string) => ipcRenderer.invoke(IPC.WIKI_MERMAID, workspacePath),
+    writeWikiFile: (workspacePath: string) => ipcRenderer.invoke(IPC.WIKI_WRITE, workspacePath)
+  },
+  clipboard: {
+    writeText: (text: string) => ipcRenderer.invoke(IPC.CLIPBOARD_WRITE_TEXT, text),
+    readText: () => ipcRenderer.invoke(IPC.CLIPBOARD_READ_TEXT),
+    saveImage: () => ipcRenderer.invoke(IPC.CLIPBOARD_SAVE_IMAGE)
+  },
+  sandbox: {
+    start: (workspacePath: string) => ipcRenderer.invoke(IPC.SANDBOX_START, workspacePath),
+    stop: (serverId: string) => ipcRenderer.invoke(IPC.SANDBOX_STOP, serverId),
+    inspectStyles: (serverId: string, selector: string) => ipcRenderer.invoke(IPC.SANDBOX_INSPECT_STYLES, { serverId, selector }),
+    updateStyle: (selector: string, property: string, value: string) => ipcRenderer.invoke(IPC.SANDBOX_UPDATE_STYLE, { selector, property, value }),
+    getDomTree: (workspacePath: string, htmlContent?: string) => ipcRenderer.invoke(IPC.SANDBOX_GET_DOM_TREE, { workspacePath, htmlContent }),
+    getConsoleLogs: () => ipcRenderer.invoke(IPC.SANDBOX_GET_CONSOLE_LOGS),
+    takeHeapSnapshot: () => ipcRenderer.invoke(IPC.SANDBOX_TAKE_HEAP_SNAPSHOT)
   },
 
   // ── Menu Events ──

@@ -156,7 +156,9 @@ export function compileCurrentFileAction(): void {
 export function stopActiveTaskAction(): void {
   const taskState = useTaskStore.getState()
   const activeTaskId = taskState.activeTaskId
-  const runningTask = taskState.tasks.find(t => t.id === activeTaskId || t.status === 'running')
+  const runningTask = activeTaskId 
+    ? taskState.tasks.find(t => t.id === activeTaskId)
+    : taskState.tasks.find(t => t.status === 'running')
   if (runningTask) {
     console.log(`[ShortcutExecutor] Shift+F5: Force termination requested for task "${runningTask.name}"`)
     taskState.stopTask(runningTask.id)

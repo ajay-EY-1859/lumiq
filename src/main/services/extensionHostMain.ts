@@ -1,27 +1,15 @@
 import Module from 'module';
 import path from 'path';
 import { ProxyChannel } from '@shared/extensions/extensions';
+import { IPCClient } from './IpcFrameworkService';
 
-// Pending main API responses map
-const pendingApiResponses = new Map<string, { resolve: (value: any) => void; reject: (error: Error) => void }>();
+// Initialize the cross-process IPCClient wrapping process
+const ipcClient = new IPCClient(process as any);
 
 // Outgoing call helper to Main process
 function callMain(channel: string, method: string, args: any[]): Promise<any> {
-  const id = Math.random().toString(36).substring(2, 9);
-  return new Promise((resolve, reject) => {
-    pendingApiResponses.set(id, { resolve, reject });
-    if (process.send) {
-      process.send({
-        type: 'apiCall',
-        id,
-        channel,
-        method,
-        args
-      });
-    } else {
-      reject(new Error('Process IPC channel not available.'));
-    }
-  });
+  const chan = ipcClient.getChannel(channel);
+  return chan.call(method, args);
 }
 
 // Disposables collection tracker
@@ -170,89 +158,59 @@ Module.prototype.require = function (this: any, id: string) {
 // Activated extensions register
 const activatedExtensions = new Map<string, any>();
 
-// Handle messages from the Main process
-process.on('message', async (msg: any) => {
-  if (msg.type === 'apiResponse') {
-    const pending = pendingApiResponses.get(msg.id);
-    if (pending) {
-      pendingApiResponses.delete(msg.id);
-      if (msg.error) {
-        pending.reject(new Error(msg.error));
-      } else {
-        pending.resolve(msg.result);
-      }
+// Expose the Extension Host services as a named channel using our IPCClient
+const extensionHostService = {
+  activateExtension: async (ext: any) => {
+    const extMainPath = path.isAbsolute(ext.main) ? ext.main : path.join(ext.extensionPath, ext.main);
+    
+    if (ext.workspaceFolders) {
+      activeWorkspaceFolders = ext.workspaceFolders;
     }
-  } else if (msg.type === 'request') {
-    const { id, method, args } = msg;
-    try {
-      let result: any;
-      if (method === 'activateExtension') {
-        const ext = args[0];
-        const extMainPath = path.isAbsolute(ext.main) ? ext.main : path.join(ext.extensionPath, ext.main);
-        
-        if (ext.workspaceFolders) {
-          activeWorkspaceFolders = ext.workspaceFolders;
-        }
 
-        console.log(`[ExtensionHost] Activating extension ${ext.id} from ${extMainPath}`);
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const moduleExports = require(extMainPath);
-        if (moduleExports && typeof moduleExports.activate === 'function') {
-          const context = {
-            subscriptions: [],
-            extensionPath: ext.extensionPath
-          };
-          const activationResult = await moduleExports.activate(context);
-          activatedExtensions.set(ext.id, { exports: activationResult, context });
-        }
-      } else if (method === 'executeCommand') {
-        const [commandId, ...cmdArgs] = args;
-        const callback = commandCallbacks.get(commandId);
-        if (callback) {
-          result = await callback(...cmdArgs);
-        } else {
-          throw new Error(`Command ${commandId} callback not found in ExtensionHost.`);
-        }
-      } else if (method === 'provideHover') {
-        const [filePath, line, column] = args;
-        const provider = Array.from(hoverProviders.values())[0];
-        if (provider && typeof provider.provideHover === 'function') {
-          result = await provider.provideHover({ uri: filePath }, { line, column });
-        }
-      } else if (method === 'provideCompletions') {
-        const [filePath, line, column] = args;
-        const provider = Array.from(completionProviders.values())[0];
-        if (provider && typeof provider.provideCompletionItems === 'function') {
-          result = await provider.provideCompletionItems({ uri: filePath }, { line, column });
-        }
-      } else if (method === 'callChatAgent') {
-        const [agentId, request] = args;
-        const callback = chatAgents.get(agentId);
-        if (callback) {
-          result = await callback(request);
-        }
-      } else {
-        throw new Error(`Unknown extension host request method: ${method}`);
-      }
-
-      if (process.send) {
-        process.send({
-          type: 'response',
-          id,
-          result
-        });
-      }
-    } catch (err) {
-      if (process.send) {
-        process.send({
-          type: 'response',
-          id,
-          error: (err as Error).message
-        });
-      }
+    console.log(`[ExtensionHost] Activating extension ${ext.id} from ${extMainPath}`);
+     
+    const moduleExports = require(extMainPath);
+    if (moduleExports && typeof moduleExports.activate === 'function') {
+      const context = {
+        subscriptions: [],
+        extensionPath: ext.extensionPath
+      };
+      const activationResult = await moduleExports.activate(context);
+      activatedExtensions.set(ext.id, { exports: activationResult, context });
     }
+  },
+  executeCommand: async (commandId: string, ...cmdArgs: any[]) => {
+    const callback = commandCallbacks.get(commandId);
+    if (callback) {
+      return await callback(...cmdArgs);
+    } else {
+      throw new Error(`Command ${commandId} callback not found in ExtensionHost.`);
+    }
+  },
+  provideHover: async (filePath: string, line: number, column: number) => {
+    const provider = Array.from(hoverProviders.values())[0];
+    if (provider && typeof provider.provideHover === 'function') {
+      return await provider.provideHover({ uri: filePath }, { line, column });
+    }
+    return null;
+  },
+  provideCompletions: async (filePath: string, line: number, column: number) => {
+    const provider = Array.from(completionProviders.values())[0];
+    if (provider && typeof provider.provideCompletionItems === 'function') {
+      return await provider.provideCompletionItems({ uri: filePath }, { line, column });
+    }
+    return [];
+  },
+  callChatAgent: async (agentId: string, request: any) => {
+    const callback = chatAgents.get(agentId);
+    if (callback) {
+      return await callback(request);
+    }
+    return null;
   }
-});
+};
+
+ipcClient.registerChannel('extensionHost', ProxyChannel.fromService(extensionHostService));
 
 // Graceful cleanup on shutdown
 process.on('SIGTERM', () => {

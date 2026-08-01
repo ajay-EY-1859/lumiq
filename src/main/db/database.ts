@@ -458,6 +458,11 @@ function runMigrations(database: Database.Database): void {
       // Column already exists
     }
     try {
+      database.exec(`ALTER TABLE chat_summaries ADD COLUMN knowledge_graph TEXT`)
+    } catch {
+      // Column already exists
+    }
+    try {
       database.exec(`CREATE INDEX IF NOT EXISTS idx_chat_summaries_session ON chat_summaries(session_id);`)
       database.exec(`CREATE INDEX IF NOT EXISTS idx_codebase_embeddings_path ON codebase_embeddings(workspace_path);`)
       database.exec(`CREATE INDEX IF NOT EXISTS idx_codebase_embeddings_file ON codebase_embeddings(workspace_path, file_path);`)
@@ -579,6 +584,18 @@ function runMigrations(database: Database.Database): void {
       CREATE INDEX IF NOT EXISTS idx_ast_symbols_name ON ast_symbols(name);
       CREATE INDEX IF NOT EXISTS idx_ast_references_target ON ast_references(target_name);
       CREATE INDEX IF NOT EXISTS idx_ast_references_source ON ast_references(workspace_path, source_file_path);
+
+      CREATE TABLE IF NOT EXISTS workspace_episodic_memory (
+        id TEXT PRIMARY KEY,
+        workspace_path TEXT NOT NULL,
+        session_id TEXT,
+        activity_type TEXT NOT NULL,
+        summary TEXT NOT NULL,
+        context_details TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_workspace_memory_path ON workspace_episodic_memory(workspace_path);
     `)
   })
 

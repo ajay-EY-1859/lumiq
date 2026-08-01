@@ -9,6 +9,7 @@ import { BrowserWindow } from 'electron'
 import { IPC } from '@shared/types'
 import type { Message, ProviderConfig, SendResult } from '@shared/types'
 import { ProviderFactory } from '../providers/ProviderFactory'
+import { sanitizeMessages } from '../providers/utils'
 import { ToolExecutor } from './ToolExecutor'
 import { ContextManager } from './ContextManager'
 import { getDatabase } from '../db/database'
@@ -104,6 +105,7 @@ export class AgentLoop {
     options: {
       model: string
       systemPrompt?: string
+      systemPromptSegments?: string[]
       callbacks?: AgentLoopCallbacks
     }
   ): Promise<void> {
@@ -148,16 +150,31 @@ export class AgentLoop {
 
       // 2. Fetch codebase RAG context if a workspace path is configured
       let ragSegment = ''
+      let memorySegment = ''
       if (workspacePath && userMessage) {
         try {
           ragSegment = await ragQueryEngine.getSemanticPromptSegment(workspacePath, userMessage)
         } catch (err) {
           console.error('[AgentLoop] RAG search failed:', err)
         }
+
+        try {
+          const { workspaceMemoryService } = require('../services/WorkspaceMemoryService')
+          memorySegment = workspaceMemoryService.getRelevantMemoriesSegment(workspacePath, userMessage)
+        } catch (err) {
+          console.error('[AgentLoop] Memory retrieval failed:', err)
+        }
       }
 
       // Trim context
-      const trimmedMessages = this.contextManager.trimMessages(messages, sessionId, ragSegment)
+      const trimmedMessages = this.contextManager.trimMessages(messages, sessionId, ragSegment, options.systemPrompt, options.model, memorySegment)
+
+      // Extract system prompts and segment them to leverage LLM prompt caching
+      const systemMessages = trimmedMessages.filter((m) => m.role === 'system')
+      if (systemMessages.length > 0) {
+        options.systemPrompt = systemMessages.map((m) => m.content).join('\n\n')
+        options.systemPromptSegments = systemMessages.map((m) => m.content)
+      }
 
       // Reconstruct missing toolCalls on assistant messages from DB history
       const rehydratedMessages = this.reconstructToolCalls(trimmedMessages)
@@ -275,7 +292,7 @@ export class AgentLoop {
     messages: Message[],
     sessionId: string,
     userMessage: string,
-    options: { model: string; systemPrompt?: string; callbacks?: AgentLoopCallbacks },
+    options: { model: string; systemPrompt?: string; systemPromptSegments?: string[]; callbacks?: AgentLoopCallbacks },
     signal: AbortSignal,
     window?: BrowserWindow
   ): Promise<void> {
@@ -313,11 +330,61 @@ export class AgentLoop {
 
       while (!streamSucceeded) {
         try {
+          // Tool-Aware Context Routing: dynamically prune context based on last tool executed
+          const lastMsg = messages[messages.length - 1]
+          let activeSystemSegments = options.systemPromptSegments ? [...options.systemPromptSegments] : []
+          let activeSystemPrompt = options.systemPrompt
+
+          if (lastMsg && lastMsg.role === 'tool') {
+            const toolName = lastMsg.toolName || ''
+            if (toolName.includes('write') || toolName.includes('replace') || toolName.includes('edit')) {
+              if (activeSystemPrompt && (activeSystemPrompt.includes('Codebase RAG Layer') || activeSystemPrompt.includes('SEMANTIC WORKSPACE CONTEXT'))) {
+                activeSystemPrompt = activeSystemPrompt.replace(
+                  /═══════════════════════════════════════════════════════════════════\s*SEMANTIC WORKSPACE CONTEXT[\s\S]*?═══════════════════════════════════════════════════════════════════/g,
+                  '[RAG Context Pruned during file edit turn to optimize token usage]'
+                )
+              }
+              activeSystemSegments = activeSystemSegments.map((segment) => {
+                if (segment.includes('Codebase RAG Layer') || segment.includes('SEMANTIC WORKSPACE CONTEXT')) {
+                  return '[RAG Context Pruned during file edit turn to optimize token usage]'
+                }
+                return segment
+              })
+              console.log('[AgentLoop] Tool-Aware Context Routing: Pruning RAG context during file-modification tool turn.')
+            } else if (toolName.includes('test') || toolName.includes('run') || toolName.includes('exec') || toolName.includes('shell')) {
+              if (activeSystemPrompt && (activeSystemPrompt.includes('HISTORICAL WORKSPACE EPISODIC MEMORIES') || activeSystemPrompt.includes('USER PROFILE KNOWLEDGE'))) {
+                activeSystemPrompt = activeSystemPrompt.replace(
+                  /═══════════════════════════════════════════════════════════════════\s*USER PROFILE KNOWLEDGE[\s\S]*?═══════════════════════════════════════════════════════════════════/g,
+                  '[Profile facts/memories pruned during execution validation turn]'
+                )
+              }
+              activeSystemSegments = activeSystemSegments.map((segment) => {
+                if (segment.includes('HISTORICAL WORKSPACE EPISODIC MEMORIES') || segment.includes('USER PROFILE KNOWLEDGE')) {
+                  return '[Profile facts/memories pruned during execution validation turn]'
+                }
+                return segment
+              })
+              console.log('[AgentLoop] Tool-Aware Context Routing: Pruning facts/memories during command execution validation turn.')
+            }
+          }
+
+          // Sanitization: Remove unrecognized tool calls and convert unrecognized tool results to user messages
+          const sanitizedMessages = sanitizeMessages(messages, {
+            tools: this.toolExecutor.getAvailableTools().map((tool) => ({
+              name: tool.name,
+              description: tool.description,
+              inputSchema: tool.inputSchema
+            })),
+            model: currentModel,
+            stream: true
+          })
+
           result = await this.withRetry(
-            () => currentProvider.sendMessage(messages, {
+            () => currentProvider.sendMessage(sanitizedMessages, {
               model: currentModel,
               stream: true,
-              systemPrompt: options.systemPrompt,
+              systemPrompt: activeSystemPrompt,
+              systemPromptSegments: activeSystemSegments.length > 0 ? activeSystemSegments : undefined,
               tools: this.toolExecutor.getAvailableTools().map((tool) => ({
                 name: tool.name,
                 description: tool.description,
@@ -389,6 +456,9 @@ export class AgentLoop {
             })
           }
 
+          // Notify renderer that the assistant message has finalized (with any tool calls)
+          window?.webContents.send(IPC.MESSAGE_UPDATED)
+
           // Log cost transaction (Offline-First and Budget Cap support)
           try {
             if (result && result.tokensUsed > 0) {
@@ -423,6 +493,9 @@ export class AgentLoop {
               })
             }
           }
+          
+          // Notify renderer that the assistant message has finalized (with any tool calls)
+          window?.webContents.send(IPC.MESSAGE_UPDATED)
 
           triedProviders.push(currentConfig.id)
           const fallbacks = this.getFallbackConfigs(triedProviders)
@@ -539,6 +612,7 @@ export class AgentLoop {
           // Send tool result to renderer
           options.callbacks?.onToolResult?.(toolName, toolResult)
           window?.webContents.send(IPC.TOOL_RESULT, { toolName, result: toolResult })
+          window?.webContents.send(IPC.MESSAGE_UPDATED)
 
           // Notify frontend if a file was edited
           if (!toolResult.startsWith('[ERROR]') && (toolName === 'FileEditTool' || toolName === 'FileWriteTool')) {

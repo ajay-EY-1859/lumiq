@@ -104,3 +104,16 @@ Registry.configuration.registerProperty('toolSettings', {
   default: [],
   description: 'Fine-grained configuration settings list for MCP tools'
 });
+
+Registry.configuration.registerProperty('keybindings', {
+  type: 'object',
+  default: {},
+  description: 'Custom keyboard shortcut keybindings map'
+});
+
+Registry.configuration.registerProperty('lspMode', {
+  type: 'string',
+  default: 'simulated',
+  description: 'Language Server Protocol engine mode: "real" or "simulated"'
+});
+

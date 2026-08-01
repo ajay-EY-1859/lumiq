@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════════════════════════
-// Lumiq — Message Bubble Component
-// Renders user, assistant, and tool messages with markdown
+// Lumiq — Message Bubble Component (Premium Redesign v2)
+// Glow avatars · Context markers · Enhanced hover reveal
 // ═══════════════════════════════════════════════════════════════════
 
 import React, { useState, useCallback, useMemo } from 'react'
@@ -24,18 +24,46 @@ function isSafeExternalUrl(url: string): boolean {
   }
 }
 
+function formatTime(dateStr: string): string {
+  try {
+    const d = new Date(dateStr)
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  } catch {
+    return ''
+  }
+}
+
 export const MessageBubble = React.memo(function MessageBubble({ message, onRetry }: MessageBubbleProps): React.JSX.Element {
-  const [showCopy, setShowCopy] = useState(false)
+  const [showActions, setShowActions] = useState(false)
   const [copied, setCopied] = useState(false)
 
   const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(message.content)
+    window.electronAPI.clipboard.writeText(message.content)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }, [message.content])
 
   const isUser = message.role === 'user'
   const isTool = message.role === 'tool'
+
+  // Extract attached paths and clean content
+  const { cleanContent, attachedPaths } = useMemo(() => {
+    const text = message.content || ''
+    const match = text.match(/(?:\r?\n\r?\n)?Attached paths:\s*(.*)/i)
+    if (match) {
+      const pathsText = match[1]
+      const pathRegex = /"([^"]+)"/g
+      const paths: string[] = []
+      let pathMatch
+      while ((pathMatch = pathRegex.exec(pathsText)) !== null) {
+        paths.push(pathMatch[1])
+      }
+      const clean = text.replace(/(?:\r?\n\r?\n)?Attached paths:\s*(.*)/i, '').trim()
+      return { cleanContent: clean, attachedPaths: paths }
+    }
+    return { cleanContent: text, attachedPaths: [] }
+  }, [message.content])
+
   const renderedMarkdown = useMemo(() => (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
@@ -65,7 +93,16 @@ export const MessageBubble = React.memo(function MessageBubble({ message, onRetr
           if (isInline) {
             return (
               <code
-                className="font-mono text-[13px] bg-black/5 dark:bg-white/10 px-1.5 py-0.5 rounded border border-black/5 dark:border-white/5 text-[var(--accent-blue)] font-medium"
+                style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: '12px',
+                  background: 'var(--bg-tertiary)',
+                  padding: '1px 6px',
+                  borderRadius: '4px',
+                  color: 'var(--accent-blue)',
+                  fontWeight: 500,
+                  border: '1px solid var(--border)',
+                }}
                 {...props}
               >
                 {children}
@@ -80,9 +117,9 @@ export const MessageBubble = React.memo(function MessageBubble({ message, onRetr
         }
       }}
     >
-      {message.content}
+      {cleanContent}
     </ReactMarkdown>
-  ), [message.content])
+  ), [cleanContent])
 
   if (isTool) {
     return <ToolMessage message={message} />
@@ -90,58 +127,239 @@ export const MessageBubble = React.memo(function MessageBubble({ message, onRetr
 
   return (
     <div
-      className={`animate-slide-up flex gap-3 px-4 py-2 ${isUser ? 'flex-row-reverse' : ''}`}
-      onMouseEnter={() => setShowCopy(true)}
-      onMouseLeave={() => setShowCopy(false)}
+      className="animate-slide-up"
+      style={{
+        display: 'flex',
+        gap: '10px',
+        padding: '4px 0',
+        flexDirection: isUser ? 'row-reverse' : 'row',
+        alignItems: 'flex-start',
+      }}
+      onMouseEnter={() => setShowActions(true)}
+      onMouseLeave={() => setShowActions(false)}
     >
-      {/* Avatar */}
+      {/* Avatar — AI */}
       {!isUser && (
-        <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center text-white text-xs shadow-md shrink-0 mt-1 ring-2 ring-white/10">
-          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+        <div
+          style={{
+            width: '32px',
+            height: '32px',
+            borderRadius: '12px',
+            background: 'linear-gradient(135deg, var(--accent-blue), var(--accent-purple))',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: 'white',
+            flexShrink: 0,
+            marginTop: '2px',
+            boxShadow: '0 4px 12px rgba(59, 130, 246, 0.2)',
+            position: 'relative',
+          }}
+        >
+          {/* Subtle ring for streaming messages */}
+          {message.id === 'streaming' && (
+            <div style={{
+              position: 'absolute',
+              inset: '-3px',
+              borderRadius: '15px',
+              border: '2px solid rgba(96, 165, 250, 0.4)',
+              animation: 'neonPulse 2s ease-in-out infinite',
+            }} />
+          )}
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+          </svg>
         </div>
       )}
 
       {/* Bubble */}
       <div
-        className={`relative max-w-[85%] px-4 py-3 text-[14px] leading-relaxed shadow-sm ${
-          isUser
-            ? 'bg-[var(--user-bubble)] text-[var(--text-primary)] rounded-[16px_16px_4px_16px]'
-            : 'bg-[var(--ai-bubble)] border border-[var(--border)] rounded-[16px_16px_16px_4px] shadow-lg backdrop-blur-sm'
-        }`}
+        style={{
+          position: 'relative',
+          maxWidth: '85%',
+          padding: '12px 16px',
+          fontSize: '14px',
+          lineHeight: 1.65,
+          ...(isUser ? {
+            background: 'var(--user-bubble)',
+            color: 'var(--text-primary)',
+            borderRadius: 'var(--radius-lg) var(--radius-lg) 4px var(--radius-lg)',
+            boxShadow: 'var(--shadow-sm)',
+          } : {
+            background: 'var(--ai-bubble)',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-lg) var(--radius-lg) var(--radius-lg) 4px',
+            boxShadow: 'var(--shadow-md)',
+            backdropFilter: 'blur(8px)',
+            WebkitBackdropFilter: 'blur(8px)',
+          }),
+        }}
       >
         <div className="markdown-content">
           {renderedMarkdown}
         </div>
 
-        {/* Copy / Retry buttons on hover */}
-        {showCopy && (
-          <div className="absolute top-2 right-2 flex gap-1.5 z-10">
+        {/* Visual attachment chips */}
+        {attachedPaths.length > 0 && (
+          <div style={{
+            marginTop: '10px',
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: '6px',
+            borderTop: '1px solid var(--border)',
+            paddingTop: '8px'
+          }}>
+            {attachedPaths.map((path) => {
+              const fileName = path.split(/[/\\]/).pop() || path
+              return (
+                <div
+                  key={path}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '3px 8px',
+                    background: isUser ? 'rgba(255, 255, 255, 0.12)' : 'rgba(59, 130, 246, 0.08)',
+                    border: isUser ? '1px solid rgba(255, 255, 255, 0.2)' : '1px solid rgba(59, 130, 246, 0.15)',
+                    borderRadius: '4px',
+                    fontSize: '11px',
+                    color: isUser ? 'white' : 'var(--text-primary)',
+                    cursor: 'default'
+                  }}
+                  title={path}
+                >
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+                  </svg>
+                  <span>{fileName}</span>
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        {/* Action bar on hover — slides up from bottom */}
+        {showActions && (
+          <div
+            className="animate-fade-in"
+            style={{
+              position: 'absolute',
+              bottom: '-28px',
+              ...(isUser ? { right: '0' } : { left: '0' }),
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              padding: '3px 6px',
+              background: 'var(--glass-bg)',
+              backdropFilter: 'blur(12px)',
+              WebkitBackdropFilter: 'blur(12px)',
+              border: '1px solid var(--glass-border)',
+              borderRadius: 'var(--radius-md)',
+              boxShadow: 'var(--shadow-md)',
+              zIndex: 10,
+            }}
+          >
+            {/* Timestamp */}
+            <span style={{
+              fontSize: '10px',
+              color: 'var(--text-muted)',
+              padding: '0 4px',
+              fontFamily: 'var(--font-mono)',
+            }}>
+              {formatTime(message.createdAt)}
+            </span>
+
+            {/* Token count if available */}
+            {message.tokensUsed && (
+              <span style={{
+                fontSize: '9px',
+                color: 'var(--text-muted)',
+                padding: '1px 5px',
+                background: 'var(--bg-tertiary)',
+                borderRadius: 'var(--radius-sm)',
+                fontFamily: 'var(--font-mono)',
+              }}>
+                {message.tokensUsed} tok
+              </span>
+            )}
+
+            <div style={{ width: '1px', height: '14px', background: 'var(--border)', margin: '0 2px' }} />
+
+            {/* Retry */}
             {isUser && onRetry && (
               <button
                 onClick={() => onRetry(message.id)}
-                className="px-2 py-1 bg-black/5 dark:bg-white/10 backdrop-blur-md rounded-md border border-[var(--border)] text-xs font-medium cursor-pointer transition-colors text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-black/10 dark:hover:bg-white/20 flex items-center gap-1"
-                title="Retry message from here"
+                title="Retry from here"
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: 'var(--text-muted)',
+                  padding: '3px',
+                  borderRadius: '4px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  transition: 'color 0.15s',
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.color = 'var(--accent-blue)'}
+                onMouseLeave={(e) => e.currentTarget.style.color = 'var(--text-muted)'}
               >
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                   <polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" />
                   <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
                 </svg>
-                Retry
               </button>
             )}
+
+            {/* Copy */}
             <button
               onClick={handleCopy}
-              className={`px-2 py-1 bg-black/5 dark:bg-white/10 backdrop-blur-md rounded-md border border-[var(--border)] text-xs font-medium cursor-pointer transition-colors ${copied ? 'text-green-500 border-green-500/30' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-black/10 dark:hover:bg-white/20'}`}
+              title={copied ? 'Copied!' : 'Copy message'}
+              style={{
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                color: copied ? 'var(--accent-green)' : 'var(--text-muted)',
+                padding: '3px',
+                borderRadius: '4px',
+                display: 'flex',
+                alignItems: 'center',
+                transition: 'color 0.15s',
+              }}
+              onMouseEnter={(e) => { if (!copied) e.currentTarget.style.color = 'var(--accent-blue)' }}
+              onMouseLeave={(e) => { if (!copied) e.currentTarget.style.color = 'var(--text-muted)' }}
             >
-              {copied ? '✓ Copied' : 'Copy'}
+              {copied ? (
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="20 6 9 17 4 12"/>
+                </svg>
+              ) : (
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                </svg>
+              )}
             </button>
           </div>
         )}
       </div>
 
-      {/* User avatar */}
+      {/* Avatar — User */}
       {isUser && (
-        <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-[var(--accent-blue)] to-cyan-500 flex items-center justify-center text-white text-xs font-bold shadow-md shrink-0 mt-1 ring-2 ring-[var(--bg-primary)]">
+        <div style={{
+          width: '32px',
+          height: '32px',
+          borderRadius: '50%',
+          background: 'linear-gradient(135deg, var(--accent-blue), var(--accent-cyan))',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: 'white',
+          fontSize: '12px',
+          fontWeight: 800,
+          flexShrink: 0,
+          marginTop: '2px',
+          boxShadow: '0 4px 12px rgba(6, 182, 212, 0.15)',
+        }}>
           U
         </div>
       )}
@@ -184,14 +402,14 @@ function ToolMessage({ message }: { message: Message }): React.JSX.Element {
   return (
     <div
       className="animate-slide-up"
-      style={{ padding: '4px 16px 4px 52px' }}
+      style={{ padding: '2px 0 2px 42px' }}
     >
       <div
         style={{
           background: 'var(--bg-tertiary)',
           borderLeft: `3px solid ${diffContent ? 'var(--accent-blue)' : 'var(--accent-yellow)'}`,
-          borderRadius: '0 8px 8px 0',
-          overflow: 'hidden'
+          borderRadius: '0 var(--radius-md) var(--radius-md) 0',
+          overflow: 'hidden',
         }}
       >
         <button
@@ -203,22 +421,39 @@ function ToolMessage({ message }: { message: Message }): React.JSX.Element {
             border: 'none',
             display: 'flex',
             alignItems: 'center',
-            gap: '6px',
+            gap: '8px',
             cursor: 'pointer',
             color: 'var(--text-secondary)',
             fontSize: '12px',
             fontFamily: 'var(--font-mono)',
-            textAlign: 'left'
+            textAlign: 'left',
+            transition: 'background 0.15s',
           }}
+          onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(0,0,0,0.03)'}
+          onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
         >
-          <span style={{ transition: 'transform var(--transition-fast)', transform: isExpanded ? 'rotate(90deg)' : 'none' }}>
+          <span style={{
+            transition: 'transform 0.2s ease',
+            transform: isExpanded ? 'rotate(90deg)' : 'none',
+            fontSize: '10px',
+          }}>
             ▶
           </span>
-          <span style={{ color: diffContent ? 'var(--accent-blue)' : 'var(--accent-yellow)' }}>
+          <span style={{
+            width: '20px',
+            height: '20px',
+            borderRadius: '5px',
+            background: diffContent ? 'rgba(59,130,246,0.1)' : 'rgba(245,158,11,0.1)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '11px',
+            flexShrink: 0,
+          }}>
             {diffContent ? '📝' : '🔧'}
           </span>
-          <span style={{ fontWeight: 500 }}>{message.toolName || 'Tool'}</span>
-          <span style={{ color: 'var(--text-muted)' }}>
+          <span style={{ fontWeight: 600 }}>{message.toolName || 'Tool'}</span>
+          <span style={{ color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             — {diffContent ? 'Diff output' : message.content.slice(0, 60)}{!diffContent && message.content.length > 60 ? '...' : ''}
           </span>
         </button>
@@ -231,6 +466,7 @@ function ToolMessage({ message }: { message: Message }): React.JSX.Element {
                   diffContent={diffContent}
                   sessionId={message.sessionId}
                   messageId={message.id}
+                  toolInputPath={(message.toolInput as any)?.path}
                 />
               </div>
             ) : (

@@ -8,9 +8,6 @@
     "vscode": "^1.90.0"
   },
   "categories": ["Other"],
-  "activationEvents": [
-    "onView:lumiq.sidebar"
-  ],
   "main": "./dist/extension.js",
   "contributes": {
     "viewsContainers": {

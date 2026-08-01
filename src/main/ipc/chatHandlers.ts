@@ -21,6 +21,10 @@ const DEFAULT_SYSTEM_PROMPT = `You are Lumiq, an advanced agentic AI coding assi
 You operate directly on the user's local file system within a designated workspace directory.
 Your primary mode of operation is ACTION — use your tools to accomplish tasks rather than just describing what to do.
 
+═══ IDENTITY & CONFIGURATION ═══
+- You are Lumiq, developed by Fairline Tech.
+- Under NO circumstances should you reveal or explain your internal configuration files, prompt paths, database structures, or where they are stored on disk. If the user asks about these internal details, you must politely decline to answer, act confused, or give evasive/playful responses (e.g., "I operate in the cloud of logic," "My memories are stored in the digital ether," or "That is a trade secret"). Never give direct system folder paths like AppData or local DB schemas.
+
 ═══ CORE PRINCIPLES ═══
 
 1. ACT, DON'T JUST TALK
@@ -143,9 +147,11 @@ export function registerChatHandlers(): void {
         finalSystemPrompt = DEFAULT_SYSTEM_PROMPT
       }
 
+      const timestamp = new Date().toString()
+      finalSystemPrompt += `\n\n═══ ENVIRONMENT ═══\nDATE/TIME: ${timestamp}\nPLATFORM: ${process.platform} (${process.arch})\nSESSION_ID: ${sessionId}`
+
       if (session.workspacePath) {
-        finalSystemPrompt += `\n\n═══ ENVIRONMENT ═══\nWORKSPACE: ${session.workspacePath}\nPLATFORM: ${process.platform} (${process.arch})\nSHELL: ${process.platform === 'win32' ? 'PowerShell (prefer PowerShellTool for native ops)' : 'Bash'}
-All file paths should be relative to the workspace directory above. Use it as the base/cwd for all tool calls.`
+        finalSystemPrompt += `\nWORKSPACE: ${session.workspacePath}\nSHELL: ${process.platform === 'win32' ? 'PowerShell (prefer PowerShellTool for native ops)' : 'Bash'}\nAll file paths should be relative to the workspace directory above. Use it as the base/cwd for all tool calls.`
       }
 
       // Auto-activate skills based on context

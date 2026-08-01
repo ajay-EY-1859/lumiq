@@ -2,12 +2,14 @@
 // Lumiq — FileWriteTool
 // ═══════════════════════════════════════════════════════════════════
 
+import * as fs from 'fs'
 import { existsSync, writeFileSync, mkdirSync } from 'fs'
 import { dirname } from 'path'
 import type { Tool } from './Tool'
 import { validatePathWithinWorkspace } from '../security/pathValidation'
 import { getService } from '@shared/instantiation/instantiationService'
 import { IComposerService } from '@shared/services'
+import { agentEditHistoryService } from '../services/AgentEditHistoryService'
 
 const MAX_CONTENT_SIZE = 1 * 1024 * 1024 // 1MB max write size
 
@@ -50,10 +52,19 @@ export class FileWriteTool implements Tool {
     }
 
     const existed = existsSync(filePath)
+    let previousContent = ''
+    if (existed) {
+      try {
+        previousContent = fs.readFileSync(filePath, 'utf8')
+      } catch {
+        previousContent = ''
+      }
+    }
 
     try {
       mkdirSync(dirname(filePath), { recursive: true })
       writeFileSync(filePath, content, 'utf8')
+      agentEditHistoryService.recordEdit('active-session', filePath, previousContent, content)
       return `[OK] Written ${content.length} characters to ${filePath}${existed ? ' (overwrote existing file)' : ''}`
     } catch (e) {
       return `[ERROR] Cannot write file: ${(e as Error).message}`

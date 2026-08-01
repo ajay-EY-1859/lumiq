@@ -30,6 +30,23 @@ export class ExtensionManagementService implements IExtensionManagementService {
     const extensions: IExtensionDescription[] = [];
     const scannedPaths: string[] = [];
 
+    // 0. Built-in extensions directory
+    try {
+      if (process.env.NODE_ENV !== 'test' && !process.env.VITEST) {
+        const builtinExtPath = path.join(app.getAppPath(), 'extensions');
+        if (fs.existsSync(builtinExtPath)) {
+          scannedPaths.push(builtinExtPath);
+        }
+      }
+    } catch {
+      if (process.env.NODE_ENV !== 'test' && !process.env.VITEST) {
+        const devBuiltinPath = path.join(process.cwd(), 'extensions');
+        if (fs.existsSync(devBuiltinPath)) {
+          scannedPaths.push(devBuiltinPath);
+        }
+      }
+    }
+
     // 1. User extensions directory
     try {
       const userExtPath = path.join(app.getPath('userData'), 'extensions');

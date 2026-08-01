@@ -8,10 +8,12 @@ import { getService } from '@shared/instantiation/instantiationService'
 import { ISystemCapabilityService, ICodeIntelligenceService } from '@shared/services'
 import { Disposable } from '@shared/lifecycle'
 import { registerSingleton, InstantiationType } from '@shared/instantiation/extensions'
+import { normalizeDriveLetter } from '../security/pathValidation'
+
 
 let native: any
 try {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
+   
   native = require('@lumiq/native')
 } catch (err) {
   console.error('[CodeIntelligenceService] Failed to load native @lumiq/native module:', err)
@@ -23,6 +25,7 @@ export interface IndexStats {
   referencesCount: number
   durationMs: number
 }
+
 
 export class CodeIntelligenceService extends Disposable implements ICodeIntelligenceService {
   private watcher: FSWatcher | null = null
@@ -44,6 +47,8 @@ export class CodeIntelligenceService extends Disposable implements ICodeIntellig
     return getService(ICodeIntelligenceService) as CodeIntelligenceService
   }
 
+
+
   /**
    * Binds a new workspace, optionally skipping the heavy background scan for restore flows.
    */
@@ -59,7 +64,7 @@ export class CodeIntelligenceService extends Disposable implements ICodeIntellig
       this.restoreAsarPatching()
     }
 
-    this.workspacePath = path ? resolve(path) : null
+    this.workspacePath = path ? resolve(normalizeDriveLetter(path)) : null
 
     if (!this.workspacePath || !existsSync(this.workspacePath)) {
       console.log('[CodeIntelligence] No workspace or path does not exist. Indexer stopped.')

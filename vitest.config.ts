@@ -5,7 +5,8 @@ export default defineConfig({
   test: {
     environment: 'node',
     alias: {
-      '@shared': resolve(__dirname, './src/shared')
+      '@shared': resolve(__dirname, './src/shared'),
+      '@renderer': resolve(__dirname, './src/renderer/src')
     }
   }
 })

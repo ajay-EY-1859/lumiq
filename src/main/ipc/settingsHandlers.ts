@@ -15,6 +15,8 @@ import { existsSync, readFileSync, realpathSync } from 'fs'
 import { getService } from '@shared/instantiation/instantiationService'
 import { ITraceLogger } from '@shared/services'
 import { IConfigurationService, ConfigurationTarget } from '@shared/configuration/configuration'
+import { normalizeDriveLetter } from '../security/pathValidation'
+
 
 const SETTINGS_KEYS = new Set([
   'theme',
@@ -26,7 +28,8 @@ const SETTINGS_KEYS = new Set([
   'contextLimit',
   'firecrawlApiKey',
   'dailyBudgetCap',
-  'monthlyBudgetCap'
+  'monthlyBudgetCap',
+  'keybindings'
 ])
 
 function normalizeSettingValue(key: string, value: unknown): string {
@@ -63,11 +66,12 @@ function normalizeSettingValue(key: string, value: unknown): string {
 // ─── Workspace path safety helper ─────────────────────────────────
 // Ensures the settings file we read/write is strictly inside the
 // declared workspace directory (prevents path-traversal attacks).
+
 function safeWorkspaceSettingsPath(workspacePath: string): string {
   if (typeof workspacePath !== 'string' || workspacePath.includes('\0')) {
     throw new Error('Invalid workspace path')
   }
-  const resolvedWorkspace = resolve(workspacePath)
+  const resolvedWorkspace = resolve(normalizeDriveLetter(workspacePath))
   const settingsPath = join(resolvedWorkspace, '.lumiq', 'settings.json')
   const resolvedSettings = resolve(settingsPath)
 
@@ -105,8 +109,15 @@ export function registerSettingsHandlers(): void {
     if (!SETTINGS_KEYS.has(data.key)) {
       throw new Error(`Unsupported setting: ${data.key}`)
     }
-    const value = normalizeSettingValue(data.key, data.value)
     const configService = getService(IConfigurationService)
+    if (data.key === 'keybindings') {
+      if (typeof data.value !== 'object' || data.value === null) {
+        throw new Error('Keybindings must be an object')
+      }
+      void configService.updateValue('keybindings', data.value, ConfigurationTarget.User)
+      return
+    }
+    const value = normalizeSettingValue(data.key, data.value)
     void configService.updateValue(data.key, value, ConfigurationTarget.User)
 
     if (data.key === 'contextLimit') {

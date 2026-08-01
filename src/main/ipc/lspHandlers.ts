@@ -4,13 +4,14 @@
 // Ensures sub-5ms performance for a lag-free editor experience.
 // ═══════════════════════════════════════════════════════════════════
 
-import { readFileSync, existsSync } from 'fs'
+import { existsSync } from 'fs'
+import { readFile } from 'fs/promises'
 import { dirname, resolve, join } from 'path'
 import { IPC, DocumentSymbol, SymbolKind, DefinitionResult, ReferenceResult } from '@shared/types'
 import { handleWithTimeout, IPC_TIMEOUT } from './handleWithTimeout'
 import { getDatabase } from '../db/database'
 import { getService } from '@shared/instantiation/instantiationService'
-import { ICodeIntelligenceService } from '@shared/services'
+import { ICodeIntelligenceService, ILspService } from '@shared/services'
 
 function resolveModulePath(sourceFile: string, moduleSpecifier: string, db: any, workspacePath: string): string {
   if (!moduleSpecifier) return ''
@@ -100,13 +101,13 @@ export function registerLspHandlers(): void {
   })
 
   // ── Go to Definition ──
-  handleWithTimeout(IPC.LSP_DEFINITION, IPC_TIMEOUT.short, (_event, req: { workspacePath: string, filePath: string, line: number, column: number }): DefinitionResult | null => {
-    const { workspacePath, filePath, line, column } = req
+  handleWithTimeout(IPC.LSP_DEFINITION, IPC_TIMEOUT.short, async (_event, req: { workspacePath: string, filePath: string, line: number, column: number, content?: string }): Promise<DefinitionResult | null> => {
+    const { workspacePath, filePath, line, column, content: editorContent } = req
     if (!filePath || !existsSync(filePath)) return null
 
     try {
       // 1. Read the exact identifier at the clicked position
-      const content = readFileSync(filePath, 'utf-8')
+      const content = editorContent ?? await readFile(filePath, 'utf-8')
       const fileLines = content.split('\n')
       const targetLine = fileLines[line - 1]
       if (!targetLine) return null
@@ -169,7 +170,7 @@ export function registerLspHandlers(): void {
         }
         
         queryStr += ' LIMIT 1'
-        definition = db.prepare(queryStr).get(params) as any
+        definition = db.prepare(queryStr).get(...params) as any
       }
 
       if (definition) {
@@ -196,13 +197,13 @@ export function registerLspHandlers(): void {
   })
 
   // ── Find All References ──
-  handleWithTimeout(IPC.LSP_REFERENCES, IPC_TIMEOUT.long, (_event, req: { workspacePath: string, filePath: string, line: number, column: number }): ReferenceResult[] => {
-    const { workspacePath, filePath, line, column } = req
+  handleWithTimeout(IPC.LSP_REFERENCES, IPC_TIMEOUT.long, async (_event, req: { workspacePath: string, filePath: string, line: number, column: number, content?: string }): Promise<ReferenceResult[]> => {
+    const { workspacePath, filePath, line, column, content: editorContent } = req
     if (!filePath || !existsSync(filePath)) return []
 
     try {
       // 1. Read the exact identifier at the clicked position
-      const content = readFileSync(filePath, 'utf-8')
+      const content = editorContent ?? await readFile(filePath, 'utf-8')
       const fileLines = content.split('\n')
       const targetLine = fileLines[line - 1]
       if (!targetLine) return []
@@ -413,6 +414,31 @@ export function registerLspHandlers(): void {
   // ── Index Stats ──
   handleWithTimeout(IPC.LSP_INDEX_STATS, IPC_TIMEOUT.short, (): { files: number, symbols: number, references: number } => {
     return getService(ICodeIntelligenceService).getIndexStats()
+  })
+
+  // ── Start Language Server ──
+  handleWithTimeout(IPC.LSP_START_SERVER, IPC_TIMEOUT.long, (_event, req: { languageId: string, workspacePath: string }) => {
+    return getService(ILspService).startLanguageServer(req.languageId, req.workspacePath)
+  })
+
+  // ── Stop Language Server ──
+  handleWithTimeout(IPC.LSP_STOP_SERVER, IPC_TIMEOUT.short, (_event, languageId: string) => {
+    return getService(ILspService).stopLanguageServer(languageId)
+  })
+
+  // ── Hover ──
+  handleWithTimeout(IPC.LSP_GET_HOVER, IPC_TIMEOUT.short, (_event, req: { filePath: string, line: number, column: number, content?: string }) => {
+    return getService(ILspService).getHover(req.filePath, req.line, req.column, req.content)
+  })
+
+  // ── Completions ──
+  handleWithTimeout(IPC.LSP_GET_COMPLETION, IPC_TIMEOUT.short, (_event, req: { filePath: string, line: number, column: number, content?: string }) => {
+    return getService(ILspService).getCompletion(req.filePath, req.line, req.column, req.content)
+  })
+
+  // ── Signature Help ──
+  handleWithTimeout(IPC.LSP_GET_SIGNATURE_HELP, IPC_TIMEOUT.short, (_event, req: { filePath: string, line: number, column: number, content?: string }) => {
+    return getService(ILspService).getSignatureHelp(req.filePath, req.line, req.column, req.content)
   })
 }
 

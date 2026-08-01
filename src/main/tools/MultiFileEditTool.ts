@@ -8,6 +8,7 @@ import type { Tool } from './Tool'
 import { validatePathWithinWorkspace } from '../security/pathValidation'
 import { getService } from '@shared/instantiation/instantiationService'
 import { IComposerService } from '@shared/services'
+import { agentEditHistoryService } from '../services/AgentEditHistoryService'
 
 interface EditOperation {
   path: string
@@ -98,7 +99,9 @@ export class MultiFileEditTool implements Tool {
         if (isStaging) {
           composer.stageWrite(filePath, newContent)
         } else {
+          const prevContent = backups.get(filePath) || ''
           writeFileSync(filePath, newContent, 'utf8')
+          agentEditHistoryService.recordEdit('active-session', filePath, prevContent, newContent)
         }
       }
 

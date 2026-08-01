@@ -3,7 +3,7 @@
 // Modal showing tool details with Approve/Deny/Always Allow
 // ═══════════════════════════════════════════════════════════════════
 
-import React from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { Button } from '@renderer/components/ui/Button'
 import type { ToolApprovalRequest } from '@shared/types'
 
@@ -13,22 +13,50 @@ interface ToolApprovalDialogProps {
 }
 
 export function ToolApprovalDialog({ request, onRespond }: ToolApprovalDialogProps): React.JSX.Element | null {
+  const [cursorPosition, setCursorPosition] = useState({ x: 24, y: 24 })
+
+  useEffect(() => {
+    if (!request) return
+    const updateCursorPosition = (event: MouseEvent) => {
+      setCursorPosition({ x: event.clientX + 18, y: event.clientY + 18 })
+    }
+
+    updateCursorPosition({ clientX: window.innerWidth / 2, clientY: window.innerHeight / 2 } as MouseEvent)
+
+    window.addEventListener('mousemove', updateCursorPosition)
+    return () => window.removeEventListener('mousemove', updateCursorPosition)
+  }, [request])
+
+  const popoverStyle = useMemo<React.CSSProperties>(() => {
+    const maxWidth = Math.min(420, window.innerWidth - 24)
+    const maxHeight = Math.max(260, window.innerHeight - 24)
+    const left = Math.min(cursorPosition.x, Math.max(12, window.innerWidth - maxWidth - 12))
+    const top = Math.min(cursorPosition.y, Math.max(12, window.innerHeight - maxHeight - 12))
+
+    return {
+      position: 'fixed',
+      left,
+      top,
+      zIndex: 1000,
+      width: maxWidth,
+      maxHeight,
+      overflowY: 'auto',
+      padding: '16px',
+      background: 'var(--bg-secondary)',
+      border: '1px solid var(--border)',
+      borderRadius: '12px',
+      boxShadow: '0 16px 32px rgba(0, 0, 0, 0.18)',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '16px',
+      pointerEvents: 'auto'
+    }
+  }, [cursorPosition])
+
   if (!request) return null
 
   return (
-    <div
-      style={{
-        margin: '0 16px 16px 16px',
-        padding: '16px',
-        background: 'var(--bg-secondary)',
-        border: '1px solid var(--border)',
-        borderRadius: '8px',
-        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '16px'
-      }}
-    >
+    <div style={popoverStyle}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -147,7 +175,7 @@ export function ToolApprovalDialog({ request, onRespond }: ToolApprovalDialogPro
                 } else {
                   patch = `--- /dev/null\n+++ ${(request.toolInput as any).path}\n+ ${(request.toolInput as any).content}`
                 }
-                navigator.clipboard.writeText(patch)
+                window.electronAPI.clipboard.writeText(patch)
               }}
               style={{ marginRight: 'auto', color: 'var(--text-secondary)' }}
             >

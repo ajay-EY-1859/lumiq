@@ -5,7 +5,7 @@ import { parentPort, workerData } from 'worker_threads'
 
 let native: any
 try {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
+   
   native = require('@lumiq/native')
 } catch (err) {
   console.error('[CodeIntelligenceWorker] Failed to load native @lumiq/native module:', err)

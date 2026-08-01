@@ -6,6 +6,7 @@
 import type { AIProvider } from './AIProvider'
 import type { Message, ProviderConfig, SendOptions, SendResult, TestResult } from '@shared/types'
 import { getValidGitHubToken } from '../auth/githubOAuth'
+import { sanitizeMessages } from './utils'
 
 type GitHubChatResponse = {
   choices?: Array<{
@@ -50,6 +51,7 @@ export class GitHubProvider implements AIProvider {
   }
 
   async sendMessage(messages: Message[], options: SendOptions): Promise<SendResult> {
+    const sanitized = sanitizeMessages(messages, options)
     const chatMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = []
 
     if (options.systemPrompt) {
@@ -57,7 +59,7 @@ export class GitHubProvider implements AIProvider {
     }
 
     chatMessages.push(
-      ...messages
+      ...sanitized
         .filter((message) => message.role === 'user' || message.role === 'assistant' || message.role === 'system')
         .map((message) => ({
           role: message.role as 'system' | 'user' | 'assistant',

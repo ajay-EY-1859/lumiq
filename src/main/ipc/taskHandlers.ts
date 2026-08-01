@@ -18,7 +18,16 @@ import { handleWithTimeout, IPC_TIMEOUT } from './handleWithTimeout'
 
 const activeTasks = new Map<string, ChildProcessWithoutNullStreams>()
 
-const ALLOWED_TASK_COMMANDS = new Set(["npm", "npx", "node", "yarn", "pnpm", "git", "python", "python3", "go", "cargo", "java", "javac", "gcc", "g++", "clang", "clang++", "make", "mingw32-make", "dotnet"])
+const ALLOWED_TASK_COMMANDS = new Set([
+  // Build and package managers
+  "npm", "npx", "node", "yarn", "pnpm", "git", "python", "python3", "go", "cargo",
+  "java", "javac", "gcc", "g++", "clang", "clang++", "make", "mingw32-make", "dotnet",
+  
+  // Shell builtins and common CLI utilities
+  "clear", "cls", "ls", "dir", "echo", "cat", "type", "mkdir", "rm", "del", "cp",
+  "copy", "mv", "move", "pwd", "grep", "findstr", "bash", "sh", "cmd", "powershell",
+  "pwsh", "zsh", "ssh", "curl", "wget", "whoami", "date", "time", "env"
+])
 
 const MAX_SELF_HEAL_LINES = 20
 

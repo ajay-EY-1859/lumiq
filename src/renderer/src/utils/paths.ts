@@ -10,9 +10,9 @@ export function normalizePath(p: string): string {
   if (!p) return ''
   let n = p.replace(/\\/g, '/')
   n = n.replace(/\/+/g, '/')
+  // Normalize Windows drive letter to lowercase
   if (n.match(/^[a-zA-Z]:/)) {
-    n = n[0].toLowerCase() + n.slice(1)
-    n = n.replace(/^([a-zA-Z]:)\/*/, '$1/')
+    n = n.charAt(0).toLowerCase() + n.slice(1)
   }
   return n
 }
